@@ -1,0 +1,2012 @@
+package com.nidoham.thrisa.presentation.settings
+
+import android.Manifest
+import android.app.AlarmManager
+import android.app.NotificationManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings as AndroidSettings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Bluetooth
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SettingsVoice
+import androidx.compose.material.icons.outlined.SmartToy
+import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material.icons.outlined.WorkspacePremium
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.nidoham.thrisa.core.service.screen.ThrisaAccessibilityService
+import com.nidoham.thrisa.core.sound.SpeechEngine
+import com.nidoham.thrisa.core.theme.Aqua
+import com.nidoham.thrisa.core.theme.CardStroke
+import com.nidoham.thrisa.core.theme.Lilac
+import com.nidoham.thrisa.core.theme.Night
+import com.nidoham.thrisa.core.theme.TextHigh
+import com.nidoham.thrisa.core.theme.TextSoft
+import com.nidoham.thrisa.domain.AccountSettingsStorage
+import com.nidoham.thrisa.domain.ApiKeyStorage
+import com.nidoham.thrisa.domain.AssistantLanguage
+import com.nidoham.thrisa.domain.Gender
+import com.nidoham.thrisa.domain.RelationType
+import com.nidoham.thrisa.domain.RoleplaySettingsStorage
+import com.nidoham.thrisa.domain.SpeechSettingsStorage
+import kotlinx.coroutines.launch
+
+/* ------------------------------------------------------------------ */
+/*  Enums                                                              */
+/* ------------------------------------------------------------------ */
+
+enum class SettingsDestination {
+    PERSONA, SUBSCRIPTION, APPEARANCE, PRIVACY, ABOUT
+}
+
+private enum class ApiProvider(
+    val displayName: String,
+    val enabled: Boolean,
+    val placeholder: String
+) {
+    GEMINI("Gemini", true, "AIza..."),
+}
+
+private enum class RowStyle { NORMAL, PREMIUM, DANGER }
+
+/** Text fields the user can edit through a dialog. */
+private enum class EditField(
+    val title: String,
+    val description: String,
+    val placeholder: String,
+    val isPhoneNumber: Boolean = false
+) {
+    USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
+    PHONE("Phone number", "Used for your account. Stays on this device.", "+880 1XXXXXXXXX", isPhoneNumber = true),
+    ASSISTANT_NAME("Assistant name", "What you call your assistant.", "Thrisa"),
+}
+
+/* ------------------------------------------------------------------ */
+/*  Node model                                                         */
+/* ------------------------------------------------------------------ */
+
+private sealed interface SettingsNode {
+    val id: String
+    val title: String
+
+    data class Category(
+        override val id: String,
+        override val title: String,
+        val subtitle: String? = null,
+        val icon: ImageVector,
+        val accent: Color = Aqua,
+        val children: List<SettingsNode>
+    ) : SettingsNode
+
+    data class Item(
+        override val id: String,
+        override val title: String,
+        val subtitle: String? = null,
+        val icon: ImageVector? = null,
+        val style: RowStyle = RowStyle.NORMAL,
+        val enabled: Boolean = true,
+        val onClick: (() -> Unit)? = null,
+        val trailing: @Composable () -> Unit = { TrailingChevron() }
+    ) : SettingsNode
+}
+
+/* ------------------------------------------------------------------ */
+/*  Theme tokens                                                       */
+/* ------------------------------------------------------------------ */
+
+private val RowSurface = Color(0xFF0C1420)
+private val SheetSurface = Color(0xFF0A111B)
+private val OptionSurface = Color(0xFF091018)
+private val Danger     = Color(0xFFFF6B6B)
+private val Premium    = Color(0xFFFFC857)
+private val Success    = Color(0xFF4ADE80)
+
+/* ------------------------------------------------------------------ */
+/*  Relation helpers                                                   */
+/* ------------------------------------------------------------------ */
+
+private fun RelationType.accent(): Color = when {
+    isMature -> Danger
+    isRomantic -> Lilac
+    else -> Aqua
+}
+
+private fun RelationType.icon(): ImageVector = when (this) {
+    RelationType.STRANGER -> Icons.Outlined.Person
+    RelationType.FRIEND -> Icons.Outlined.People
+    RelationType.CLOSE_FRIEND -> Icons.Outlined.ChatBubbleOutline
+    RelationType.GIRLFRIEND -> Icons.Outlined.FavoriteBorder
+    RelationType.WIFE -> Icons.Outlined.Favorite
+}
+
+private fun RelationType.badgeLabel(): String = when {
+    isMature -> "18+"
+    isRomantic -> "ROMANTIC"
+    else -> "BOND"
+}
+
+/* ------------------------------------------------------------------ */
+/*  State holder                                                       */
+/* ------------------------------------------------------------------ */
+
+@Stable
+private class SettingsState(private val storage: ApiKeyStorage, context: Context) {
+    var notifications by mutableStateOf(true)
+    var voiceReplies by mutableStateOf(false)
+    var saveHistory by mutableStateOf(true)
+    var requestTimeout by mutableStateOf(30)
+    var selectedProvider by mutableStateOf(ApiProvider.GEMINI)
+
+    // Loaded from SharedPreferences on creation — survive app restarts.
+    private var geminiKey by mutableStateOf(
+        storage.getApiKey(ApiProvider.GEMINI.name).orEmpty()
+    )
+    private val speechStorage = SpeechSettingsStorage(context)
+    private val roleplayStorage = RoleplaySettingsStorage(context)
+    private val accountStorage = AccountSettingsStorage(context)
+    var relationType by mutableStateOf(roleplayStorage.getRelationType())
+    var speechEngine by mutableStateOf(
+        runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }.getOrDefault(SpeechEngine.SYSTEM)
+    )
+
+    // Account profile + assistant identity
+    var username by mutableStateOf(accountStorage.getUserName())
+    var gender by mutableStateOf(accountStorage.getGender())
+    var phoneNumber by mutableStateOf(accountStorage.getPhoneNumber())
+    var assistantName by mutableStateOf(accountStorage.getAssistantName())
+    var assistantLanguage by mutableStateOf(accountStorage.getLanguage())
+
+    fun keyFor(provider: ApiProvider): String = when (provider) {
+        ApiProvider.GEMINI -> geminiKey
+    }
+
+    fun setKey(provider: ApiProvider, value: String) {
+        when (provider) {
+            ApiProvider.GEMINI -> geminiKey = value
+        }
+        storage.saveApiKey(provider.name, value)
+    }
+
+    fun saveSpeechEngine(engine: SpeechEngine) {
+        speechEngine = engine
+        speechStorage.setEngine(engine.name)
+    }
+
+    fun saveRelationType(type: RelationType) {
+        relationType = type
+        roleplayStorage.setRelationType(type)
+    }
+
+    fun saveUserName(value: String) {
+        username = value.trim()
+        accountStorage.setUserName(username)
+    }
+
+    fun saveGender(value: Gender) {
+        gender = value
+        accountStorage.setGender(value)
+    }
+
+    fun savePhoneNumber(value: String) {
+        phoneNumber = value.trim()
+        accountStorage.setPhoneNumber(phoneNumber)
+    }
+
+    fun saveAssistantName(value: String) {
+        accountStorage.setAssistantName(value)
+        assistantName = accountStorage.getAssistantName()
+    }
+
+    fun saveAssistantLanguage(value: AssistantLanguage) {
+        assistantLanguage = value
+        accountStorage.setLanguage(value)
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Entry                                                              */
+/* ------------------------------------------------------------------ */
+
+@Composable
+fun SettingsScreen(
+    onBack: () -> Unit = {},
+    onNavigate: (SettingsDestination) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val storage = remember { ApiKeyStorage(context.applicationContext) }
+    val state = remember { SettingsState(storage, context.applicationContext) }
+
+    var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var editingProvider by remember { mutableStateOf<ApiProvider?>(null) }
+    var showRelationSheet by remember { mutableStateOf(false) }
+    var editingField by remember { mutableStateOf<EditField?>(null) }
+    var showGenderDialog by remember { mutableStateOf(false) }
+
+    // Set while the user is in the system accessibility settings granting
+    // screen access; consumed on the next ON_RESUME to give feedback and,
+    // on Android 13-15, to guide past the "Restricted setting" toggle block.
+    var awaitingAccessibilityGrant by remember { mutableStateOf(false) }
+    var showAccessibilityHelp by remember { mutableStateOf(false) }
+
+    var refreshPermissionsTrigger by remember { mutableStateOf(0) }
+    val permissionStatus = remember(refreshPermissionsTrigger) {
+        checkPermissions(context)
+    }
+
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshPermissionsTrigger++
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+
+    // When the user comes back from the accessibility settings without having
+    // enabled the service, tell them what to do next: on Android 13-15 an
+    // escape hatch for the "Restricted setting" toggle block that applies to
+    // sideloaded installs, and on older versions a hint where to find it.
+    LaunchedEffect(refreshPermissionsTrigger) {
+        if (!awaitingAccessibilityGrant) return@LaunchedEffect
+        awaitingAccessibilityGrant = false
+        when {
+            ThrisaAccessibilityService.isEnabledInSettings(context) ->
+                Toast.makeText(context, "Screen access enabled.", Toast.LENGTH_SHORT).show()
+            Build.VERSION.SDK_INT >= 33 -> showAccessibilityHelp = true
+            else -> Toast.makeText(
+                context,
+                "Screen access is still off. Enable \"Thrisa AI Screen Access\" in Settings → Accessibility.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    val requestMultipleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        refreshPermissionsTrigger++
+        val allGranted = results.values.isNotEmpty() && results.values.all { it }
+        if (allGranted) {
+            Toast.makeText(context, "Permissions granted successfully.", Toast.LENGTH_SHORT).show()
+        } else if (results.values.any { !it }) {
+            Toast.makeText(context, "Some permissions were not granted.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val requestSingleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        refreshPermissionsTrigger++
+        if (isGranted) {
+            Toast.makeText(context, "Permission granted.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Permission not granted.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val permissionActions = remember(context, permissionStatus) {
+        PermissionActions(
+            onRequestAll = {
+                val missing = mutableListOf<String>()
+                if (!permissionStatus.hasMic) missing.add(Manifest.permission.RECORD_AUDIO)
+                if (!permissionStatus.hasAllMedia) {
+                    mediaReadPermissions().forEach { permission ->
+                        if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
+                            missing.add(permission)
+                        }
+                    }
+                }
+                if (!permissionStatus.hasCalendar) {
+                    missing.add(Manifest.permission.READ_CALENDAR)
+                    missing.add(Manifest.permission.WRITE_CALENDAR)
+                }
+                if (!permissionStatus.hasNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    missing.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                if (!permissionStatus.hasBluetooth && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    missing.add(Manifest.permission.BLUETOOTH_CONNECT)
+                }
+
+                if (missing.isNotEmpty()) {
+                    requestMultipleLauncher.launch(missing.toTypedArray())
+                } else if (!permissionStatus.hasExactAlarm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    openExactAlarmSettings(context)
+                } else if (!permissionStatus.hasAllFiles) {
+                    openAllFilesAccessSettings(context)
+                } else if (!permissionStatus.hasAccessibility) {
+                    awaitingAccessibilityGrant = true
+                    openAccessibilitySettings(context)
+                } else {
+                    Toast.makeText(context, "All permissions are already granted.", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onRequestMic = {
+                if (permissionStatus.hasMic) {
+                    Toast.makeText(context, "Microphone permission is already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    requestSingleLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onRequestCalendar = {
+                if (permissionStatus.hasCalendar) {
+                    Toast.makeText(context, "Calendar permissions are already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    requestMultipleLauncher.launch(
+                        arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+                    )
+                }
+            },
+            onRequestNotifications = {
+                if (permissionStatus.hasNotifications) {
+                    Toast.makeText(context, "Notification permission is already granted.", Toast.LENGTH_SHORT).show()
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    requestSingleLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    openNotificationSettings(context)
+                }
+            },
+            onRequestExactAlarm = {
+                if (permissionStatus.hasExactAlarm) {
+                    Toast.makeText(context, "Exact alarm permission is already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    openExactAlarmSettings(context)
+                }
+            },
+            onRequestBluetooth = {
+                if (permissionStatus.hasBluetooth) {
+                    Toast.makeText(context, "Bluetooth permission is already granted.", Toast.LENGTH_SHORT).show()
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    requestSingleLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                } else {
+                    Toast.makeText(context, "Bluetooth permission is granted by default on this version.", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onRequestMedia = {
+                if (permissionStatus.hasAllMedia) {
+                    Toast.makeText(context, "Media access is already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val missing = mediaReadPermissions().filter {
+                        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                    }
+                    requestMultipleLauncher.launch(missing.toTypedArray())
+                }
+            },
+            onRequestAllFiles = {
+                if (permissionStatus.hasAllFiles) {
+                    Toast.makeText(context, "All-files access is already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    openAllFilesAccessSettings(context)
+                }
+            },
+            onOpenAccessibility = {
+                if (permissionStatus.hasAccessibility) {
+                    Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    awaitingAccessibilityGrant = true
+                    openAccessibilitySettings(context)
+                }
+            },
+            onOpenAppSettings = {
+                openAppSettings(context)
+            },
+            onOpenPermissions = {
+                pathIds = listOf("permissions")
+            }
+        )
+    }
+
+    val root = buildTree(
+        state = state,
+        permissionStatus = permissionStatus,
+        permissionActions = permissionActions,
+        onNavigate = onNavigate,
+        onEditKey = { editingProvider = it },
+        onEditRelation = { showRelationSheet = true },
+        onEditField = { editingField = it },
+        onEditGender = { showGenderDialog = true }
+    )
+    val current = resolveCategory(root, pathIds)
+    val isRoot = pathIds.isEmpty()
+
+    val handleBack: () -> Unit = {
+        if (isRoot) onBack() else pathIds = pathIds.dropLast(1)
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(Night).statusBarsPadding()
+    ) {
+        TopBar(title = current.title, onBack = handleBack)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            if (isRoot) {
+                RootList(current.children) { id -> pathIds = pathIds + id }
+            } else {
+                NodeCard(current.children) { id -> pathIds = pathIds + id }
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+
+    editingProvider?.let { provider ->
+        ApiKeyDialog(
+            provider = provider,
+            initialKey = state.keyFor(provider),
+            onSave = { newKey ->
+                state.setKey(provider, newKey.trim())
+                editingProvider = null
+            },
+            onDismiss = { editingProvider = null }
+        )
+    }
+
+    if (showRelationSheet) {
+        RelationTypeSheet(
+            selected = state.relationType,
+            onApply = { state.saveRelationType(it) },
+            onDismiss = { showRelationSheet = false }
+        )
+    }
+
+    editingField?.let { field ->
+        val initialValue = when (field) {
+            EditField.USERNAME -> state.username
+            EditField.PHONE -> state.phoneNumber
+            EditField.ASSISTANT_NAME -> state.assistantName
+        }
+        EditFieldDialog(
+            field = field,
+            initialValue = initialValue,
+            onSave = { value ->
+                when (field) {
+                    EditField.USERNAME -> state.saveUserName(value)
+                    EditField.PHONE -> state.savePhoneNumber(value)
+                    EditField.ASSISTANT_NAME -> state.saveAssistantName(value)
+                }
+                editingField = null
+            },
+            onDismiss = { editingField = null }
+        )
+    }
+
+    if (showGenderDialog) {
+        GenderDialog(
+            selected = state.gender,
+            onSelect = { state.saveGender(it) },
+            onDismiss = { showGenderDialog = false }
+        )
+    }
+
+    if (showAccessibilityHelp) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityHelp = false },
+            title = { Text("Screen access is still off") },
+            text = {
+                Text(
+                    "If the \"Thrisa AI Screen Access\" toggle was greyed out with a " +
+                        "\"Restricted setting\" message, Android 13 and newer block sideloaded " +
+                        "apps from enabling accessibility services. To unblock it:\n\n" +
+                        "1. Open Thrisa's App info page\n" +
+                        "2. Tap the ⋮ menu in the top-right corner\n" +
+                        "3. Tap \"Allow restricted settings\"\n" +
+                        "4. Come back and grant Screen access again\n\n" +
+                        "Otherwise, enable \"Thrisa AI Screen Access\" directly in " +
+                        "Settings → Accessibility."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAccessibilityHelp = false
+                        openAppSettings(context)
+                    }
+                ) { Text("Open app info") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityHelp = false }) { Text("Later") }
+            }
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Permissions helpers                                               */
+/* ------------------------------------------------------------------ */
+
+private data class PermissionStatus(
+    val hasMic: Boolean,
+    val hasCalendar: Boolean,
+    val hasNotifications: Boolean,
+    val hasExactAlarm: Boolean,
+    val hasBluetooth: Boolean,
+    val hasMedia: Boolean,
+    val hasAllMedia: Boolean,
+    val hasAllFiles: Boolean,
+    val hasAccessibility: Boolean
+) {
+    val totalCount: Int = 8
+    val grantedCount: Int
+        get() = listOf(hasMic, hasCalendar, hasNotifications, hasExactAlarm, hasBluetooth, hasAllMedia, hasAllFiles, hasAccessibility).count { it }
+    val allGranted: Boolean
+        get() = grantedCount == totalCount
+}
+
+private class PermissionActions(
+    val onRequestAll: () -> Unit,
+    val onRequestMic: () -> Unit,
+    val onRequestCalendar: () -> Unit,
+    val onRequestNotifications: () -> Unit,
+    val onRequestExactAlarm: () -> Unit,
+    val onRequestBluetooth: () -> Unit,
+    val onRequestMedia: () -> Unit,
+    val onRequestAllFiles: () -> Unit,
+    val onOpenAccessibility: () -> Unit,
+    val onOpenAppSettings: () -> Unit,
+    val onOpenPermissions: () -> Unit
+)
+
+private fun checkPermissions(context: Context): PermissionStatus {
+    val hasMic = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasCalendar = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.READ_CALENDAR
+    ) == PackageManager.PERMISSION_GRANTED && ContextCompat.checkSelfPermission(
+        context, Manifest.permission.WRITE_CALENDAR
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasNotifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        nm?.areNotificationsEnabled() != false
+    }
+
+    val hasExactAlarm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        am?.canScheduleExactAlarms() != false
+    } else {
+        true
+    }
+
+    val hasBluetooth = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ContextCompat.checkSelfPermission(
+        context, Manifest.permission.BLUETOOTH_CONNECT
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val mediaPermissions = mediaReadPermissions()
+    val fullMediaPermissions = mediaPermissions.filterNot { it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED }
+    val grantedMediaCount = fullMediaPermissions.count {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+    val hasAllMedia = fullMediaPermissions.isNotEmpty() && grantedMediaCount == fullMediaPermissions.size
+    val hasSelectedVisualMedia = Build.VERSION.SDK_INT >= 34 && ContextCompat.checkSelfPermission(
+        context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    ) == PackageManager.PERMISSION_GRANTED
+    val hasMedia = hasAllMedia || hasSelectedVisualMedia || grantedMediaCount > 0
+    val hasAllFiles = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+    // Special access: the AI screen-access accessibility service, enabled by the
+    // user in the system accessibility settings (re-checked on every ON_RESUME).
+    val hasAccessibility = ThrisaAccessibilityService.isEnabledInSettings(context)
+
+    return PermissionStatus(
+        hasMic = hasMic,
+        hasCalendar = hasCalendar,
+        hasNotifications = hasNotifications,
+        hasExactAlarm = hasExactAlarm,
+        hasBluetooth = hasBluetooth,
+        hasMedia = hasMedia,
+        hasAllMedia = hasAllMedia,
+        hasAllFiles = hasAllFiles,
+        hasAccessibility = hasAccessibility
+    )
+}
+
+private fun mediaReadPermissions(): List<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> buildList {
+        add(Manifest.permission.READ_MEDIA_IMAGES)
+        add(Manifest.permission.READ_MEDIA_VIDEO)
+        add(Manifest.permission.READ_MEDIA_AUDIO)
+        if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    }
+    Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> listOf(
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE
+    )
+    else -> listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+private fun openAppSettings(context: Context) {
+    runCatching {
+        val intent = Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }.onFailure {
+        Toast.makeText(context, "Unable to open app settings.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun openExactAlarmSettings(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val intent = Intent(AndroidSettings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching {
+            context.startActivity(intent)
+        }.recoverCatching {
+            openAppSettings(context)
+        }
+    } else {
+        Toast.makeText(context, "Exact alarm permission is granted by default on this version.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun openNotificationSettings(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val intent = Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching {
+            context.startActivity(intent)
+        }.recoverCatching {
+            openAppSettings(context)
+        }
+    } else {
+        openAppSettings(context)
+    }
+}
+
+private fun openAllFilesAccessSettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+    val appIntent = Intent(AndroidSettings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+        data = Uri.fromParts("package", context.packageName, null)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(appIntent) }.recoverCatching {
+        val fallback = Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallback)
+    }.onFailure {
+        Toast.makeText(context, "Unable to open all-files access settings.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun openAccessibilitySettings(context: Context) {
+    val intent = Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching {
+        context.startActivity(intent)
+    }.recoverCatching {
+        openAppSettings(context)
+    }.onFailure {
+        Toast.makeText(context, "Unable to open accessibility settings.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Tree builder                                                       */
+/* ------------------------------------------------------------------ */
+
+private fun buildTree(
+    state: SettingsState,
+    permissionStatus: PermissionStatus,
+    permissionActions: PermissionActions,
+    onNavigate: (SettingsDestination) -> Unit,
+    onEditKey: (ApiProvider) -> Unit,
+    onEditRelation: () -> Unit,
+    onEditField: (EditField) -> Unit,
+    onEditGender: () -> Unit
+): SettingsNode.Category = SettingsNode.Category(
+    id = "root",
+    title = "Settings",
+    icon = Icons.Outlined.Tune,
+    children = listOf(
+
+        // "Persona & Roleplay" used to duplicate "Roleplay type" below — removed.
+        SettingsNode.Category(
+            id = "account",
+            title = "Account",
+            subtitle = "Profile, plan & sign in",
+            icon = Icons.Outlined.Person,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "username",
+                    title = "Username",
+                    subtitle = state.username.ifBlank { "Not set" },
+                    icon = Icons.Outlined.Person,
+                    onClick = { onEditField(EditField.USERNAME) }
+                ),
+                SettingsNode.Item(
+                    id = "gender",
+                    title = "Gender",
+                    subtitle = state.gender.label,
+                    icon = Icons.Outlined.People,
+                    onClick = onEditGender
+                ),
+                SettingsNode.Item(
+                    id = "phone",
+                    title = "Phone number",
+                    subtitle = state.phoneNumber.ifBlank { "Not set" },
+                    icon = Icons.Outlined.Phone,
+                    onClick = { onEditField(EditField.PHONE) }
+                ),
+                SettingsNode.Item(
+                    id = "subscription",
+                    title = "Subscription",
+                    subtitle = "Free plan",
+                    icon = Icons.Outlined.WorkspacePremium,
+                    style = RowStyle.PREMIUM,
+                    onClick = { onNavigate(SettingsDestination.SUBSCRIPTION) },
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TrailingBadge("PRO", Premium)
+                            Spacer(Modifier.width(8.dp))
+                            TrailingChevron()
+                        }
+                    }
+                ),
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "assistant",
+            title = "Assistant",
+            subtitle = "Name, language, roleplay & voice",
+            icon = Icons.Outlined.AutoAwesome,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "assistant-name",
+                    title = "Assistant name",
+                    subtitle = state.assistantName,
+                    icon = Icons.Outlined.SmartToy,
+                    onClick = { onEditField(EditField.ASSISTANT_NAME) }
+                ),
+                SettingsNode.Item(
+                    id = "assistant-language",
+                    title = "Assistant language",
+                    subtitle = "Language the assistant replies in",
+                    icon = Icons.Outlined.Language,
+                    trailing = {
+                        LanguageDropdown(state.assistantLanguage, state::saveAssistantLanguage)
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "relation-type",
+                    title = "Relationship",
+                    subtitle = state.relationType.summary,
+                    icon = state.relationType.icon(),
+                    onClick = onEditRelation,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TrailingBadge(
+                                state.relationType.badgeLabel(),
+                                state.relationType.accent()
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            TrailingChevron()
+                        }
+                    }
+                ),
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "engine",
+            title = "Engine",
+            subtitle = "Speech output & voice engine",
+            icon = Icons.Outlined.SettingsVoice,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "tts-engine",
+                    title = "Speech engine",
+                    subtitle = if (state.speechEngine == SpeechEngine.SYSTEM)
+                        "Local Device TTS · runs on this device"
+                    else "Gemini TTS · uses your saved Gemini API key",
+                    icon = Icons.Outlined.GraphicEq,
+                    trailing = {
+                        SpeechEngineDropdown(state.speechEngine, state::saveSpeechEngine)
+                    }
+                ),
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "ai",
+            title = "AI Providers",
+            subtitle = "Connect model providers",
+            icon = Icons.Outlined.VpnKey,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "provider",
+                    title = "Provider",
+                    subtitle = "Choose your default",
+                    icon = Icons.Outlined.VpnKey,
+                    trailing = {
+                        ProviderDropdownTrailing(
+                            selected = state.selectedProvider,
+                            onSelect = { state.selectedProvider = it }
+                        )
+                    }
+                ),
+                SettingsNode.Category(
+                    id = "credentials",
+                    title = "Credentials",
+                    subtitle = "API keys per provider",
+                    icon = Icons.Outlined.Key,
+                    children = buildList {
+                        ApiProvider.entries.forEach { provider ->
+                            add(
+                                SettingsNode.Item(
+                                    id = "key-${provider.name.lowercase()}",
+                                    title = "${provider.displayName} API Key",
+                                    subtitle = if (!provider.enabled) "Coming soon"
+                                    else {
+                                        val key = state.keyFor(provider)
+                                        if (key.isBlank()) "Not configured"
+                                        else "••••••••" + key.takeLast(4)
+                                    },
+                                    icon = Icons.Outlined.Key,
+                                    enabled = provider.enabled,
+                                    onClick = if (provider.enabled) {
+                                        { onEditKey(provider) }
+                                    } else null,
+                                    trailing = {
+                                        if (!provider.enabled) {
+                                            TrailingBadge("SOON", TextSoft)
+                                        } else if (state.keyFor(provider).isBlank()) {
+                                            TrailingBadge("SET UP", Aqua)
+                                        } else {
+                                            TrailingBadge("ACTIVE", Success)
+                                        }
+                                    }
+                                )
+                            )
+                        }
+                    }
+                ),
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "appearance",
+            title = "Appearance",
+            subtitle = "Theme, text & language",
+            icon = Icons.Outlined.DarkMode,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "theme", title = "Theme",
+                    icon = Icons.Outlined.DarkMode,
+                    onClick = { onNavigate(SettingsDestination.APPEARANCE) },
+                    trailing = { TrailingValue("Dark") }
+                ),
+                SettingsNode.Item(
+                    id = "textsize", title = "Text size",
+                    icon = Icons.Outlined.FormatSize,
+                    onClick = { onNavigate(SettingsDestination.APPEARANCE) },
+                    trailing = { TrailingValue("Medium") }
+                ),
+                SettingsNode.Item(
+                    id = "language", title = "Language",
+                    icon = Icons.Outlined.Language,
+                    onClick = { onNavigate(SettingsDestination.APPEARANCE) },
+                    trailing = { TrailingValue("English") }
+                )
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "permissions",
+            title = "Permissions",
+            subtitle = if (permissionStatus.allGranted) "All permissions granted"
+            else "${permissionStatus.grantedCount} of ${permissionStatus.totalCount} granted · Tap to manage",
+            icon = Icons.Outlined.Security,
+            accent = Aqua,
+            children = listOfNotNull(
+                if (!permissionStatus.allGranted) {
+                    SettingsNode.Item(
+                        id = "grant-all-permissions",
+                        title = "Request all permissions",
+                        subtitle = "Ask for all required permissions at once",
+                        icon = Icons.Outlined.CheckCircle,
+                        onClick = permissionActions.onRequestAll,
+                        trailing = {
+                            TrailingBadge("REQUEST ALL", Aqua)
+                        }
+                    )
+                } else null,
+                SettingsNode.Item(
+                    id = "permission-mic",
+                    title = "Microphone",
+                    subtitle = "Voice conversations & speech recognition",
+                    icon = Icons.Outlined.Mic,
+                    onClick = permissionActions.onRequestMic,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasMic) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasMic) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-calendar",
+                    title = "Calendar",
+                    subtitle = "Read & create calendar events",
+                    icon = Icons.Outlined.CalendarMonth,
+                    onClick = permissionActions.onRequestCalendar,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasCalendar) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasCalendar) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-notifications",
+                    title = "Notifications",
+                    subtitle = "Reminders, alerts & assistant updates",
+                    icon = Icons.Outlined.Notifications,
+                    onClick = permissionActions.onRequestNotifications,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasNotifications) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasNotifications) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-exact-alarm",
+                    title = "Alarms & Reminders",
+                    subtitle = "Schedule alarms and timers accurately on time",
+                    icon = Icons.Outlined.Alarm,
+                    onClick = permissionActions.onRequestExactAlarm,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasExactAlarm) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasExactAlarm) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-bluetooth",
+                    title = "Nearby devices (Bluetooth)",
+                    subtitle = "Route voice audio to Bluetooth headsets",
+                    icon = Icons.Outlined.Bluetooth,
+                    onClick = permissionActions.onRequestBluetooth,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasBluetooth) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasBluetooth) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-media",
+                    title = "Photos, videos & audio",
+                    subtitle = when {
+                        permissionStatus.hasAllMedia -> "Full access to shared media"
+                        permissionStatus.hasMedia -> "Selected media access is available"
+                        else -> "Access media files for attachments and browsing"
+                    },
+                    icon = Icons.Outlined.GraphicEq,
+                    onClick = permissionActions.onRequestMedia,
+                    trailing = {
+                        TrailingBadge(
+                            text = when {
+                                permissionStatus.hasAllMedia -> "ALLOWED"
+                                permissionStatus.hasMedia -> "SELECTED"
+                                else -> "GRANT"
+                            },
+                            accent = if (permissionStatus.hasMedia) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-all-files",
+                    title = "All files access",
+                    subtitle = "Manage shared files and folders on this device",
+                    icon = Icons.Outlined.FolderOpen,
+                    onClick = permissionActions.onRequestAllFiles,
+                    trailing = {
+                        TrailingBadge(
+                            text = when {
+                                Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> "NOT NEEDED"
+                                permissionStatus.hasAllFiles -> "ALLOWED"
+                                else -> "GRANT"
+                            },
+                            accent = if (permissionStatus.hasAllFiles) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-accessibility",
+                    title = "Screen access (Accessibility)",
+                    subtitle = "Let the AI see your screen and execute tasks for you",
+                    icon = Icons.Outlined.TouchApp,
+                    onClick = permissionActions.onOpenAccessibility,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.hasAccessibility) "ALLOWED" else "GRANT",
+                            accent = if (permissionStatus.hasAccessibility) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "permission-app-settings",
+                    title = "System app settings",
+                    subtitle = "Manage all permissions directly in Android Settings",
+                    icon = Icons.Outlined.Settings,
+                    onClick = permissionActions.onOpenAppSettings,
+                    trailing = {
+                        TrailingChevron()
+                    }
+                )
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "data",
+            title = "Data & Privacy",
+            subtitle = "Your data, your control",
+            icon = Icons.Outlined.Lock,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "privacy-permissions",
+                    title = "App permissions",
+                    subtitle = if (permissionStatus.allGranted) "All permissions granted"
+                    else "${permissionStatus.grantedCount} of ${permissionStatus.totalCount} granted",
+                    icon = Icons.Outlined.Security,
+                    onClick = permissionActions.onOpenPermissions,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (permissionStatus.allGranted) "ALLOWED" else "MANAGE",
+                            accent = if (permissionStatus.allGranted) Success else Aqua
+                        )
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "history",
+                    title = "Chat history",
+                    subtitle = "Keep chats on device",
+                    icon = Icons.Outlined.History,
+                    onClick = { state.saveHistory = !state.saveHistory },
+                    trailing = {
+                        TrailingSwitch(state.saveHistory) { state.saveHistory = it }
+                    }
+                ),
+                SettingsNode.Item(
+                    id = "export",
+                    title = "Export data",
+                    icon = Icons.Outlined.FileDownload,
+                    onClick = { onNavigate(SettingsDestination.PRIVACY) }
+                ),
+                SettingsNode.Item(
+                    id = "clear",
+                    title = "Clear all chats",
+                    subtitle = "Cannot be undone",
+                    icon = Icons.Outlined.DeleteOutline,
+                    style = RowStyle.DANGER,
+                    onClick = { /* clear */ },
+                    trailing = { }
+                )
+            )
+        ),
+
+        SettingsNode.Category(
+            id = "about",
+            title = "About",
+            subtitle = "Version & legal",
+            icon = Icons.Outlined.Info,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "terms", title = "Terms & Privacy",
+                    icon = Icons.Outlined.Description,
+                    onClick = { onNavigate(SettingsDestination.ABOUT) }
+                )
+            )
+        )
+    )
+)
+
+private fun resolveCategory(
+    root: SettingsNode.Category,
+    pathIds: List<String>
+): SettingsNode.Category {
+    var current = root
+    for (id in pathIds) {
+        val next = current.children
+            .filterIsInstance<SettingsNode.Category>()
+            .firstOrNull { it.id == id } ?: break
+        current = next
+    }
+    return current
+}
+
+/* ------------------------------------------------------------------ */
+/*  Top bar                                                            */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun TopBar(title: String, onBack: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = "Back",
+                tint = TextHigh,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Text(title, color = TextHigh, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Root list — prominent category cards                               */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        nodes.forEach { node ->
+            when (node) {
+                is SettingsNode.Category -> RootCategoryCard(node) { onOpen(node.id) }
+                is SettingsNode.Item -> RootItemCard(node)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RootCategoryCard(category: SettingsNode.Category, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(RowSurface)
+            .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                .background(category.accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(category.icon, contentDescription = null, tint = category.accent,
+                modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(category.title, color = TextHigh, fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold)
+            category.subtitle?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        TrailingChevron()
+    }
+}
+
+@Composable
+private fun RootItemCard(item: SettingsNode.Item) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(RowSurface)
+            .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+    ) {
+        ItemRow(item, isLast = true)
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Nested list — uniform card                                         */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun NodeCard(nodes: List<SettingsNode>, onOpenCategory: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(RowSurface)
+            .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+    ) {
+        nodes.forEachIndexed { index, node ->
+            val isLast = index == nodes.lastIndex
+            when (node) {
+                is SettingsNode.Category -> CategoryRow(node, isLast) { onOpenCategory(node.id) }
+                is SettingsNode.Item -> ItemRow(node, isLast)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryRow(
+    category: SettingsNode.Category,
+    isLast: Boolean,
+    onClick: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))
+                    .background(category.accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(category.icon, contentDescription = null, tint = category.accent,
+                    modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(category.title, color = TextHigh, fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                category.subtitle?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            TrailingChevron()
+        }
+        if (!isLast) Divider(startPadding = 58.dp)
+    }
+}
+
+@Composable
+private fun ItemRow(item: SettingsNode.Item, isLast: Boolean) {
+    val titleColor = when (item.style) {
+        RowStyle.DANGER -> Danger
+        else -> TextHigh
+    }.copy(alpha = if (item.enabled) 1f else 0.45f)
+
+    val iconTint = when (item.style) {
+        RowStyle.DANGER -> Danger
+        RowStyle.PREMIUM -> Premium
+        RowStyle.NORMAL -> TextSoft
+    }.copy(alpha = if (item.enabled) 1f else 0.45f)
+
+    val click = item.onClick
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth()
+                .then(
+                    if (click != null && item.enabled) Modifier.clickable { click() }
+                    else Modifier
+                )
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (item.icon != null) {
+                Icon(item.icon, contentDescription = null, tint = iconTint,
+                    modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(14.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(item.title, color = titleColor, fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                item.subtitle?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, color = TextSoft.copy(alpha = if (item.enabled) 1f else 0.45f),
+                        fontSize = 12.sp, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            item.trailing()
+        }
+        if (!isLast) Divider(startPadding = if (item.icon != null) 50.dp else 16.dp)
+    }
+}
+
+@Composable
+private fun Divider(startPadding: Dp) {
+    Row(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.width(startPadding))
+        Box(Modifier.weight(1f).height(1.dp)
+            .background(CardStroke.copy(alpha = 0.4f)))
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Trailing components                                                */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun TrailingChevron() {
+    Icon(
+        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        contentDescription = null,
+        tint = TextSoft.copy(alpha = 0.6f),
+        modifier = Modifier.size(20.dp)
+    )
+}
+
+@Composable
+private fun TrailingValue(text: String) {
+    Text(text, color = TextSoft, fontSize = 13.sp)
+}
+
+@Composable
+private fun TrailingBadge(text: String, accent: Color = Aqua) {
+    Box(
+        Modifier.clip(RoundedCornerShape(6.dp))
+            .background(accent.copy(alpha = 0.16f))
+            .padding(horizontal = 7.dp, vertical = 2.dp)
+    ) {
+        Text(text, color = accent, fontSize = 9.sp, letterSpacing = 0.8.sp,
+            fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun TrailingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Night,
+            checkedTrackColor = Aqua,
+            uncheckedThumbColor = TextSoft,
+            uncheckedTrackColor = CardStroke
+        )
+    )
+}
+
+@Composable
+private fun ProviderDropdownTrailing(
+    selected: ApiProvider,
+    onSelect: (ApiProvider) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.displayName, color = Aqua, fontSize = 13.sp,
+                fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null,
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            ApiProvider.entries.forEach { provider ->
+                val available = provider.enabled
+                val isSelected = provider == selected
+                DropdownMenuItem(
+                    text = {
+                        Row(Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(provider.displayName,
+                                color = if (available) TextHigh else TextSoft.copy(alpha = 0.45f),
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold
+                                else FontWeight.Normal)
+                            Spacer(Modifier.weight(1f))
+                            Spacer(Modifier.width(12.dp))
+                            when {
+                                !available -> TrailingBadge("SOON", TextSoft)
+                                isSelected -> Icon(Icons.Outlined.Check,
+                                    contentDescription = null, tint = Aqua,
+                                    modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    enabled = available,
+                    onClick = { onSelect(provider); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeechEngineDropdown(
+    selected: SpeechEngine,
+    onSelect: (SpeechEngine) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.label, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose speech engine",
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            SpeechEngine.entries.forEach { engine ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(engine.label, color = TextHigh, fontSize = 14.sp,
+                                    fontWeight = if (engine == selected) FontWeight.SemiBold else FontWeight.Normal)
+                                if (engine == selected) {
+                                    Spacer(Modifier.width(10.dp))
+                                    Icon(Icons.Outlined.Check, contentDescription = null,
+                                        tint = Aqua, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            Text(engine.description, color = TextSoft, fontSize = 11.sp)
+                        }
+                    },
+                    onClick = { onSelect(engine); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  API key dialog                                                     */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun ApiKeyDialog(
+    provider: ApiProvider,
+    initialKey: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var key by remember(provider) { mutableStateOf(initialKey) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = {
+            Text("${provider.displayName} API Key", color = TextHigh,
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column {
+                Text("Paste your API key. It stays on this device and is never uploaded.",
+                    color = TextSoft, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    placeholder = { Text(provider.placeholder, color = TextSoft.copy(alpha = 0.5f)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(key) }) {
+                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+        }
+    )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Assistant language dropdown                                        */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun LanguageDropdown(
+    selected: AssistantLanguage,
+    onSelect: (AssistantLanguage) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.label, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose assistant language",
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            AssistantLanguage.entries.forEach { language ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(language.label, color = TextHigh, fontSize = 14.sp,
+                                fontWeight = if (language == selected) FontWeight.SemiBold
+                                else FontWeight.Normal)
+                            Spacer(Modifier.weight(1f))
+                            Spacer(Modifier.width(12.dp))
+                            if (language == selected) {
+                                Icon(Icons.Outlined.Check, contentDescription = null,
+                                    tint = Aqua, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    onClick = { onSelect(language); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Text edit dialog (username / phone / assistant name)               */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun EditFieldDialog(
+    field: EditField,
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember(field) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = {
+            Text(field.title, color = TextHigh, fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column {
+                Text(field.description, color = TextSoft, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    singleLine = true,
+                    placeholder = { Text(field.placeholder, color = TextSoft.copy(alpha = 0.5f)) },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (field.isPhoneNumber) KeyboardType.Phone
+                        else KeyboardType.Text
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) {
+                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+        }
+    )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gender dialog                                                      */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun GenderDialog(
+    selected: Gender,
+    onSelect: (Gender) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = {
+            Text("Gender", color = TextHigh, fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Gender.entries.forEach { option ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .selectable(
+                                selected = option == selected,
+                                role = Role.RadioButton,
+                                onClick = { onSelect(option); onDismiss() }
+                            )
+                            .padding(horizontal = 6.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioDot(selected = option == selected, accent = Aqua)
+                        Spacer(Modifier.width(12.dp))
+                        Text(option.label, color = TextHigh, fontSize = 14.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+        }
+    )
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        color = TextSoft.copy(alpha = 0.8f),
+        fontSize = 11.sp,
+        letterSpacing = 1.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RelationTypeSheet(
+    selected: RelationType,
+    onApply: (RelationType) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    var pending by remember { mutableStateOf(selected) }
+    var confirmMature by remember { mutableStateOf(false) }
+
+    val platonic = RelationType.entries.filter { !it.isRomantic }
+    val romantic = RelationType.entries.filter { it.isRomantic }
+
+    fun applyAndClose(type: RelationType) {
+        onApply(type)
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SheetSurface,
+        contentColor = TextHigh
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(Lilac.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.People, contentDescription = null,
+                        tint = Lilac, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Relationship", color = TextHigh, fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(2.dp))
+                    Text("Who she is to you — from stranger to wife", color = TextSoft,
+                        fontSize = 12.sp)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            // Options
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                platonic.forEach { type ->
+                    RelationOptionCard(type, isSelected = type == pending) { pending = type }
+                }
+                Spacer(Modifier.height(6.dp))
+                SectionLabel("ROMANTIC BOND")
+                romantic.forEach { type ->
+                    RelationOptionCard(type, isSelected = type == pending) { pending = type }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Primary action — switching to Wife asks for an explicit 18+ confirmation.
+            val changed = pending != selected
+            Button(
+                onClick = {
+                    if (pending.isMature && !selected.isMature) confirmMature = true
+                    else applyAndClose(pending)
+                },
+                enabled = changed,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = pending.accent(),
+                    contentColor = Night,
+                    disabledContainerColor = CardStroke.copy(alpha = 0.5f),
+                    disabledContentColor = TextSoft
+                )
+            ) {
+                Text(
+                    if (changed) "Use ${pending.title}" else "Currently ${selected.title}",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+
+    if (confirmMature) {
+        AlertDialog(
+            onDismissRequest = { confirmMature = false },
+            containerColor = RowSurface,
+            icon = {
+                Icon(Icons.Outlined.LocalFireDepartment, contentDescription = null,
+                    tint = Danger, modifier = Modifier.size(26.dp))
+            },
+            title = {
+                Text("Enable 18+ content?", color = TextHigh, fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Text(
+                    "“${pending.title}” may include explicit or intense content. " +
+                            "Continue only if you are 18 or older. You can switch back at any time.",
+                    color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmMature = false
+                    applyAndClose(pending)
+                }) {
+                    Text("I'm 18 or older", color = Danger, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmMature = false }) {
+                    Text("Cancel", color = TextSoft)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun RelationOptionCard(
+    type: RelationType,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val accent = type.accent()
+    val haptic = LocalHapticFeedback.current
+    val shape = RoundedCornerShape(14.dp)
+
+    val borderColor by animateColorAsState(
+        if (isSelected) accent else CardStroke.copy(alpha = 0.6f), label = "border"
+    )
+    val bgColor by animateColorAsState(
+        if (isSelected) accent.copy(alpha = 0.09f) else OptionSurface, label = "bg"
+    )
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(bgColor)
+            .border(if (isSelected) 1.5.dp else 1.dp, borderColor, shape)
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }
+            )
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+                .background(accent.copy(alpha = if (isSelected) 0.22f else 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(type.icon(), contentDescription = null, tint = accent,
+                modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                type.title,
+                color = TextHigh,
+                fontSize = 15.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                type.description,
+                color = TextSoft.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(Modifier.width(10.dp))
+        RadioDot(selected = isSelected, accent = accent)
+    }
+}
+
+@Composable
+private fun RadioDot(selected: Boolean, accent: Color) {
+    val ring by animateColorAsState(
+        if (selected) accent else TextSoft.copy(alpha = 0.4f), label = "ring"
+    )
+    Box(
+        Modifier.size(22.dp).clip(CircleShape)
+            .border(1.5.dp, ring, CircleShape)
+            .background(if (selected) accent.copy(alpha = 0.2f) else Color.Transparent),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Icon(Icons.Outlined.Check, contentDescription = "Selected", tint = accent,
+                modifier = Modifier.size(14.dp))
+        }
+    }
+}
