@@ -1,4 +1,4 @@
-package presentation.main.pages
+package com.nidoham.thrisa.presentation.main.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nidoham.thrisa.core.database.memory.MemoryCategory
@@ -91,40 +92,7 @@ fun MemoriesPage() {
             .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
-        // Title row: Memories counter and AI management subtitle
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Memories", color = TextHigh, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AquaDeep.copy(alpha = 0.4f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            "${memories.size}",
-                            color = Aqua,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                Text(
-                    "Managed automatically by Thrisa during your conversations.",
-                    color = TextSoft,
-                    fontSize = 13.sp
-                )
-            }
-        }
 
-        Spacer(Modifier.height(14.dp))
-
-        // Search Bar
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -212,7 +180,7 @@ fun MemoriesPage() {
                             "As you chat with Thrisa, she will remember facts, preferences, and personal details automatically.",
                         color = TextSoft,
                         fontSize = 13.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }

@@ -1,34 +1,44 @@
-package presentation.main.pages
+package com.nidoham.thrisa.presentation.main.pages
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -37,15 +47,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.nidoham.thrisa.core.theme.Aqua
 import com.nidoham.thrisa.core.theme.CardStroke
@@ -55,200 +71,415 @@ import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
 import com.nidoham.thrisa.presentation.main.UiMessage
 
+// Local surface colors, kept in one place instead of repeated literals.
+private val FieldSurface = Color(0xFF0D1520)
+private val UserBubble = Color(0xFF123C3B)
+private val AssistantBubble = Color(0xFF0E1621)
+private val ErrorBubble = Color(0xFF2A1518)
+private val ErrorStroke = Color(0xFF5A2A2E)
+private val ErrorText = Color(0xFFFF9F9F)
+
+// Type scale: nothing below 12sp, body text at 15sp for comfortable reading.
+private val TitleSize = 20.sp
+private val BodySize = 15.sp
+private val BodyLineHeight = 22.sp
+private val SecondarySize = 14.sp
+private val CaptionSize = 12.sp
+
+// Layout constants.
+private val MinTouchTarget = 48.dp
+private val MaxBubbleWidth = 560.dp // keeps bubbles readable on tablets / landscape
+
+private val Suggestions = listOf(
+    "Generate a cozy watercolor café at sunset",
+    "Help me plan a productive day",
+    "Explain something complicated in simple words",
+)
+
 @Composable
 fun ChatPage(
     messages: List<UiMessage>,
     busyStatus: String?,
     onSend: (String, String?) -> Unit,
     onOpenImage: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onStop: (() -> Unit)? = null,
 ) {
-    var draft by remember { mutableStateOf("") }
-    var attachedImage by remember { mutableStateOf<String?>(null) }
-    val listState = rememberLazyListState()
-    LaunchedEffect(messages.size, messages.lastOrNull()?.imageUri, busyStatus) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    var draft by rememberSaveable { mutableStateOf("") }
+    var attachedImage by rememberSaveable { mutableStateOf<String?>(null) }
+    val isBusy = busyStatus != null
+    val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy
+
+    // System photo picker: no storage permission needed on any API level.
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        // Cancelling the picker must not wipe an existing attachment.
+        uri?.let { attachedImage = it.toString() }
     }
 
-    // System photo picker — no storage permission needed on any API level.
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        attachedImage = uri?.toString()
+    // Newest message sits at the bottom (reverse layout), so streaming text grows upward.
+    val listState = rememberLazyListState()
+    val reversed = remember(messages) { messages.asReversed() }
+    LaunchedEffect(messages.size, isBusy) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(0)
     }
-    val canSend = (draft.isNotBlank() || attachedImage != null) && busyStatus == null
 
     Column(
-        Modifier.fillMaxSize().background(Night).padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier
+            .fillMaxSize()
+            .background(Night)
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
-        Text("Conversation", color = TextHigh, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Chat, attach a photo to ask about or restyle it, or create images.",
-            color = TextSoft, fontSize = 13.sp
-        )
-        Spacer(Modifier.height(12.dp))
-
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             if (messages.isEmpty()) {
-                item {
-                    EmptyChatState()
-                }
-            }
-            items(messages, key = { it.id }) { message ->
-                MessageBubble(message, onOpenImage)
-            }
-            if (busyStatus != null) {
-                item(key = "busy-status") {
-                    Text(busyStatus, color = TextSoft, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                EmptyChatState(
+                    onSuggestion = { draft = it },
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    reverseLayout = true,
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (busyStatus != null) {
+                        item(key = "busy-status") { BusyStatus(busyStatus) }
+                    }
+                    items(reversed, key = { it.id }) { message ->
+                        MessageBubble(message, onOpenImage)
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        attachedImage?.let { imageUri ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) {
-                Box {
-                    AsyncImage(
-                        model = Uri.parse(imageUri),
-                        contentDescription = "Attached image",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF0D1520))
-                    )
-                    Box(
-                        Modifier.align(Alignment.TopEnd).padding(2.dp)
-                            .size(20.dp).clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xCC0D1520))
-                            .clickable { attachedImage = null },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Remove attachment",
-                            tint = TextHigh, modifier = Modifier.size(14.dp))
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text("Attached · ask anything about it", color = TextSoft, fontSize = 12.sp)
-            }
+        attachedImage?.let { uri ->
+            AttachmentPreview(uri = uri, onRemove = { attachedImage = null })
         }
 
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconButton(
+        // No fixed height: the field grows up to maxLines and the buttons stay
+        // pinned to the bottom edge, so multi-line text is never clipped.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ComposerButton(
+                icon = Icons.Outlined.AddPhotoAlternate,
+                description = "Attach an image",
+                enabled = !isBusy,
                 onClick = {
-                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    imagePicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
                 },
-                enabled = busyStatus == null,
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
-                    .background(if (busyStatus == null) Color(0xFF0D1520) else CardStroke)
-            ) {
-                Icon(
-                    Icons.Outlined.AddPhotoAlternate,
-                    contentDescription = "Attach an image",
-                    tint = if (busyStatus == null) Aqua else TextSoft
-                )
-            }
+            )
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
                 modifier = Modifier.weight(1f),
+                textStyle = LocalTextStyle.current.copy(
+                    fontSize = BodySize,
+                    lineHeight = BodyLineHeight
+                ),
                 placeholder = {
                     Text(
-                        if (attachedImage != null) "Ask about the photo (optional)…"
-                        else "Message or describe an image…",
-                        color = TextSoft
+                        text = "Ask me anything?",
+                        color = TextSoft,
+                        fontSize = BodySize
                     )
                 },
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(24.dp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextHigh,
                     unfocusedTextColor = TextHigh,
                     focusedBorderColor = Aqua,
                     unfocusedBorderColor = CardStroke,
                     cursorColor = Aqua,
-                    focusedContainerColor = Color(0xFF0D1520),
-                    unfocusedContainerColor = Color(0xFF0D1520),
+                    focusedContainerColor = FieldSurface,
+                    unfocusedContainerColor = FieldSurface,
                 ),
                 maxLines = 4,
             )
-            IconButton(
-                onClick = {
-                    if (canSend) {
+            if (isBusy && onStop != null) {
+                ComposerButton(
+                    icon = Icons.Outlined.Stop,
+                    description = "Stop generating",
+                    filled = true,
+                    onClick = onStop,
+                )
+            } else {
+                ComposerButton(
+                    icon = Icons.AutoMirrored.Outlined.Send,
+                    description = "Send message",
+                    enabled = canSend,
+                    filled = true,
+                    onClick = {
                         onSend(draft.trim(), attachedImage)
                         draft = ""
                         attachedImage = null
-                    }
-                },
-                enabled = canSend,
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
-                    .background(if (canSend) Aqua else CardStroke)
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Send message",
-                    tint = if (canSend) OnAqua else TextSoft)
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun EmptyChatState() {
-    Box(Modifier.fillMaxWidth().padding(vertical = 42.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = Aqua, modifier = Modifier.size(34.dp))
-            Spacer(Modifier.height(12.dp))
-            Text("What can I help you create?", color = TextHigh, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            Text(
-                "Try: “Generate a cozy watercolor café at sunset.” — or attach a photo to talk about it.",
-                color = TextSoft, fontSize = 13.sp
+private fun ComposerButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    filled: Boolean = false,
+) {
+    val container = when {
+        !enabled -> CardStroke
+        filled -> Aqua
+        else -> FieldSurface
+    }
+    val tint = when {
+        !enabled -> TextSoft
+        filled -> OnAqua
+        else -> Aqua
+    }
+    // The text field's default min height is 56dp; the extra 4dp bottom padding
+    // centers a 48dp button against a single-line field.
+    Box(modifier.padding(bottom = 4.dp)) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier
+                .size(MinTouchTarget)
+                .clip(RoundedCornerShape(16.dp))
+                .background(container)
+        ) {
+            Icon(
+                icon,
+                contentDescription = description,
+                tint = tint,
+                modifier = Modifier.size(24.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun BusyStatus(status: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            strokeWidth = 2.dp,
+            color = Aqua,
+            trackColor = CardStroke
+        )
+        Text(status, color = TextSoft, fontSize = SecondarySize)
+    }
+}
+
+@Composable
+private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(bottom = 10.dp)
+    ) {
+        Box(Modifier.size(72.dp)) {
+            AsyncImage(
+                model = uri.toUri(),
+                contentDescription = "Attached image",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(FieldSurface)
+            )
+            // 40dp tap target around a 24dp visual, so it is easy to hit with a thumb.
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = "Remove attachment",
+                        onClick = onRemove
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xCC0D1520)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Close,
+                        contentDescription = null, // the parent carries the label
+                        tint = TextHigh,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+        Text("Photo attached · ask anything about it", color = TextSoft, fontSize = SecondarySize)
+    }
+}
+
+@Composable
+private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+    // Scrollable so the content never gets cut off when the keyboard is open
+    // or the screen is short (landscape / small phones).
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            Icons.Outlined.AutoAwesome,
+            contentDescription = null,
+            tint = Aqua,
+            modifier = Modifier.size(40.dp)
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "What can I help you create?",
+            color = TextHigh,
+            fontSize = TitleSize,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Ask a question, generate an image, or attach a photo to talk about it.",
+            color = TextSoft,
+            fontSize = SecondarySize,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 420.dp)
+        ) {
+            Suggestions.forEach { suggestion ->
+                Text(
+                    suggestion,
+                    color = TextHigh,
+                    fontSize = SecondarySize,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = MinTouchTarget)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(FieldSurface)
+                        .border(1.dp, CardStroke, RoundedCornerShape(16.dp))
+                        .clickable(role = Role.Button) { onSuggestion(suggestion) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
-    val bubbleColor = if (message.isUser) Color(0xFF123C3B) else Color(0xFF0E1621)
-    Row(
+    // A streaming reply starts empty; the busy indicator covers that moment.
+    if (!message.isUser && !message.isError && message.text.isBlank() && message.imageUri == null) return
+
+    val isUser = message.isUser
+    val shape = RoundedCornerShape(
+        topStart = 20.dp,
+        topEnd = 20.dp,
+        bottomStart = if (isUser) 20.dp else 4.dp,
+        bottomEnd = if (isUser) 4.dp else 20.dp
+    )
+    val background = when {
+        message.isError -> ErrorBubble
+        isUser -> UserBubble
+        else -> AssistantBubble
+    }
+
+    BoxWithConstraints(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+        contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
         Column(
-            Modifier.fillMaxWidth(0.88f).clip(RoundedCornerShape(18.dp)).background(bubbleColor)
-                .padding(horizontal = 14.dp, vertical = 11.dp)
+            Modifier
+                .widthIn(max = minOf(maxWidth * 0.88f, MaxBubbleWidth))
+                .clip(shape)
+                .background(background)
+                .then(if (message.isError) Modifier.border(1.dp, ErrorStroke, shape) else Modifier)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             if (message.text.isNotBlank()) {
-                Text(message.text, color = if (message.isError) Color(0xFFFF9F9F) else TextHigh, fontSize = 14.sp, lineHeight = 20.sp)
-            }
-            message.imageUri?.let { imageUri ->
-                val canOpenExternally = imageUri.startsWith("content://")
-                if (message.text.isNotBlank()) Spacer(Modifier.height(9.dp))
-                AsyncImage(
-                    model = Uri.parse(imageUri),
-                    contentDescription = if (message.isUser) "Attached photo" else "Generated image",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .then(if (canOpenExternally) Modifier.clickable { onOpenImage(imageUri) } else Modifier)
-                )
-                // Only generated images carry a save location; attached photos
-                // just show inline (tap to open when the system can resolve them).
-                if (message.imageSavedTo != null) {
-                    Spacer(Modifier.height(6.dp))
+                SelectionContainer {
                     Text(
-                        "Saved to ${message.imageSavedTo ?: "Pictures/Thrisa"}" + if (canOpenExternally) " · tap to open" else "",
-                        color = TextSoft,
-                        fontSize = 11.sp
+                        message.text,
+                        color = if (message.isError) ErrorText else TextHigh,
+                        fontSize = BodySize,
+                        lineHeight = BodyLineHeight
                     )
-                } else if (canOpenExternally) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Tap to open", color = TextSoft, fontSize = 11.sp)
                 }
             }
+            message.imageUri?.let { imageUri ->
+                MessageImage(
+                    imageUri = imageUri,
+                    isUser = isUser,
+                    savedTo = message.imageSavedTo,
+                    hasText = message.text.isNotBlank(),
+                    onOpenImage = onOpenImage
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun MessageImage(
+    imageUri: String,
+    isUser: Boolean,
+    savedTo: String?,
+    hasText: Boolean,
+    onOpenImage: (String) -> Unit,
+) {
+    val canOpen = imageUri.startsWith("content://")
+    if (hasText) Spacer(Modifier.height(10.dp))
+    AsyncImage(
+        model = imageUri.toUri(),
+        contentDescription = if (isUser) "Attached photo" else "Generated image",
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 380.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .then(if (canOpen) Modifier.clickable { onOpenImage(imageUri) } else Modifier)
+    )
+
+    // Only generated images carry a save location.
+    val caption = when {
+        savedTo != null -> "Saved to $savedTo" + if (canOpen) " · tap to open" else ""
+        canOpen -> "Tap to open"
+        else -> null
+    }
+    caption?.let {
+        Spacer(Modifier.height(8.dp))
+        Text(it, color = TextSoft, fontSize = CaptionSize, lineHeight = 16.sp)
     }
 }

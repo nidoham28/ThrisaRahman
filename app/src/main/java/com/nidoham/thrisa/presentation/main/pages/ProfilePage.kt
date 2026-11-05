@@ -1,4 +1,4 @@
-package presentation.main.pages
+package com.nidoham.thrisa.presentation.main.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,7 +19,5 @@ fun ProfilePage() {
         Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Your profile", color = TextHigh, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Text("Manage your personal details and preferences.", color = TextSoft, fontSize = 14.sp)
     }
 }

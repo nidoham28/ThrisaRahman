@@ -1,4 +1,4 @@
-package presentation.main.pages
+package com.nidoham.thrisa.presentation.main.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,7 +16,9 @@ import androidx.compose.material.icons.outlined.WbCloudy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,41 +33,110 @@ import com.nidoham.thrisa.presentation.main.component.HeroCard
 import com.nidoham.thrisa.presentation.main.component.InfoCard
 import com.nidoham.thrisa.presentation.main.component.InspirationCard
 
+/** Minimal weather model for the Home card. Replace with your real domain type when available. */
+data class WeatherSummary(val condition: String, val temperatureC: Int)
+
+private val CardGap = 10.dp
+private val HeroMinHeight = 180.dp
+private val SmallIconSize = 14.dp
+private const val Placeholder = "—"
+
 @Composable
-fun HomePage(voice: VoiceState, displayName: String = "User") {
-    val todayInfo = currentDateInfo()
-    val date = todayInfo.dayNumber.toString()
-    val info = "${todayInfo.dayName}, ${todayInfo.month}"
+fun HomePage(
+    voice: VoiceState,
+    displayName: String = "User",
+    weather: WeatherSummary? = null,
+    mood: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val today = remember { currentDateInfo() }
+    val dateLabel = "${today.dayName}, ${today.month}"
 
     Column(
-        Modifier.fillMaxSize()
+        modifier
+            .fillMaxSize()
             .padding(horizontal = Dim.ScreenPad)
             .padding(bottom = Dim.Gap),
         verticalArrangement = Arrangement.spacedBy(Dim.Gap)
     ) {
-        // Hero takes all remaining vertical space after the other sections are laid out.
-        HeroCard(voice, Modifier.fillMaxWidth().weight(1f), displayName = displayName)
+        // The hero takes whatever vertical space the cards below leave over,
+        // but never collapses on small screens.
+        HeroCard(
+            voice,
+            Modifier.fillMaxWidth().heightIn(min = HeroMinHeight).weight(1f),
+            displayName = displayName
+        )
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CardRow {
             inspirations.forEach { InspirationCard(it, Modifier.weight(1f)) }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            InfoCard("Weather", "Partly cloudy", Modifier.weight(1f)) {
-                Icon(Icons.Outlined.WbCloudy, null, tint = Aqua, modifier = Modifier.size(Dim.IconCard))
-                Spacer(Modifier.width(6.dp))
-                Text("18°", color = TextHigh, fontSize = 28.sp, fontWeight = FontWeight.Light)
-            }
-            InfoCard("Today", info, Modifier.weight(1f)) {
-                Text(date, color = TextHigh, fontSize = 28.sp, fontWeight = FontWeight.Light, maxLines = 1)
-            }
+
+        CardRow {
             InfoCard(
-                title = "Mood", caption = "Everything good", modifier = Modifier.weight(1f),
-                titleTrailing = { Icon(Icons.Outlined.EmojiEmotions, null, tint = Lilac, modifier = Modifier.size(14.dp)) }
+                title = "Weather",
+                caption = weather?.condition ?: "Unavailable",
+                modifier = Modifier.weight(1f)
             ) {
-                Text("Good", color = Lilac, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold)
+                Icon(
+                    Icons.Outlined.WbCloudy,
+                    contentDescription = null,
+                    tint = Aqua,
+                    modifier = Modifier.size(Dim.IconCard)
+                )
+                Spacer(Modifier.width(6.dp))
+                MetricText(weather?.let { "${it.temperatureC}°" } ?: Placeholder)
+            }
+
+            InfoCard(
+                title = "Today",
+                caption = dateLabel,
+                modifier = Modifier.weight(1f)
+            ) {
+                MetricText(today.dayNumber.toString())
+            }
+
+            InfoCard(
+                title = "Mood",
+                caption = if (mood == null) "Not set" else "Feeling today",
+                modifier = Modifier.weight(1f),
+                titleTrailing = {
+                    Icon(
+                        Icons.Outlined.EmojiEmotions,
+                        contentDescription = null,
+                        tint = Lilac,
+                        modifier = Modifier.size(SmallIconSize)
+                    )
+                }
+            ) {
+                Text(
+                    mood ?: Placeholder,
+                    color = Lilac,
+                    fontSize = 15.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
             }
         }
-
-        Spacer(Modifier.height(10.dp))
     }
+}
+
+/** Equal-width row of cards with consistent spacing. */
+@Composable
+private fun CardRow(content: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(CardGap)
+    ) { content() }
+}
+
+@Composable
+private fun MetricText(text: String, color: Color = TextHigh) {
+    Text(
+        text,
+        color = color,
+        fontSize = 28.sp,
+        fontWeight = FontWeight.Light,
+        maxLines = 1
+    )
 }
