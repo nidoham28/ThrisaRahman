@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.nidoham.thrisa.ai.AssistantApiService
 import com.nidoham.thrisa.core.config.API_KEYS
 import com.nidoham.thrisa.core.prompt.Instructions
+import com.nidoham.thrisa.core.prompt.InstructionsConfig
 import com.nidoham.thrisa.core.service.image.InlineImage
 import com.nidoham.thrisa.core.tools.executor.BuiltinToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
@@ -95,11 +96,14 @@ class AssistantViewModel(
     init { refreshSettings() }
 
     private fun buildInstructions(): String = Instructions(
-        locale = activeLanguage.code,
-        relationType = activeRelationType,
-        assistantName = activeAssistantName,
-        userName = activeUserName,
-        userGender = activeUserGender,
+        InstructionsConfig(
+            assistantName = activeAssistantName,
+            language = activeLanguage.code,
+            relationship = activeRelationType.name, // or a label/description property if your enum has one
+            userName = activeUserName,
+            userContext = if (activeUserGender.isNotBlank()) "Gender: $activeUserGender" else "",
+            voiceMode = false, // wire to your voice setting if you have one
+        )
     ).build()
 
     /** Reload the relationship instructions whenever the user changes the setting. */
