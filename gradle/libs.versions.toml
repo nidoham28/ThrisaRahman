@@ -1,21 +1,25 @@
 [versions]
 agp = "9.5.0"
+bom = "3.9.0"
 coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
+ktorClientAndroid = "3.6.1"
 lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.13.0"
 kotlin = "2.4.21"
 composeBom = "2026.02.01"
 
 # ai / common modules
+navigationCompose = "2.10.2"
 okhttp = "5.5.0"
 serializationJson = "1.12.0"
 kotlinxCoroutines = "1.11.0"
 kotlinxDatetime = "0.8.0"
 commonsText = "1.15.0"
 quickjs = "1.0.15"
+coil = "3.6.3"
 
 # speech module
 media3 = "1.11.1"
@@ -24,7 +28,13 @@ media3 = "1.11.1"
 jsoup = "1.21.1"
 
 [libraries]
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+auth-kt = { module = "io.github.jan-tennert.supabase:auth-kt" }
+bom = { module = "io.github.jan-tennert.supabase:bom", version.ref = "bom" }
+functions-kt = { module = "io.github.jan-tennert.supabase:functions-kt" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -40,6 +50,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 
 # ai / common modules
+ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktorClientAndroid" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
@@ -48,6 +59,7 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinxDatetime" }
 commons-text = { group = "org.apache.commons", name = "commons-text", version.ref = "commonsText" }
+postgrest-kt = { module = "io.github.jan-tennert.supabase:postgrest-kt" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
 
 # speech module
@@ -58,6 +70,8 @@ androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "medi
 
 # search module
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+realtime-kt = { module = "io.github.jan-tennert.supabase:realtime-kt" }
+storage-kt = { module = "io.github.jan-tennert.supabase:storage-kt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
