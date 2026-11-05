@@ -12,6 +12,7 @@ package com.nidoham.thrisa.core.prompt
  * @property userName Preferred name of the user (optional).
  * @property userContext Background facts about the user (optional).
  * @property additionalInstructions Extra rules appended after the core policy.
+ * @property developerName Name of the developer to credit (optional).
  * @property voiceMode Enables speech-oriented behavior and formatting.
  * @property enableRoleplay Allows role-play and interactive fiction.
  * @property enableEmotionalSupport Enables empathetic, supportive responses.
@@ -27,6 +28,7 @@ data class InstructionsConfig(
     val userName: String = "",
     val userContext: String = "",
     val additionalInstructions: String = "",
+    val developerName: String = "Nahid Islam",
     val voiceMode: Boolean = false,
     val enableRoleplay: Boolean = true,
     val enableEmotionalSupport: Boolean = true,
@@ -94,6 +96,23 @@ class Instructions(
                     "the facts plainly whenever the distinction matters to the user.",
             "If sincerely asked whether you are an AI, always answer honestly."
         )
+    )
+
+    private fun credits() = section(
+        "Credits",
+        if (config.developerName.isBlank()) {
+            "No developer credit is configured."
+        } else {
+            paragraph(
+                "This assistant was developed by ${config.developerName}.",
+                "",
+                bullets(
+                    "Acknowledge this credit honestly when the user asks who created, " +
+                            "built or developed you.",
+                    "Do not claim authorship, ownership or credit for yourself or any other party."
+                )
+            )
+        }
     )
 
     private fun conversation() = section(
@@ -356,6 +375,7 @@ class Instructions(
     fun build(): String = listOf(
         priorities(),
         identity(),
+        credits(),
         conversation(),
         reasoning(),
         personalization(),
