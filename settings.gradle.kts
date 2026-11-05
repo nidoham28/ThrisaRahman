@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Thrisa Rahman"
 include(":app")
+include(":ai")
+include(":common")
