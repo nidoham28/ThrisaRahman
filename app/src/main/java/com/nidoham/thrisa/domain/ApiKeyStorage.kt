@@ -27,22 +27,32 @@ class ApiKeyStorage(context: Context) {
             Context.MODE_PRIVATE
         )
 
+    /** Reads the saved key directly (plaintext), falling back to the pre-vault entry. */
     fun getApiKey(provider: String, userId: String): String? {
         val selected = AssistantProvider.entries.firstOrNull {
             it.name.equals(provider, ignoreCase = true)
         } ?: return null
-        return ProviderCredentialSession.getKey(userId, selected)
+        return prefs.getString(apiKeyKey(selected, userId), null)
+            ?.takeIf(String::isNotBlank)
+            ?: prefs.getString("key_${selected.name}", null)?.takeIf(String::isNotBlank)
     }
 
-    fun getSelectedProvider(userId: String? = null): AssistantProvider {
-        if (userId != null) {
-            ProviderCredentialSession.activeProvider(userId)?.let { return it }
-            return AssistantProvider.fromStorageValue(
-                prefs.getString(selectedProviderKey(userId), null)
-            )
+    /** Saves the key as-is; blank values remove the entry. */
+    fun saveApiKey(provider: String, userId: String, key: String) {
+        val selected = AssistantProvider.entries.firstOrNull {
+            it.name.equals(provider, ignoreCase = true)
+        } ?: return
+        val cleaned = key.trim()
+        prefs.edit {
+            if (cleaned.isBlank()) remove(apiKeyKey(selected, userId))
+            else putString(apiKeyKey(selected, userId), cleaned)
         }
-        return AssistantProvider.fromStorageValue(prefs.getString(SELECTED_PROVIDER_KEY, null))
     }
+
+    fun getSelectedProvider(userId: String? = null): AssistantProvider =
+        AssistantProvider.fromStorageValue(
+            prefs.getString(selectedProviderKey(userId), null)
+        )
 
     fun saveSelectedProvider(provider: AssistantProvider, userId: String? = null) {
         val key = userId?.let(::selectedProviderKey) ?: SELECTED_PROVIDER_KEY
@@ -58,25 +68,16 @@ class ApiKeyStorage(context: Context) {
         prefs.edit { putString(openRouterModelKey(userId), modelId.trim()) }
     }
 
-    internal fun legacyCredentials(): Map<AssistantProvider, String> =
-        AssistantProvider.entries.mapNotNull { provider ->
-            prefs.getString("key_${provider.name}", null)
-                ?.takeIf(String::isNotBlank)
-                ?.let { provider to it }
-        }.toMap()
-
-    internal fun clearLegacyCredentials() {
-        val editor = prefs.edit()
-        AssistantProvider.entries.forEach { editor.remove("key_${it.name}") }
-        check(editor.commit()) { "Could not remove the old unencrypted API keys." }
-    }
-
     private companion object {
         const val PREFS_NAME = "api_key_prefs"
         const val SELECTED_PROVIDER_KEY = "selected_provider"
 
-        fun selectedProviderKey(userId: String) =
-            "selected_provider_${userId.lowercase(Locale.ROOT)}"
+        fun selectedProviderKey(userId: String?) =
+            userId?.let { "selected_provider_${it.lowercase(Locale.ROOT)}" }
+                ?: SELECTED_PROVIDER_KEY
+
+        fun apiKeyKey(provider: AssistantProvider, userId: String) =
+            "key_${provider.name}_${userId.lowercase(Locale.ROOT)}"
 
         fun openRouterModelKey(userId: String?) =
             userId?.let { "openrouter_model_${it.lowercase(Locale.ROOT)}" } ?: "openrouter_model"

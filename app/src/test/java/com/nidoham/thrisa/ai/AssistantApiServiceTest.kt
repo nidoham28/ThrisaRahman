@@ -13,11 +13,79 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import com.nidoham.thrisa.domain.AssistantProvider
+import okhttp3.Request
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AssistantApiServiceTest {
+    @Test
+    fun `normalizes OpenRouter authorization to one bearer header`() {
+        val request = Request.Builder()
+            .url("https://openrouter.ai/api/v1/chat/completions")
+            .addHeader("Authorization", "Bearer old-key")
+            .addHeader("Authorization", "Bearer openrouter-key")
+            .build()
+
+        val normalized = normalizeOpenRouterAuthorization(request)
+
+        assertEquals(
+            listOf("Bearer openrouter-key"),
+            normalized.headers.values("Authorization"),
+        )
+    }
+
+    @Test
+    fun `normalizes doubled Bearer prefix in authorization header`() {
+        val request = Request.Builder()
+            .url("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", "Bearer Bearer sk-or-v1-abc")
+            .build()
+
+        val normalized = normalizeOpenRouterAuthorization(request)
+
+        assertEquals(
+            listOf("Bearer sk-or-v1-abc"),
+            normalized.headers.values("Authorization"),
+        )
+    }
+
+    @Test
+    fun `sanitizes pasted OpenRouter keys`() {
+        assertEquals(
+            "sk-or-v1-abc",
+            sanitizeOpenRouterApiKey("Bearer Bearer \"sk-or-v1-abc\""),
+        )
+        assertEquals(
+            "sk-or-v1-abc",
+            sanitizeOpenRouterApiKey("  bearer sk-or-v1-abc  "),
+        )
+        assertEquals(
+            "sk-or-v1-abc",
+            sanitizeOpenRouterApiKey("sk-or-v1-abc"),
+        )
+    }
+
+    @Test
+    fun `uses sanitized OpenRouter key in provider settings`() {
+        val setting = createAssistantProviderSetting(
+            provider = AssistantProvider.OPENROUTER,
+            apiKey = "Bearer \"sk-or-v1-abc\"",
+        ) as ProviderSetting.OpenAI
+
+        assertEquals("sk-or-v1-abc", setting.apiKey)
+    }
+
+    @Test
+    fun `does not modify authorization for other hosts`() {
+        val request = Request.Builder()
+            .url("https://generativelanguage.googleapis.com/v1beta")
+            .addHeader("Authorization", "Bearer gemini-key")
+            .build()
+
+        assertEquals(request, normalizeOpenRouterAuthorization(request))
+    }
+
     @Test
     fun `uses OpenRouter OpenAI-compatible chat settings`() {
         val setting = createAssistantProviderSetting(

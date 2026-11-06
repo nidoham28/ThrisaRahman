@@ -1,3 +1,5 @@
+NOTICE: AI only update app  module. other module completely locked. AI use read and call functions inside app module.
+
 # terminal
 
 终端模拟器核心, 供工作区终端页使用。界面部分 (`TerminalView`) 仍使用上游的 `terminal-view` aar。

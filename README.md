@@ -1,0 +1,1 @@
+NOTICE: AI only update app  module. other module completely locked. AI use read and call functions inside app module.

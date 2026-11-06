@@ -2,10 +2,12 @@ package com.nidoham.thrisa.core.tools.executor
 
 import android.content.Context
 import com.nidoham.thrisa.core.database.alarm.SqliteAlarmDatabase
-import com.nidoham.thrisa.core.database.memory.SqliteMemoryDatabase
+import com.nidoham.thrisa.core.database.memory.MemoryRepository
 import com.nidoham.thrisa.core.database.note.SqliteNoteDatabase
-import com.nidoham.thrisa.core.database.reminder.SqliteReminderDatabase
+import com.nidoham.thrisa.core.database.reminder.ReminderRepository
 import com.nidoham.thrisa.core.database.todo.SqliteTodoDatabase
+import com.nidoham.thrisa.core.sync.SupabaseMemoryRepository
+import com.nidoham.thrisa.core.sync.SupabaseReminderRepository
 import com.nidoham.thrisa.core.tools.ToolRegistry
 import com.nidoham.thrisa.core.tools.executor.AlarmToolExecutor.executeCreateAlarm
 import com.nidoham.thrisa.core.tools.executor.AlarmToolExecutor.executeDeleteAlarm
@@ -86,11 +88,15 @@ object BuiltinToolExecutor {
 
     /**
      * Creates a tool executor that has access to an Android [Context],
-     * required by device/battery, applications, media playback/volume, device toggles, calendar, alarms, persistent memory, reminder, notes, and todo tools.
+     * required by device/battery, applications, media playback/volume, device toggles, calendar, alarms, notes, and todo tools.
+     *
+     * Memory and reminder tools are cloud-only: they read and write the
+     * Supabase `user_memories` / `user_schedule` tables as the signed-in user.
      */
     fun executor(context: Context): suspend (FunctionCall) -> JsonObject {
-        val memoryRepo = SqliteMemoryDatabase.getInstance(context)
-        val reminderRepo = SqliteReminderDatabase.getInstance(context)
+        val memoryRepo: MemoryRepository = SupabaseMemoryRepository.getInstance()
+        val reminderRepo: ReminderRepository = SupabaseReminderRepository.getInstance()
+
         val noteRepo = SqliteNoteDatabase.getInstance(context)
         val todoRepo = SqliteTodoDatabase.getInstance(context)
         val alarmRepo = SqliteAlarmDatabase.getInstance(context)

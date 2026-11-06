@@ -7,7 +7,6 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.exceptions.HttpRequestException
-import com.nidoham.thrisa.domain.ProviderCredentialSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 
@@ -70,7 +69,6 @@ class SupabaseAuthService(
 
     suspend fun login(email: String, password: String): Result<Unit> =
         suspendRunCatching {
-            ProviderCredentialSession.lock()
             auth.signInWith(Email) {
                 this.email = email.trim()
                 this.password = password
@@ -79,7 +77,6 @@ class SupabaseAuthService(
 
     suspend fun register(email: String, password: String): Result<RegisterResult> =
         suspendRunCatching {
-            ProviderCredentialSession.lock()
             auth.signUpWith(Email) {
                 this.email = email.trim()
                 this.password = password
@@ -91,7 +88,6 @@ class SupabaseAuthService(
     suspend fun logout(): Result<Unit> =
         suspendRunCatching {
             auth.signOut()
-            ProviderCredentialSession.lock()
         }
 
     // -------------------------------------------------------------------------

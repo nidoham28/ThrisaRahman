@@ -1,3 +1,5 @@
+NOTICE: AI only update app  module. other module completely locked. AI use read and call functions inside app module.
+
 # Supabase user schema
 
 The executable schema and access rules are maintained in these migrations:

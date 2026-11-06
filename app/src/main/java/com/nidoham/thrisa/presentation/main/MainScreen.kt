@@ -30,7 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nidoham.thrisa.core.database.reminder.ReminderStatus
-import com.nidoham.thrisa.core.database.reminder.SqliteReminderDatabase
+import com.nidoham.thrisa.core.sync.SupabaseReminderRepository
 import com.nidoham.thrisa.core.service.CloudSettingsRepository
 import com.nidoham.thrisa.core.service.InMemoryCloudSettingsLocalStore
 import com.nidoham.thrisa.core.service.SupabaseAuthService
@@ -122,7 +122,8 @@ fun MainScreen(
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
 
     // --- Reminders ------------------------------------------------------------
-    val reminderRepository = remember { SqliteReminderDatabase.getInstance(appContext) }
+    val reminderRepository = remember { SupabaseReminderRepository.getInstance() }
+    LaunchedEffect(reminderRepository) { reminderRepository.refresh() }
     val reminders by reminderRepository.observeAll().collectAsStateWithLifecycle()
     val upcomingReminders = remember(reminders) {
         reminders

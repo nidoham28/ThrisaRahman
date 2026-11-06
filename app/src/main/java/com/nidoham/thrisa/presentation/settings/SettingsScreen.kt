@@ -128,8 +128,7 @@ import com.nidoham.thrisa.core.service.CloudSettingsSyncResult
 import com.nidoham.thrisa.core.service.InMemoryCloudSettingsLocalStore
 import com.nidoham.thrisa.core.service.SupabaseCloudSettingsRemoteStore
 import com.nidoham.thrisa.core.service.SupabaseAuthService
-import com.nidoham.thrisa.core.service.ProviderCredentialVault
-import com.nidoham.thrisa.core.service.ProviderVaultOpenResult
+import com.nidoham.thrisa.core.sync.SupabaseApiKeyStore
 import com.nidoham.thrisa.core.sound.SpeechEngine
 import com.nidoham.thrisa.core.theme.Aqua
 import com.nidoham.thrisa.core.theme.CardStroke
@@ -290,14 +289,14 @@ private class SettingsState(
         AssistantProvider.OPENROUTER -> openRouterKey
     }
 
-    fun applyCredentials(credentials: Map<AssistantProvider, String>) {
-        geminiKey = credentials[AssistantProvider.GEMINI].orEmpty()
-        openRouterKey = credentials[AssistantProvider.OPENROUTER].orEmpty()
-    }
-
-    fun clearCredentials() {
-        geminiKey = ""
-        openRouterKey = ""
+    /** Saves the key directly (plaintext SharedPreferences) and updates the UI state. */
+    fun saveApiKey(provider: AssistantProvider, value: String) {
+        val cleaned = value.trim()
+        when (provider) {
+            AssistantProvider.GEMINI -> geminiKey = cleaned
+            AssistantProvider.OPENROUTER -> openRouterKey = cleaned
+        }
+        userId?.let { storage.saveApiKey(provider.name, it, cleaned) }
     }
 
     fun saveProvider(provider: AssistantProvider, userId: String?) {
@@ -405,9 +404,6 @@ fun SettingsScreen(
     val authService = remember { SupabaseAuthService() }
     val userId = authService.currentUser()?.id
     val state = remember(storage, userId) { SettingsState(storage, context.applicationContext, userId) }
-    val providerCredentialVault = remember(context) {
-        ProviderCredentialVault(context.applicationContext)
-    }
     val cloudSettingsRepository = remember(context) {
         CloudSettingsRepository(
             local = InMemoryCloudSettingsLocalStore(context.applicationContext),
@@ -416,15 +412,8 @@ fun SettingsScreen(
         )
     }
     val coroutineScope = rememberCoroutineScope()
+    val apiKeySync = remember(context) { SupabaseApiKeyStore() }
     var cloudSyncError by remember { mutableStateOf<String?>(null) }
-    var vaultUnlocked by remember(userId) {
-        mutableStateOf(userId?.let(providerCredentialVault::isUnlocked) == true)
-    }
-    var showPinDialog by remember { mutableStateOf(false) }
-    var pinConfirmationRequired by remember { mutableStateOf(false) }
-    var pinDialogError by remember { mutableStateOf<String?>(null) }
-    var pinDialogBusy by remember { mutableStateOf(false) }
-    var legacyKeyCount by remember { mutableIntStateOf(0) }
 
     var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var editingProvider by remember { mutableStateOf<AssistantProvider?>(null) }
@@ -483,95 +472,30 @@ fun SettingsScreen(
         }
     }
 
-    fun applyVaultResult(result: ProviderVaultOpenResult) {
-        when (result) {
-            is ProviderVaultOpenResult.SetupRequired -> {
-                pinConfirmationRequired = true
-                legacyKeyCount = result.legacyKeyCount
-                pinDialogError = if (result.legacyKeyCount > 0) {
-                    "Create an 8-digit-or-longer PIN. Confirm below before migrating the existing keys."
-                } else {
-                    "Create an 8-digit-or-longer PIN to protect provider keys across your devices."
-                }
-            }
-            is ProviderVaultOpenResult.Unlocked -> {
-                vaultUnlocked = true
-                pinConfirmationRequired = false
-                state.applyCredentials(result.credentials)
-                state.saveProvider(result.activeProvider, userId)
-                pinDialogError = null
-                if (result.warning != null) {
-                    Toast.makeText(context, result.warning, Toast.LENGTH_LONG).show()
-                }
-                showPinDialog = false
-            }
-            is ProviderVaultOpenResult.Failed -> {
-                pinDialogError = result.message
-            }
-        }
-    }
-
-    fun openCredentialVault(
-        pin: String,
-        confirmation: String?,
-        legacyOwnershipConfirmed: Boolean,
-    ) {
-        val uid = userId
-        if (uid == null) {
-            pinDialogError = "Sign in before unlocking provider credentials."
-            return
-        }
-        coroutineScope.launch {
-            pinDialogBusy = true
-            val pinChars = pin.toCharArray()
-            val confirmationChars = confirmation?.toCharArray()
-            try {
-                applyVaultResult(
-                    providerCredentialVault.open(
-                        uid,
-                        pinChars,
-                        confirmationChars,
-                        legacyOwnershipConfirmed,
-                    )
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                pinDialogError = e.message ?: "Couldn't open provider credentials."
-            } finally {
-                pinChars.fill('\u0000')
-                confirmationChars?.fill('\u0000')
-                pinDialogBusy = false
-            }
-        }
-    }
-
+    /** Saves the key locally and pushes it to the cloud for every device. */
     fun saveProviderCredential(provider: AssistantProvider, key: String) {
         val uid = userId
         if (uid == null) {
             Toast.makeText(context, "Sign in before saving provider keys.", Toast.LENGTH_LONG).show()
             return
         }
+        try {
+            state.saveApiKey(provider, key)
+            editingProvider = null
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                e.message ?: "Couldn't save the provider key.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
         coroutineScope.launch {
-            try {
-                when (val result = providerCredentialVault.saveKey(uid, provider, key)) {
-                    is ProviderVaultOpenResult.Unlocked -> {
-                        state.applyCredentials(result.credentials)
-                        result.warning?.let {
-                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-                        }
-                        editingProvider = null
-                    }
-                    is ProviderVaultOpenResult.Failed ->
-                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                    is ProviderVaultOpenResult.SetupRequired -> Unit
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            val synced = if (key.isBlank()) apiKeySync.delete(provider) else apiKeySync.push(provider, key)
+            if (!synced) {
                 Toast.makeText(
                     context,
-                    e.message ?: "Couldn't save the encrypted provider key.",
+                    "Key saved on this device, but cloud sync failed.",
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -579,55 +503,21 @@ fun SettingsScreen(
     }
 
     fun chooseActiveProvider(provider: AssistantProvider) {
-        val uid = userId
-        if (uid == null || !vaultUnlocked) {
-            pinDialogError = "Unlock provider credentials before changing the active provider."
-            showPinDialog = true
-            return
-        }
-        coroutineScope.launch {
-            try {
-                when (val result = providerCredentialVault.setActiveProvider(uid, provider)) {
-                    is ProviderVaultOpenResult.Unlocked -> {
-                        state.saveProvider(result.activeProvider, uid)
-                        result.warning?.let {
-                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    is ProviderVaultOpenResult.Failed ->
-                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                    is ProviderVaultOpenResult.SetupRequired -> Unit
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Toast.makeText(
-                    context,
-                    e.message ?: "Couldn't save the active provider.",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
-
-    fun toggleCredentialVault() {
-        if (vaultUnlocked && userId != null) {
-            providerCredentialVault.lock(userId)
-            state.clearCredentials()
-            vaultUnlocked = false
-            pinConfirmationRequired = false
-            pinDialogError = null
-            legacyKeyCount = 0
-        } else {
-            pinConfirmationRequired = false
-            pinDialogError = null
-            legacyKeyCount = 0
-            showPinDialog = true
-        }
+        state.saveProvider(provider, userId)
     }
 
     LaunchedEffect(Unit) {
         synchronizeCloudSettings()
+    }
+
+    // Cloud is the source of truth for provider keys: pull on entry so keys
+    // saved on another device (or a fresh install) appear here.
+    LaunchedEffect(userId) {
+        val uid = userId ?: return@LaunchedEffect
+        val cloudKeys = apiKeySync.fetchAll()
+        if (cloudKeys.isNotEmpty()) {
+            cloudKeys.forEach { (provider, key) -> state.saveApiKey(provider, key) }
+        }
     }
 
     LaunchedEffect(refreshPermissionsTrigger) {
@@ -773,18 +663,8 @@ fun SettingsScreen(
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         onNavigate = onNavigate,
-        vaultUnlocked = vaultUnlocked,
-        onToggleCredentialVault = ::toggleCredentialVault,
         onSaveActiveProvider = ::chooseActiveProvider,
-        onEditKey = {
-            if (vaultUnlocked) {
-                editingProvider = it
-            } else {
-                pinConfirmationRequired = false
-                pinDialogError = null
-                showPinDialog = true
-            }
-        },
+        onEditKey = { editingProvider = it },
         onEditField = { editingField = it },
         onSaveGender = { value ->
             state.saveGender(value)
@@ -865,22 +745,6 @@ fun SettingsScreen(
                 saveProviderCredential(provider, "")
             },
             onDismiss = { editingProvider = null }
-        )
-    }
-
-    if (showPinDialog) {
-        ProviderPinDialog(
-            confirmationRequired = pinConfirmationRequired,
-            legacyKeyCount = legacyKeyCount,
-            error = pinDialogError,
-            busy = pinDialogBusy,
-            onSubmit = ::openCredentialVault,
-            onDismiss = {
-                showPinDialog = false
-                pinConfirmationRequired = false
-                pinDialogError = null
-                legacyKeyCount = 0
-            },
         )
     }
 
@@ -1136,8 +1000,6 @@ private fun buildTree(
     permissionStatus: PermissionStatus,
     permissionActions: PermissionActions,
     onNavigate: (SettingsDestination) -> Unit,
-    vaultUnlocked: Boolean,
-    onToggleCredentialVault: () -> Unit,
     onSaveActiveProvider: (AssistantProvider) -> Unit,
     onEditKey: (AssistantProvider) -> Unit,
     onEditField: (EditField) -> Unit,
@@ -1281,23 +1143,6 @@ private fun buildTree(
             icon = Icons.Outlined.VpnKey,
             children = listOf(
                 SettingsNode.Item(
-                    id = "provider-vault",
-                    title = if (vaultUnlocked) "Lock provider keys" else "Unlock provider keys",
-                    subtitle = if (vaultUnlocked) {
-                        "Keys are unlocked for this signed-in session"
-                    } else {
-                        "Enter your PIN to unlock encrypted keys"
-                    },
-                    icon = Icons.Outlined.Lock,
-                    onClick = onToggleCredentialVault,
-                    trailing = {
-                        TrailingBadge(
-                            text = if (vaultUnlocked) "UNLOCKED" else "LOCKED",
-                            accent = if (vaultUnlocked) Success else Aqua,
-                        )
-                    },
-                ),
-                SettingsNode.Item(
                     id = "provider",
                     title = "Provider",
                     subtitle = "Choose your default",
@@ -1321,16 +1166,13 @@ private fun buildTree(
                                     id = "key-${provider.name.lowercase()}",
                                     title = "${provider.displayName} API Key",
                                     subtitle = when {
-                                        !vaultUnlocked -> "Locked"
                                         state.keyFor(provider).isBlank() -> "Not configured"
-                                        else -> "Encrypted and configured"
+                                        else -> "Configured"
                                     },
                                     icon = Icons.Outlined.Key,
                                     onClick = { onEditKey(provider) },
                                     trailing = {
-                                        if (!vaultUnlocked) {
-                                            TrailingBadge("LOCKED", TextSoft)
-                                        } else if (state.keyFor(provider).isBlank()) {
+                                        if (state.keyFor(provider).isBlank()) {
                                             TrailingBadge("SET UP", Aqua)
                                         } else {
                                             TrailingBadge("SAVED", Success)
@@ -2122,128 +1964,6 @@ private fun RelationTypeDropdown(
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun ProviderPinDialog(
-    confirmationRequired: Boolean,
-    legacyKeyCount: Int,
-    error: String?,
-    busy: Boolean,
-    onSubmit: (String, String?, Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var pin by remember(confirmationRequired) { mutableStateOf("") }
-    var confirmation by remember(confirmationRequired) { mutableStateOf("") }
-    var legacyOwnershipConfirmed by remember(confirmationRequired) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = RowSurface,
-        title = {
-            Text(
-                if (confirmationRequired) "Set provider PIN" else "Unlock provider keys",
-                color = TextHigh,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
-        text = {
-            Column {
-                Text(
-                    if (confirmationRequired) {
-                        "Choose a PIN with at least 8 digits. It is never uploaded. If forgotten, encrypted keys cannot be recovered."
-                    } else {
-                        "Enter your PIN to decrypt your provider keys on this device. The PIN is never uploaded."
-                    },
-                    color = TextSoft,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { value ->
-                        if (value.all(Char::isDigit) && value.length <= 32) pin = value
-                    },
-                    enabled = !busy,
-                    singleLine = true,
-                    label = { Text("PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (confirmationRequired) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = confirmation,
-                        onValueChange = { value ->
-                            if (value.all(Char::isDigit) && value.length <= 32) confirmation = value
-                        },
-                        enabled = !busy,
-                        singleLine = true,
-                        label = { Text("Confirm PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                if (confirmationRequired && legacyKeyCount > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = legacyOwnershipConfirmed,
-                            onCheckedChange = { legacyOwnershipConfirmed = it },
-                            enabled = !busy,
-                        )
-                        Text(
-                            "I confirm these $legacyKeyCount saved keys belong to this account.",
-                            color = TextSoft,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-                if (error != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(error, color = Color(0xFFFFB36B), fontSize = 12.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val submittedPin = pin
-                    val submittedConfirmation = confirmation.takeIf { confirmationRequired }
-                    pin = ""
-                    confirmation = ""
-                    onSubmit(
-                        submittedPin,
-                        submittedConfirmation,
-                        legacyOwnershipConfirmed,
-                    )
-                },
-                enabled = !busy && pin.length >= 8 &&
-                    (!confirmationRequired || confirmation.length >= 8) &&
-                    (legacyKeyCount == 0 || !confirmationRequired || legacyOwnershipConfirmed),
-            ) {
-                if (busy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = Aqua,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text(
-                        if (confirmationRequired) "Create PIN" else "Unlock",
-                        color = Aqua,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
-                Text("Cancel", color = TextSoft)
-            }
-        },
-    )
-}
-
-@Composable
 private fun ApiKeyDialog(
     provider: AssistantProvider,
     initialKey: String,
@@ -2262,7 +1982,7 @@ private fun ApiKeyDialog(
         text = {
             Column {
                 Text(
-                    "Your key is encrypted with your PIN before it is synced. The server stores only ciphertext.",
+                    "The key is stored on this device for your signed-in account.",
                     color = TextSoft, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(

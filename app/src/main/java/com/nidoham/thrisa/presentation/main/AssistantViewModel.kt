@@ -8,6 +8,7 @@ import com.nidoham.thrisa.core.prompt.Instructions
 import com.nidoham.thrisa.core.prompt.InstructionsConfig
 import com.nidoham.thrisa.core.service.image.InlineImage
 import com.nidoham.thrisa.core.service.SupabaseAuthService
+import com.nidoham.thrisa.core.sync.SupabaseApiKeyStore
 import com.nidoham.thrisa.core.tools.executor.BuiltinToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ScreenToolExecutor
@@ -17,7 +18,6 @@ import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.AssistantSettingsStorage
 import com.nidoham.thrisa.domain.UserSettingsStorage
-import com.nidoham.thrisa.domain.ProviderCredentialSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +48,46 @@ data class UiMessage(
     val imageSavedTo: String? = null,
 )
 
+internal fun resolveAssistantModelId(
+    provider: AssistantProvider,
+    configuredOpenRouterModelId: String?,
+): String = when (provider) {
+    AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
+    AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: AssistantApiService.DEFAULT_MODEL_OPENROUTER
+}
+
+/** OpenRouter response bodies that mean "the request carried no usable API key". */
+private val OPENROUTER_KEY_REJECTED = listOf(
+    "Missing Authentication header",
+    "No auth credentials found",
+    "No cookie auth credentials found",
+    "User not found",
+)
+
+/** Translates a chat failure into the text shown in the error bubble. */
+internal fun assistantErrorText(t: Throwable, provider: AssistantProvider): String {
+    val message = t.message.orEmpty()
+    return when {
+        // OpenRouter returns these bodies for unparseable or unknown keys;
+        // show what a correct key looks like instead of the raw API text.
+        provider == AssistantProvider.OPENROUTER &&
+            OPENROUTER_KEY_REJECTED.any { message.contains(it, ignoreCase = true) } ->
+            "OpenRouter rejected your API key. Save a valid key starting with " +
+                "sk-or- in Settings → AI Providers → Credentials.\n$message"
+        message.contains("401") || message.contains("403") ->
+            "Authentication failed. Check your ${provider.displayName} API key.\n$message"
+        message.contains("429") || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
+            "${provider.displayName} rate limit reached. Try again later.\n$message"
+        message.contains("timeout", ignoreCase = true) || t is java.io.IOException ->
+            "Network error. Check your connection and try again.\n$message"
+        message.isNotBlank() -> message
+        else -> "Unexpected error: ${t::class.simpleName}"
+    }
+}
+
 /**
  * Bridges the AI service and the Compose UI.
  *
@@ -57,7 +97,7 @@ data class UiMessage(
  * duplicated inside the prompt.
  *
  * Existing behaviour preserved:
- *  - the API key comes from the user's saved Gemini provider settings,
+ *  - the API key comes from the active provider's PIN-unlocked saved credentials,
  *  - every failure is caught and translated into a readable error bubble,
  *  - tool progress is surfaced through agent events into
  *    [busyStatus] so the UI can show what the assistant is doing right now,
@@ -71,6 +111,7 @@ class AssistantViewModel(
     private val assistantApi = AssistantApiService(appContext)
     private val apiKeyStorage = ApiKeyStorage(appContext)
     private val authService = SupabaseAuthService()
+    private val apiKeySync = SupabaseApiKeyStore()
     private val modelHistory = mutableListOf<AgentMessage>()
     private val accountStorage = AccountSettingsStorage(appContext)
     private val assistantSettingsStorage = AssistantSettingsStorage(appContext)
@@ -124,15 +165,39 @@ class AssistantViewModel(
     fun refreshApiKey() {
         val userId = authService.currentUser()?.id
         activeProvider = apiKeyStorage.getSelectedProvider(userId)
-        activeModelId = when (activeProvider) {
-            AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
-            AssistantProvider.OPENROUTER -> AssistantApiService.DEFAULT_MODEL_OPENROUTER
-        }
+        val configuredOpenRouterModelId =
+            if (activeProvider == AssistantProvider.OPENROUTER) {
+                apiKeyStorage.getOpenRouterModelId(userId)
+            } else {
+                null
+            }
+        activeModelId = resolveAssistantModelId(activeProvider, configuredOpenRouterModelId)
         val savedKey = userId
             ?.let { apiKeyStorage.getApiKey(activeProvider.name, it) }
             .orEmpty()
             .trim()
         activeApiKey = savedKey.takeIf { it.isNotEmpty() }
+        pullCloudApiKeys()
+    }
+
+    /**
+     * The cloud (`user_provider_keys`) is the source of truth for API keys:
+     * pull keys saved on other devices into the local cache, then reload.
+     */
+    private fun pullCloudApiKeys() {
+        viewModelScope.launch {
+            val userId = authService.currentUser()?.id ?: return@launch
+            val cloudKeys = apiKeySync.fetchAll()
+            if (cloudKeys.isEmpty()) return@launch
+            var changed = false
+            for ((provider, key) in cloudKeys) {
+                if (apiKeyStorage.getApiKey(provider.name, userId) != key) {
+                    apiKeyStorage.saveApiKey(provider.name, userId, key)
+                    changed = true
+                }
+            }
+            if (changed) refreshApiKey()
+        }
     }
 
     /** Non-streaming, text-only variant. */
@@ -199,8 +264,6 @@ class AssistantViewModel(
                     val userId = authService.currentUser()?.id
                     val message = when {
                         userId == null -> "Sign in to use your saved ${provider.displayName} API key."
-                        !ProviderCredentialSession.isUnlocked(userId) ->
-                            "Unlock your provider keys in Settings → AI Providers before chatting."
                         else -> "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
                     }
                     throw IllegalStateException(message)
@@ -381,17 +444,6 @@ class AssistantViewModel(
 
     private fun nextMessageId(): Long = nextId++
 
-    private fun friendlyMessage(t: Throwable, provider: AssistantProvider): String {
-        val message = t.message.orEmpty()
-        return when {
-            message.contains("401") || message.contains("403") ->
-                "Authentication failed. Check your ${provider.displayName} API key.\n$message"
-            message.contains("429") || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
-                "${provider.displayName} rate limit reached. Try again later.\n$message"
-            message.contains("timeout", ignoreCase = true) || t is java.io.IOException ->
-                "Network error. Check your connection and try again.\n$message"
-            message.isNotBlank() -> message
-            else -> "Unexpected error: ${t::class.simpleName}"
-        }
-    }
+    private fun friendlyMessage(t: Throwable, provider: AssistantProvider): String =
+        assistantErrorText(t, provider)
 }

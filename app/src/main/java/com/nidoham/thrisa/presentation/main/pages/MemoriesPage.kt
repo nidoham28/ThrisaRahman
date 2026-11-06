@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nidoham.thrisa.core.database.memory.MemoryCategory
 import com.nidoham.thrisa.core.database.memory.MemoryItem
-import com.nidoham.thrisa.core.database.memory.SqliteMemoryDatabase
+import com.nidoham.thrisa.core.sync.SupabaseMemoryRepository
 import com.nidoham.thrisa.core.theme.Aqua
 import com.nidoham.thrisa.core.theme.AquaDeep
 import com.nidoham.thrisa.core.theme.CardBrush
@@ -67,7 +68,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MemoriesPage() {
     val context = LocalContext.current
-    val repository = remember(context) { SqliteMemoryDatabase.getInstance(context) }
+    val repository = remember { SupabaseMemoryRepository.getInstance() }
+    LaunchedEffect(repository) { repository.refresh() }
     val scope = rememberCoroutineScope()
 
     val memories by repository.observeAll().collectAsState()

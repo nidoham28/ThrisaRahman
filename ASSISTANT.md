@@ -1,3 +1,5 @@
+NOTICE: AI only update app  module. other module completely locked. AI use read and call functions inside app module.
+
 Files:
 Supabase: Settings table: docs/planning/settings-system-playbook.md 
 

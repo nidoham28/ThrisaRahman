@@ -1,8 +1,6 @@
 package com.nidoham.thrisa.ai
 
 import android.content.Context
-import android.os.Build
-import androidx.annotation.RequiresApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -14,7 +12,6 @@ import me.rerere.ai.agent.StepRequest
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.Tool as AiTool
 import me.rerere.ai.core.InputSchema
-import me.rerere.ai.provider.AccountCredentialProvider
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
@@ -32,6 +29,7 @@ import com.nidoham.thrisa.domain.AssistantProvider
 import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.FunctionCall
 import me.rerere.ai.agent.AgentRequest
+import okhttp3.Request
 
 data class AssistantToolResult(
     val response: JsonObject,
@@ -61,7 +59,11 @@ data class AssistantToolResult(
 
 class AssistantApiService(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            chain.proceed(normalizeOpenRouterAuthorization(chain.request()))
+        }
+        .build()
     private val providerManager by lazy {
         ProviderManager(
             client = httpClient,
@@ -140,11 +142,49 @@ class AssistantApiService(context: Context) : AutoCloseable {
 
     companion object {
         const val DEFAULT_MODEL_ID = "gemini-3.5-flash-lite"
+        const val DEFAULT_MODEL_OPENROUTER = "openrouter/free"
         const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
         const val DEFAULT_TTS_MODEL = "gemini-3.8-flash-tts"
-        const val DEFAULT_TTS_VOICE = "Leda"
         private const val MAX_AGENT_STEPS = 33
     }
+}
+
+/**
+ * Cleans an OpenRouter key as the user pasted it: outer quotes, stray spacing
+ * and an accidental "Bearer" prefix (a saved "Bearer sk-or-…" becomes a wire
+ * header of "Bearer Bearer sk-or-…", which OpenRouter rejects with
+ * "Missing Authentication header").
+ */
+internal fun sanitizeOpenRouterApiKey(raw: String): String {
+    var token = raw.trim()
+    val bearerPrefix = Regex("^bearer\\s+", RegexOption.IGNORE_CASE)
+    while (true) {
+        val stripped = when {
+            token.length >= 2 &&
+                ((token.first() == '"' && token.last() == '"') ||
+                    (token.first() == '\'' && token.last() == '\'')) ->
+                token.substring(1, token.length - 1).trim()
+            else -> bearerPrefix.replace(token, "").trim()
+        }
+        if (stripped == token) return token
+        token = stripped
+    }
+}
+
+internal fun normalizeOpenRouterAuthorization(request: Request): Request {
+    if (request.url.host != "openrouter.ai") return request
+
+    val apiKey = request.headers.values("Authorization")
+        .asReversed()
+        .firstNotNullOfOrNull { header ->
+            if (!header.startsWith("Bearer ", ignoreCase = true)) return@firstNotNullOfOrNull null
+            sanitizeOpenRouterApiKey(header.substringAfter(' ')).takeIf(String::isNotEmpty)
+        }
+        ?: error("OpenRouter API key is missing from the request authorization header.")
+
+    return request.newBuilder()
+        .header("Authorization", "Bearer $apiKey")
+        .build()
 }
 
 internal fun createAssistantProviderSetting(
@@ -156,7 +196,7 @@ internal fun createAssistantProviderSetting(
         useInteractionsApi = true,
     )
     AssistantProvider.OPENROUTER -> ProviderSetting.OpenAI(
-        apiKey = apiKey.trim(),
+        apiKey = sanitizeOpenRouterApiKey(apiKey),
         baseUrl = AssistantApiService.OPENROUTER_BASE_URL,
         useResponseApi = false,
     )
