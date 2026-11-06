@@ -106,6 +106,12 @@ object BuiltinToolExecutor {
                     "get_device_info" ->
                         executeGetDeviceInfo(call, context)
 
+                    "terminal_find_tool" ->
+                        executeFindTerminalTool(call, context)
+
+                    "terminal_calculate" ->
+                        executeTerminalCalculation(call, context)
+
                     // ── Applications ─────────────────────────────────────────────
                     "list_installed_apps" ->
                         executeListInstalledApps(call, context)

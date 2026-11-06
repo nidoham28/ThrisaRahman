@@ -1,11 +1,9 @@
 package com.nidoham.thrisa.presentation.main
 
 import android.content.Context
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nidoham.thrisa.ai.AssistantApiService
-import com.nidoham.thrisa.core.config.API_KEYS
 import com.nidoham.thrisa.core.prompt.Instructions
 import com.nidoham.thrisa.core.prompt.InstructionsConfig
 import com.nidoham.thrisa.core.service.image.InlineImage
@@ -14,6 +12,8 @@ import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ScreenToolExecutor
 import com.nidoham.thrisa.domain.RelationType
 import com.nidoham.thrisa.domain.RoleplaySettingsStorage
+import com.nidoham.thrisa.domain.ApiKeyStorage
+import com.nidoham.thrisa.domain.AssistantProvider
 import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.Gender
@@ -35,6 +35,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
 import com.nidoham.thrisa.domain.FunctionCall
+import androidx.core.net.toUri
 
 /** One bubble in the chat UI. Kept separate from the AI module's message model. */
 data class UiMessage(
@@ -67,6 +68,7 @@ class AssistantViewModel(
 
     private val appContext = context.applicationContext
     private val assistantApi = AssistantApiService(appContext)
+    private val apiKeyStorage = ApiKeyStorage(appContext)
     private val modelHistory = mutableListOf<AgentMessage>()
     private val roleplayStorage = RoleplaySettingsStorage(appContext)
     private var activeRelationType: RelationType = roleplayStorage.getRelationType()
@@ -92,6 +94,8 @@ class AssistantViewModel(
     private var nextId = 0L
     private var chatGeneration = 0L
     private var activeApiKey: String? = null
+    private var activeProvider = AssistantProvider.GEMINI
+    private var activeModelId = AssistantApiService.DEFAULT_MODEL_ID
 
     init { refreshSettings() }
 
@@ -142,7 +146,12 @@ class AssistantViewModel(
 
     /** Reload the saved key after returning from provider settings. */
     fun refreshApiKey() {
-        val savedKey = API_KEYS(appContext).trim()
+        activeProvider = apiKeyStorage.getSelectedProvider()
+        activeModelId = when (activeProvider) {
+            AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
+            AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterModelId().trim()
+        }
+        val savedKey = apiKeyStorage.getApiKey(activeProvider.name).orEmpty().trim()
         activeApiKey = savedKey.takeIf { it.isNotEmpty() }
     }
 
@@ -199,19 +208,28 @@ class AssistantViewModel(
 
         _busyStatus.value = "Thinking..."
         val requestGeneration = chatGeneration
+        val provider = activeProvider
+        val modelId = activeModelId
         var generatedImageUri: String? = null
         var generatedImageSavedTo: String? = null
         currentJob = viewModelScope.launch {
             try {
                 val apiKey = activeApiKey
                 if (apiKey.isNullOrBlank()) {
-                    throw IllegalStateException("Add a Gemini API key in Settings → AI Providers → Credentials.")
+                    throw IllegalStateException(
+                        "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
+                    )
+                }
+                if (modelId.isBlank()) {
+                    throw IllegalStateException(
+                        "Set an OpenRouter model ID in Settings → AI Providers → OpenRouter Model."
+                    )
                 }
 
                 var attachedImage: InlineImage.Loaded? = null
                 if (imageUri != null) {
                     attachedImage = withContext(Dispatchers.IO) {
-                        InlineImage.load(appContext, Uri.parse(imageUri))
+                        InlineImage.load(appContext, imageUri.toUri())
                     }
                     if (requestGeneration != chatGeneration) return@launch
                 }
@@ -256,6 +274,8 @@ class AssistantViewModel(
                     toolDefinitions = BuiltinToolExecutor.definitions,
                     executeTool = executeTool,
                     streaming = streaming,
+                    provider = provider,
+                    modelId = modelId,
                 ).collect { event ->
                     val assistantMessage = when (event) {
                         is AgentEvent.MessageUpdated -> event.message
@@ -318,10 +338,10 @@ class AssistantViewModel(
                         )
                     }
                 }
-            } catch (e: CancellationException) {
+            } catch (_: CancellationException) {
                 if (streaming) markCancelled(assistantId)
             } catch (t: Throwable) {
-                if (requestGeneration == chatGeneration) showError(assistantId, streaming, t)
+                if (requestGeneration == chatGeneration) showError(assistantId, streaming, t, provider)
             } finally {
                 if (requestGeneration == chatGeneration) {
                     _busyStatus.value = null
@@ -331,8 +351,13 @@ class AssistantViewModel(
         }
     }
 
-    private fun showError(assistantId: Long, streaming: Boolean, t: Throwable) {
-        val text = friendlyMessage(t)
+    private fun showError(
+        assistantId: Long,
+        streaming: Boolean,
+        t: Throwable,
+        provider: AssistantProvider,
+    ) {
+        val text = friendlyMessage(t, provider)
         _messages.update { list ->
             val existing = list.firstOrNull { it.id == assistantId }
             if (existing == null) {
@@ -371,13 +396,13 @@ class AssistantViewModel(
 
     private fun nextMessageId(): Long = nextId++
 
-    private fun friendlyMessage(t: Throwable): String {
+    private fun friendlyMessage(t: Throwable, provider: AssistantProvider): String {
         val message = t.message.orEmpty()
         return when {
             message.contains("401") || message.contains("403") ->
-                "Authentication failed. Check your Gemini API key.\n$message"
+                "Authentication failed. Check your ${provider.displayName} API key.\n$message"
             message.contains("429") || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
-                "Gemini rate limit reached. Try again later.\n$message"
+                "${provider.displayName} rate limit reached. Try again later.\n$message"
             message.contains("timeout", ignoreCase = true) || t is java.io.IOException ->
                 "Network error. Check your connection and try again.\n$message"
             message.isNotBlank() -> message

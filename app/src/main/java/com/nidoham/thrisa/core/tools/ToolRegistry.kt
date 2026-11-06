@@ -55,6 +55,8 @@ import com.nidoham.thrisa.core.tools.definition.updateNoteTool
 import com.nidoham.thrisa.core.tools.definition.wifiControlTool
 import com.nidoham.thrisa.core.tools.definition.updateReminderTool
 import com.nidoham.thrisa.core.tools.definition.updateTodoTool
+import com.nidoham.thrisa.core.tools.definition.findTerminalTool
+import com.nidoham.thrisa.core.tools.definition.terminalCalculationTool
 
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
@@ -63,6 +65,8 @@ object ToolRegistry {
         // Time & device
         timeTool(),
         deviceInfoTool(),
+        findTerminalTool(),
+        terminalCalculationTool(),
 
         // Applications
         listInstalledAppsTool(),

@@ -128,6 +128,8 @@ import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
 import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.ApiKeyStorage
+import com.nidoham.thrisa.domain.AssistantProvider
+import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.Gender
 import com.nidoham.thrisa.domain.RelationType
@@ -143,14 +145,6 @@ enum class SettingsDestination {
     PERSONA, SUBSCRIPTION, APPEARANCE, PRIVACY, ABOUT
 }
 
-private enum class ApiProvider(
-    val displayName: String,
-    val enabled: Boolean,
-    val placeholder: String
-) {
-    GEMINI("Gemini", true, "AIza..."),
-}
-
 private enum class RowStyle { NORMAL, PREMIUM, DANGER }
 
 /** Text fields the user can edit through a dialog. */
@@ -158,11 +152,18 @@ private enum class EditField(
     val title: String,
     val description: String,
     val placeholder: String,
-    val isPhoneNumber: Boolean = false
+    val isPhoneNumber: Boolean = false,
+    val requiresNonBlank: Boolean = false,
 ) {
     USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
     PHONE("Phone number", "Used for your account. Stays on this device.", "+880 1XXXXXXXXX", isPhoneNumber = true),
     ASSISTANT_NAME("Assistant name", "What you call your assistant.", "Thrisa"),
+    OPENROUTER_MODEL(
+        "OpenRouter model",
+        "Enter an OpenRouter model ID. Use openrouter/auto for automatic routing.",
+        AssistantProvider.OPENROUTER.defaultModelId,
+        requiresNonBlank = true,
+    ),
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,12 +240,16 @@ private class SettingsState(private val storage: ApiKeyStorage, context: Context
     var voiceReplies by mutableStateOf(false)
     var saveHistory by mutableStateOf(true)
     var requestTimeout by mutableStateOf(30)
-    var selectedProvider by mutableStateOf(ApiProvider.GEMINI)
+    var selectedProvider by mutableStateOf(storage.getSelectedProvider())
 
     // Loaded from SharedPreferences on creation — survive app restarts.
     private var geminiKey by mutableStateOf(
-        storage.getApiKey(ApiProvider.GEMINI.name).orEmpty()
+        storage.getApiKey(AssistantProvider.GEMINI.name).orEmpty()
     )
+    private var openRouterKey by mutableStateOf(
+        storage.getApiKey(AssistantProvider.OPENROUTER.name).orEmpty()
+    )
+    var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId())
     private val speechStorage = SpeechSettingsStorage(context)
     private val roleplayStorage = RoleplaySettingsStorage(context)
     private val accountStorage = AccountSettingsStorage(context)
@@ -252,6 +257,7 @@ private class SettingsState(private val storage: ApiKeyStorage, context: Context
     var speechEngine by mutableStateOf(
         runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }.getOrDefault(SpeechEngine.SYSTEM)
     )
+    var speechVoice by mutableStateOf(speechStorage.getVoice())
 
     // Account profile + assistant identity
     var username by mutableStateOf(accountStorage.getUserName())
@@ -260,20 +266,37 @@ private class SettingsState(private val storage: ApiKeyStorage, context: Context
     var assistantName by mutableStateOf(accountStorage.getAssistantName())
     var assistantLanguage by mutableStateOf(accountStorage.getLanguage())
 
-    fun keyFor(provider: ApiProvider): String = when (provider) {
-        ApiProvider.GEMINI -> geminiKey
+    fun keyFor(provider: AssistantProvider): String = when (provider) {
+        AssistantProvider.GEMINI -> geminiKey
+        AssistantProvider.OPENROUTER -> openRouterKey
     }
 
-    fun setKey(provider: ApiProvider, value: String) {
+    fun setKey(provider: AssistantProvider, value: String) {
         when (provider) {
-            ApiProvider.GEMINI -> geminiKey = value
+            AssistantProvider.GEMINI -> geminiKey = value
+            AssistantProvider.OPENROUTER -> openRouterKey = value
         }
         storage.saveApiKey(provider.name, value)
+    }
+
+    fun saveProvider(provider: AssistantProvider) {
+        selectedProvider = provider
+        storage.saveSelectedProvider(provider)
+    }
+
+    fun saveOpenRouterModelId(value: String) {
+        storage.saveOpenRouterModelId(value)
+        openRouterModelId = value.trim()
     }
 
     fun saveSpeechEngine(engine: SpeechEngine) {
         speechEngine = engine
         speechStorage.setEngine(engine.name)
+    }
+
+    fun saveSpeechVoice(voice: AssistantVoice) {
+        speechVoice = voice
+        speechStorage.setVoice(voice)
     }
 
     fun saveRelationType(type: RelationType) {
@@ -321,7 +344,7 @@ fun SettingsScreen(
     val state = remember { SettingsState(storage, context.applicationContext) }
 
     var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    var editingProvider by remember { mutableStateOf<ApiProvider?>(null) }
+    var editingProvider by remember { mutableStateOf<AssistantProvider?>(null) }
     var showRelationSheet by remember { mutableStateOf(false) }
     var editingField by remember { mutableStateOf<EditField?>(null) }
     var showGenderDialog by remember { mutableStateOf(false) }
@@ -562,6 +585,7 @@ fun SettingsScreen(
             EditField.USERNAME -> state.username
             EditField.PHONE -> state.phoneNumber
             EditField.ASSISTANT_NAME -> state.assistantName
+            EditField.OPENROUTER_MODEL -> state.openRouterModelId
         }
         EditFieldDialog(
             field = field,
@@ -571,6 +595,7 @@ fun SettingsScreen(
                     EditField.USERNAME -> state.saveUserName(value)
                     EditField.PHONE -> state.savePhoneNumber(value)
                     EditField.ASSISTANT_NAME -> state.saveAssistantName(value)
+                    EditField.OPENROUTER_MODEL -> state.saveOpenRouterModelId(value)
                 }
                 editingField = null
             },
@@ -810,7 +835,7 @@ private fun buildTree(
     permissionStatus: PermissionStatus,
     permissionActions: PermissionActions,
     onNavigate: (SettingsDestination) -> Unit,
-    onEditKey: (ApiProvider) -> Unit,
+    onEditKey: (AssistantProvider) -> Unit,
     onEditRelation: () -> Unit,
     onEditField: (EditField) -> Unit,
     onEditGender: () -> Unit
@@ -925,6 +950,15 @@ private fun buildTree(
                         SpeechEngineDropdown(state.speechEngine, state::saveSpeechEngine)
                     }
                 ),
+                SettingsNode.Item(
+                    id = "assistant-voice",
+                    title = "Assistant voice",
+                    subtitle = "Gemini uses the selected voice; local uses a matching installed voice when available",
+                    icon = Icons.Outlined.GraphicEq,
+                    trailing = {
+                        AssistantVoiceDropdown(state.speechVoice, state::saveSpeechVoice)
+                    }
+                ),
             )
         ),
 
@@ -942,7 +976,7 @@ private fun buildTree(
                     trailing = {
                         ProviderDropdownTrailing(
                             selected = state.selectedProvider,
-                            onSelect = { state.selectedProvider = it }
+                            onSelect = state::saveProvider
                         )
                     }
                 ),
@@ -952,26 +986,19 @@ private fun buildTree(
                     subtitle = "API keys per provider",
                     icon = Icons.Outlined.Key,
                     children = buildList {
-                        ApiProvider.entries.forEach { provider ->
+                        AssistantProvider.entries.forEach { provider ->
                             add(
                                 SettingsNode.Item(
                                     id = "key-${provider.name.lowercase()}",
                                     title = "${provider.displayName} API Key",
-                                    subtitle = if (!provider.enabled) "Coming soon"
-                                    else {
-                                        val key = state.keyFor(provider)
+                                    subtitle = state.keyFor(provider).let { key ->
                                         if (key.isBlank()) "Not configured"
                                         else "••••••••" + key.takeLast(4)
                                     },
                                     icon = Icons.Outlined.Key,
-                                    enabled = provider.enabled,
-                                    onClick = if (provider.enabled) {
-                                        { onEditKey(provider) }
-                                    } else null,
+                                    onClick = { onEditKey(provider) },
                                     trailing = {
-                                        if (!provider.enabled) {
-                                            TrailingBadge("SOON", TextSoft)
-                                        } else if (state.keyFor(provider).isBlank()) {
+                                        if (state.keyFor(provider).isBlank()) {
                                             TrailingBadge("SET UP", Aqua)
                                         } else {
                                             TrailingBadge("ACTIVE", Success)
@@ -981,6 +1008,13 @@ private fun buildTree(
                             )
                         }
                     }
+                ),
+                SettingsNode.Item(
+                    id = "openrouter-model",
+                    title = "OpenRouter Model",
+                    subtitle = state.openRouterModelId,
+                    icon = Icons.Outlined.SmartToy,
+                    onClick = { onEditField(EditField.OPENROUTER_MODEL) }
                 ),
             )
         ),
@@ -1493,8 +1527,8 @@ private fun TrailingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit)
 
 @Composable
 private fun ProviderDropdownTrailing(
-    selected: ApiProvider,
-    onSelect: (ApiProvider) -> Unit
+    selected: AssistantProvider,
+    onSelect: (AssistantProvider) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -1516,29 +1550,26 @@ private fun ProviderDropdownTrailing(
             modifier = Modifier.background(RowSurface)
                 .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
         ) {
-            ApiProvider.entries.forEach { provider ->
-                val available = provider.enabled
+            AssistantProvider.entries.forEach { provider ->
                 val isSelected = provider == selected
                 DropdownMenuItem(
                     text = {
                         Row(Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(provider.displayName,
-                                color = if (available) TextHigh else TextSoft.copy(alpha = 0.45f),
+                                color = TextHigh,
                                 fontSize = 14.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold
                                 else FontWeight.Normal)
                             Spacer(Modifier.weight(1f))
                             Spacer(Modifier.width(12.dp))
                             when {
-                                !available -> TrailingBadge("SOON", TextSoft)
                                 isSelected -> Icon(Icons.Outlined.Check,
                                     contentDescription = null, tint = Aqua,
                                     modifier = Modifier.size(16.dp))
                             }
                         }
                     },
-                    enabled = available,
                     onClick = { onSelect(provider); expanded = false }
                 )
             }
@@ -1593,13 +1624,62 @@ private fun SpeechEngineDropdown(
     }
 }
 
+@Composable
+private fun AssistantVoiceDropdown(
+    selected: AssistantVoice,
+    onSelect: (AssistantVoice) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.label, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose assistant voice",
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            AssistantVoice.entries.forEach { voice ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                voice.label,
+                                color = TextHigh,
+                                fontSize = 14.sp,
+                                fontWeight = if (voice == selected) FontWeight.SemiBold
+                                else FontWeight.Normal,
+                            )
+                            if (voice == selected) {
+                                Spacer(Modifier.width(10.dp))
+                                Icon(Icons.Outlined.Check, contentDescription = null,
+                                    tint = Aqua, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    onClick = { onSelect(voice); expanded = false },
+                )
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*  API key dialog                                                     */
 /* ------------------------------------------------------------------ */
 
 @Composable
 private fun ApiKeyDialog(
-    provider: ApiProvider,
+    provider: AssistantProvider,
     initialKey: String,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit
@@ -1725,7 +1805,10 @@ private fun EditFieldDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(value) }) {
+            TextButton(
+                onClick = { onSave(value) },
+                enabled = !field.requiresNonBlank || value.isNotBlank(),
+            ) {
                 Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
             }
         },

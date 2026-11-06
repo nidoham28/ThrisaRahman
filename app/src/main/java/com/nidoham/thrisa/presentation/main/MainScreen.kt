@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,7 +72,7 @@ fun MainScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     // --- UI state -------------------------------------------------------------
-    var selectedTab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
     var showReminderInbox by rememberSaveable { mutableStateOf(false) }
 
     // --- Account settings (re-read whenever the screen resumes) ---------------

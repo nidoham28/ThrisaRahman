@@ -71,7 +71,7 @@ import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
 import com.nidoham.thrisa.presentation.main.UiMessage
 
-// Local surface colors, kept in one place instead of repeated literals.
+// Local surface colors
 private val FieldSurface = Color(0xFF0D1520)
 private val UserBubble = Color(0xFF123C3B)
 private val AssistantBubble = Color(0xFF0E1621)
@@ -79,16 +79,16 @@ private val ErrorBubble = Color(0xFF2A1518)
 private val ErrorStroke = Color(0xFF5A2A2E)
 private val ErrorText = Color(0xFFFF9F9F)
 
-// Type scale: nothing below 12sp, body text at 15sp for comfortable reading.
+// Type scale
 private val TitleSize = 20.sp
 private val BodySize = 15.sp
 private val BodyLineHeight = 22.sp
 private val SecondarySize = 14.sp
 private val CaptionSize = 12.sp
 
-// Layout constants.
+// Layout constants
 private val MinTouchTarget = 48.dp
-private val MaxBubbleWidth = 560.dp // keeps bubbles readable on tablets / landscape
+private val MaxBubbleWidth = 560.dp
 
 private val Suggestions = listOf(
     "Generate a cozy watercolor café at sunset",
@@ -110,19 +110,21 @@ fun ChatPage(
     val isBusy = busyStatus != null
     val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy
 
-    // System photo picker: no storage permission needed on any API level.
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        // Cancelling the picker must not wipe an existing attachment.
         uri?.let { attachedImage = it.toString() }
     }
 
-    // Newest message sits at the bottom (reverse layout), so streaming text grows upward.
     val listState = rememberLazyListState()
     val reversed = remember(messages) { messages.asReversed() }
+
+    // ✅ FIX: শুধু ইউজার নিচে থাকলে অটো-স্ক্রল করো।
+    // রিসাইজ/কনফিগারেশন চেঞ্জে ইউজারকে জোর করে নিচে নামাবে না।
     LaunchedEffect(messages.size, isBusy) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(0)
+        if (messages.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
+            listState.animateScrollToItem(0)
+        }
     }
 
     Column(
@@ -162,8 +164,6 @@ fun ChatPage(
             AttachmentPreview(uri = uri, onRemove = { attachedImage = null })
         }
 
-        // No fixed height: the field grows up to maxLines and the buttons stay
-        // pinned to the bottom edge, so multi-line text is never clipped.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
@@ -250,8 +250,6 @@ private fun ComposerButton(
         filled -> OnAqua
         else -> Aqua
     }
-    // The text field's default min height is 56dp; the extra 4dp bottom padding
-    // centers a 48dp button against a single-line field.
     Box(modifier.padding(bottom = 4.dp)) {
         IconButton(
             onClick = onClick,
@@ -305,7 +303,6 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
                     .clip(RoundedCornerShape(14.dp))
                     .background(FieldSurface)
             )
-            // 40dp tap target around a 24dp visual, so it is easy to hit with a thumb.
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -327,7 +324,7 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
                 ) {
                     Icon(
                         Icons.Outlined.Close,
-                        contentDescription = null, // the parent carries the label
+                        contentDescription = null,
                         tint = TextHigh,
                         modifier = Modifier.size(16.dp)
                     )
@@ -340,8 +337,6 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
 
 @Composable
 private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
-    // Scrollable so the content never gets cut off when the keyboard is open
-    // or the screen is short (landscape / small phones).
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -400,7 +395,6 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
 
 @Composable
 private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
-    // A streaming reply starts empty; the busy indicator covers that moment.
     if (!message.isUser && !message.isError && message.text.isBlank() && message.imageUri == null) return
 
     val isUser = message.isUser
@@ -461,18 +455,20 @@ private fun MessageImage(
 ) {
     val canOpen = imageUri.startsWith("content://")
     if (hasText) Spacer(Modifier.height(10.dp))
+
+    // ✅ FIX: minHeight দিয়ে লোড হওয়ার আগে 0-হাইট জাম্প বন্ধ করা হলো
     AsyncImage(
         model = imageUri.toUri(),
         contentDescription = if (isUser) "Attached photo" else "Generated image",
         contentScale = ContentScale.Fit,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 380.dp)
+            .heightIn(min = 60.dp, max = 380.dp)
             .clip(RoundedCornerShape(14.dp))
+            .background(FieldSurface)
             .then(if (canOpen) Modifier.clickable { onOpenImage(imageUri) } else Modifier)
     )
 
-    // Only generated images carry a save location.
     val caption = when {
         savedTo != null -> "Saved to $savedTo" + if (canOpen) " · tap to open" else ""
         canOpen -> "Tap to open"

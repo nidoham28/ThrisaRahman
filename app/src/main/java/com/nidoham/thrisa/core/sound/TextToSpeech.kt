@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeech as AndroidTextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.nidoham.thrisa.ai.AssistantApiService
 import com.nidoham.thrisa.core.config.API_KEYS
+import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.SpeechSettingsStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -87,15 +88,17 @@ class TextToSpeech(
                 activeSpeechJob = job
             }
 
+            val voice = speechSettings.getVoice()
             when (runCatching { SpeechEngine.valueOf(speechSettings.getEngine()) }
                 .getOrDefault(SpeechEngine.SYSTEM)) {
-                SpeechEngine.SYSTEM -> speakOnDevice(text.trim())
+                SpeechEngine.SYSTEM -> speakOnDevice(text.trim(), voice)
                 SpeechEngine.ADVANCED -> {
                     val apiKey = API_KEYS(appContext).trim()
                     check(apiKey.isNotEmpty()) {
                         "Add a Gemini API key in Settings → AI Providers → Credentials to use Gemini TTS."
                     }
-                    val pcm = takePrefetch(text) ?: generateGeminiSpeech(apiKey, text.trim())
+                    val pcm = takePrefetch(text, voice)
+                        ?: generateGeminiSpeech(apiKey, text.trim(), voice)
                     coroutineContext.ensureActive()
                     check(!closed) { "TTS has already been closed" }
                     playPcm(pcm)
@@ -129,11 +132,16 @@ class TextToSpeech(
 
         synchronized(playbackLock) {
             if (closed) return
-            if (prefetched?.text == trimmed) return
+            val voice = speechSettings.getVoice()
+            if (prefetched?.text == trimmed && prefetched?.voice == voice) return
             prefetched?.pcm?.cancel()
             val apiKey = API_KEYS(appContext).trim()
             if (apiKey.isEmpty()) return
-            prefetched = Prefetch(trimmed, prefetchScope.async { generateGeminiSpeech(apiKey, trimmed) })
+            prefetched = Prefetch(
+                text = trimmed,
+                voice = voice,
+                pcm = prefetchScope.async { generateGeminiSpeech(apiKey, trimmed, voice) },
+            )
         }
     }
 
@@ -193,7 +201,7 @@ class TextToSpeech(
             }
         }
 
-    private suspend fun speakOnDevice(text: String) {
+    private suspend fun speakOnDevice(text: String, voice: AssistantVoice) {
         val (engine, ready) = systemEngineHandle()
         val initialised = ready.await().getOrNull()
         if (initialised == null) {
@@ -217,6 +225,7 @@ class TextToSpeech(
                 AndroidTextToSpeech.LANG_MISSING_DATA,
                 AndroidTextToSpeech.LANG_NOT_SUPPORTED -> initialised.language = Locale.getDefault()
             }
+            selectLocalVoice(initialised, voice)
             initialised.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(id: String?) = Unit
                 override fun onDone(id: String?) {
@@ -249,10 +258,18 @@ class TextToSpeech(
 
     // ------------------------------------------------------------------ Gemini engine
 
-    private suspend fun generateGeminiSpeech(apiKey: String, text: String): ByteArray =
+    private suspend fun generateGeminiSpeech(
+        apiKey: String,
+        text: String,
+        voice: AssistantVoice,
+    ): ByteArray =
         withContext(Dispatchers.IO) {
             val output = ByteArrayOutputStream()
-            assistantApi.generateSpeech(apiKey, text).collect { chunk ->
+            assistantApi.generateSpeech(
+                apiKey = apiKey,
+                text = text,
+                voiceName = voice.geminiVoiceName,
+            ).collect { chunk ->
                 require(chunk.format == me.rerere.tts.model.AudioFormat.PCM) {
                     "Gemini TTS returned unsupported audio format: ${chunk.format}"
                 }
@@ -262,13 +279,13 @@ class TextToSpeech(
         }
 
     /** Returns the prefetched audio for [text] if one matches, consuming the slot. */
-    private suspend fun takePrefetch(text: String): ByteArray? {
+    private suspend fun takePrefetch(text: String, voice: AssistantVoice): ByteArray? {
         val candidate = synchronized(playbackLock) {
             val p = prefetched
             prefetched = null
             p
         }
-        if (candidate == null || candidate.text != text.trim()) {
+        if (candidate == null || candidate.text != text.trim() || candidate.voice != voice) {
             candidate?.pcm?.cancel()
             return null
         }
@@ -281,7 +298,42 @@ class TextToSpeech(
         }
     }
 
-    private class Prefetch(val text: String, val pcm: Deferred<ByteArray>)
+    private class Prefetch(
+        val text: String,
+        val voice: AssistantVoice,
+        val pcm: Deferred<ByteArray>,
+    )
+
+    private fun selectLocalVoice(engine: AndroidTextToSpeech, selected: AssistantVoice) {
+        val requestedLocale = Locale.forLanguageTag(language)
+        val availableVoices = engine.voices
+        val requestedLanguageVoices = availableVoices.filter {
+            it.locale.language.equals(requestedLocale.language, ignoreCase = true)
+        }
+        val activeLocale = requestedLocale.takeIf { requestedLanguageVoices.isNotEmpty() }
+            ?: Locale.getDefault()
+        val languageVoices = requestedLanguageVoices.ifEmpty {
+            availableVoices.filter {
+                it.locale.language.equals(activeLocale.language, ignoreCase = true)
+            }
+        }
+        val matchingVoice = languageVoices
+            .filter { it.matchesGender(selected) }
+            .sortedByDescending { it.locale.country.equals(activeLocale.country, ignoreCase = true) }
+            .firstOrNull()
+        val defaultVoice = languageVoices
+            .sortedByDescending { it.locale.country.equals(activeLocale.country, ignoreCase = true) }
+            .firstOrNull()
+        (matchingVoice ?: defaultVoice)?.let { engine.voice = it }
+    }
+
+    private fun android.speech.tts.Voice.matchesGender(selected: AssistantVoice): Boolean {
+        val tokens = name.lowercase(Locale.ROOT).split(Regex("[^a-z]+"))
+        return when (selected) {
+            AssistantVoice.FEMALE -> "female" in tokens || "woman" in tokens
+            AssistantVoice.MALE -> "male" in tokens || "man" in tokens
+        }
+    }
 
     // ------------------------------------------------------------------ audio playback
 

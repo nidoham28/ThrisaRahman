@@ -1,6 +1,8 @@
 package com.nidoham.thrisa.ai
 
 import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -26,6 +28,8 @@ import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.OkHttpClient
 import com.nidoham.thrisa.core.tools.ToolDefinition
+import com.nidoham.thrisa.domain.AssistantProvider
+import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.FunctionCall
 import me.rerere.ai.agent.AgentRequest
 
@@ -78,15 +82,13 @@ class AssistantApiService(context: Context) : AutoCloseable {
         toolDefinitions: List<ToolDefinition>,
         executeTool: suspend (FunctionCall) -> AssistantToolResult,
         streaming: Boolean = true,
-        modelId: String = DEFAULT_MODEL_ID,
+        provider: AssistantProvider = AssistantProvider.GEMINI,
+        modelId: String = provider.defaultModelId,
     ): Flow<AgentEvent> {
-        require(apiKey.isNotBlank()) { "Gemini API key must not be blank" }
+        require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
-        val setting = ProviderSetting.Google(
-            apiKey = apiKey.trim(),
-            useInteractionsApi = true,
-        )
+        val setting = createAssistantProviderSetting(provider, apiKey)
         val model = Model(
             modelId = modelId,
             displayName = modelId,
@@ -115,7 +117,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         apiKey: String,
         text: String,
         model: String = DEFAULT_TTS_MODEL,
-        voiceName: String = DEFAULT_TTS_VOICE,
+        voiceName: String = AssistantVoice.FEMALE.geminiVoiceName,
     ): Flow<AudioChunk> {
         require(apiKey.isNotBlank()) { "Gemini API key must not be blank" }
         require(text.isNotBlank()) { "Speech text must not be blank" }
@@ -138,10 +140,26 @@ class AssistantApiService(context: Context) : AutoCloseable {
 
     companion object {
         const val DEFAULT_MODEL_ID = "gemini-3.5-flash-lite"
+        const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
         const val DEFAULT_TTS_MODEL = "gemini-3.8-flash-tts"
         const val DEFAULT_TTS_VOICE = "Leda"
         private const val MAX_AGENT_STEPS = 33
     }
+}
+
+internal fun createAssistantProviderSetting(
+    provider: AssistantProvider,
+    apiKey: String,
+): ProviderSetting = when (provider) {
+    AssistantProvider.GEMINI -> ProviderSetting.Google(
+        apiKey = apiKey.trim(),
+        useInteractionsApi = true,
+    )
+    AssistantProvider.OPENROUTER -> ProviderSetting.OpenAI(
+        apiKey = apiKey.trim(),
+        baseUrl = AssistantApiService.OPENROUTER_BASE_URL,
+        useResponseApi = false,
+    )
 }
 
 internal fun ToolDefinition.toAgentTool(
