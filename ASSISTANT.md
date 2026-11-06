@@ -1,3 +1,8 @@
+Files:
+Supabase: Settings table: docs/planning/settings-system-playbook.md 
+
+
+
 # THRISA RAHMAN
 ## Master AI Developer System Instructions
 

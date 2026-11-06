@@ -3,6 +3,7 @@ package com.nidoham.thrisa
 
 import android.app.Application
 import android.util.Log
+import com.nidoham.thrisa.domain.LegacySettingsCleanup
 
 class ThrisaApp : Application() {
 
@@ -13,6 +14,7 @@ class ThrisaApp : Application() {
     }
 
     private fun initializeApp() {
+        LegacySettingsCleanup.clearUnsupportedSettings(this)
         if (BuildConfig.DEBUG) {
             Log.d(TAG, "Thrisa initialized successfully")
         }

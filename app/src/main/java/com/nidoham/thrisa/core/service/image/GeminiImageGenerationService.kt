@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
 import com.nidoham.thrisa.core.config.API_KEYS
+import com.nidoham.thrisa.core.config.isApiKeyVaultUnlocked
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.HttpTimeout
@@ -67,7 +68,13 @@ object GeminiImageGenerationService {
         referenceImage: InlineImage.Loaded? = null,
     ): GeneratedImage {
         val apiKey = API_KEYS(context.applicationContext).trim()
-        require(apiKey.isNotBlank()) { "Add a Gemini API key in Settings → AI Providers → Credentials first." }
+        require(apiKey.isNotBlank()) {
+            if (isApiKeyVaultUnlocked()) {
+                "Add a Gemini API key in Settings → AI Providers → Credentials first."
+            } else {
+                "Unlock your provider keys in Settings → AI Providers first."
+            }
+        }
         require(prompt.isNotBlank()) { "Describe the image you want to create." }
 
         val response = httpClient.post("$BASE_URL/$MODEL:generateContent") {

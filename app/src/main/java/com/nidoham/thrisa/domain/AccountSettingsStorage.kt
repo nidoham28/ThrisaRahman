@@ -1,29 +1,51 @@
 package com.nidoham.thrisa.domain
 
 import android.content.Context
-import androidx.core.content.edit
 
-/** Gender options for the account profile. */
-enum class Gender(val label: String) {
-    MALE("Male"),
-    FEMALE("Female"),
-    OTHER("Other"),
-    PREFER_NOT_TO_SAY("Prefer not to say");
+enum class Gender(val id: String, val label: String) {
+    MALE("male", "Male"),
+    FEMALE("female", "Female"),
+    OTHER("other", "Other"),
+    PREFER_NOT_TO_SAY("prefer_not_to_say", "Prefer not to say");
 
     companion object {
-        fun fromLabel(raw: String?): Gender =
-            entries.firstOrNull { it.label == raw } ?: PREFER_NOT_TO_SAY
+        fun fromId(raw: String?): Gender =
+            entries.firstOrNull { it.id.equals(raw, ignoreCase = true) || it.label.equals(raw, ignoreCase = true) }
+                ?: PREFER_NOT_TO_SAY
+    }
+}
+
+data class LanguageManager(
+    val id: String,
+    val label: String,
+) {
+    companion object {
+        val ENGLISH = LanguageManager(id = "Eng", label = "English")
+        val BANGLA = LanguageManager(id = "Ban", label = "Bangla")
+
+        fun fromId(raw: String?): LanguageManager =
+            when (raw?.trim()?.take(3)) {
+                "Eng", "en" -> ENGLISH
+                "Ban", "bn" -> BANGLA
+                else -> error("Unsupported language ID: $raw")
+            }
     }
 }
 
 /** Languages the assistant can reply in. */
-enum class AssistantLanguage(val code: String, val label: String) {
-    ENGLISH("en", "English"),
-    BANGLA("bn", "Bangla");
+enum class AssistantLanguage(val code: String, val language: LanguageManager) {
+    ENGLISH("en", LanguageManager.ENGLISH),
+    BANGLA("bn", LanguageManager.BANGLA);
+
+    val label: String
+        get() = language.label
 
     companion object {
         fun fromCode(raw: String?): AssistantLanguage =
             entries.firstOrNull { it.code == raw } ?: BANGLA
+
+        fun fromDatabaseId(raw: String?): AssistantLanguage =
+            entries.first { it.language == LanguageManager.fromId(raw) }
     }
 }
 
@@ -33,50 +55,40 @@ fun AssistantLanguage.sttLanguageTag(): String = when (this) {
     AssistantLanguage.ENGLISH -> "en-US"
 }
 
-/** Stores the account profile and assistant identity preferences on this device. */
+/** Keeps the currently loaded cloud profile in memory for app consumers. */
 class AccountSettingsStorage(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    fun getUserName(): String = username
+    fun setUserName(value: String) { username = value }
 
-    fun getUserName(): String = prefs.getString(KEY_USERNAME, "").orEmpty()
+    fun getDisplayName(): String = displayName
+    fun setDisplayName(value: String) { displayName = value }
 
-    fun setUserName(value: String) {
-        prefs.edit { putString(KEY_USERNAME, value.trim()) }
-    }
+    fun getGender(): Gender = gender
+    fun setGender(value: Gender) { gender = value }
 
-    fun getGender(): Gender = Gender.fromLabel(prefs.getString(KEY_GENDER, null))
+    fun getPhoneNumber(): String = phoneNumber
+    fun setPhoneNumber(value: String) { phoneNumber = value }
 
-    fun setGender(value: Gender) {
-        prefs.edit { putString(KEY_GENDER, value.label) }
-    }
-
-    fun getPhoneNumber(): String = prefs.getString(KEY_PHONE, "").orEmpty()
-
-    fun setPhoneNumber(value: String) {
-        prefs.edit { putString(KEY_PHONE, value.trim()) }
-    }
-
-    fun getAssistantName(): String =
-        prefs.getString(KEY_ASSISTANT_NAME, DEFAULT_ASSISTANT_NAME)
-            ?.trim()?.takeUnless { it.isEmpty() } ?: DEFAULT_ASSISTANT_NAME
-
-    fun setAssistantName(value: String) {
-        val name = value.trim()
-        prefs.edit { putString(KEY_ASSISTANT_NAME, if (name.isEmpty()) DEFAULT_ASSISTANT_NAME else name) }
-    }
-
-    fun getLanguage(): AssistantLanguage = AssistantLanguage.fromCode(prefs.getString(KEY_LANGUAGE, null))
+    fun getLanguage(): AssistantLanguage = language
 
     fun setLanguage(value: AssistantLanguage) {
-        prefs.edit { putString(KEY_LANGUAGE, value.code) }
+        language = value
     }
 
     private companion object {
-        const val PREFS_NAME = "account_settings"
-        const val KEY_USERNAME = "username"
-        const val KEY_GENDER = "gender"
-        const val KEY_PHONE = "phone_number"
-        const val KEY_ASSISTANT_NAME = "assistant_name"
-        const val KEY_LANGUAGE = "assistant_language"
-        const val DEFAULT_ASSISTANT_NAME = "Thrisa"
+        @Volatile
+        var username: String = ""
+
+        @Volatile
+        var displayName: String = ""
+
+        @Volatile
+        var gender: Gender = Gender.PREFER_NOT_TO_SAY
+
+        @Volatile
+        var phoneNumber: String = ""
+
+        @Volatile
+        var language: AssistantLanguage = AssistantLanguage.BANGLA
     }
 }

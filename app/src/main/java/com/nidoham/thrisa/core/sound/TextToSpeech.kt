@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeech as AndroidTextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.nidoham.thrisa.ai.AssistantApiService
 import com.nidoham.thrisa.core.config.API_KEYS
+import com.nidoham.thrisa.core.config.isApiKeyVaultUnlocked
 import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.SpeechSettingsStorage
 import kotlinx.coroutines.CancellationException
@@ -95,7 +96,11 @@ class TextToSpeech(
                 SpeechEngine.ADVANCED -> {
                     val apiKey = API_KEYS(appContext).trim()
                     check(apiKey.isNotEmpty()) {
-                        "Add a Gemini API key in Settings → AI Providers → Credentials to use Gemini TTS."
+                        if (isApiKeyVaultUnlocked()) {
+                            "Add a Gemini API key in Settings → AI Providers → Credentials to use Gemini TTS."
+                        } else {
+                            "Unlock your provider keys in Settings → AI Providers before using Gemini TTS."
+                        }
                     }
                     val pcm = takePrefetch(text, voice)
                         ?: generateGeminiSpeech(apiKey, text.trim(), voice)

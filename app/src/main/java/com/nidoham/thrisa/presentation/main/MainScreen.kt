@@ -13,6 +13,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,9 +31,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nidoham.thrisa.core.database.reminder.ReminderStatus
 import com.nidoham.thrisa.core.database.reminder.SqliteReminderDatabase
+import com.nidoham.thrisa.core.service.CloudSettingsRepository
+import com.nidoham.thrisa.core.service.InMemoryCloudSettingsLocalStore
+import com.nidoham.thrisa.core.service.SupabaseAuthService
+import com.nidoham.thrisa.core.service.SupabaseCloudSettingsRemoteStore
 import com.nidoham.thrisa.core.theme.Night
 import com.nidoham.thrisa.core.util.GreetingProvider
 import com.nidoham.thrisa.domain.AccountSettingsStorage
+import com.nidoham.thrisa.domain.AssistantSettingsStorage
 import com.nidoham.thrisa.domain.sttLanguageTag
 import com.nidoham.thrisa.presentation.main.component.AppDrawer
 import com.nidoham.thrisa.presentation.main.component.AssistantNavigation
@@ -77,14 +83,36 @@ fun MainScreen(
 
     // --- Account settings (re-read whenever the screen resumes) ---------------
     val accountStorage = remember { AccountSettingsStorage(appContext) }
-    var displayName by remember { mutableStateOf(accountStorage.getUserName().ifBlank { "User" }) }
-    var voiceLanguage by remember { mutableStateOf(accountStorage.getLanguage().sttLanguageTag()) }
+    val assistantSettingsStorage = remember { AssistantSettingsStorage(appContext) }
+    val authService = remember { SupabaseAuthService() }
+    var displayName by remember {
+        mutableStateOf(
+            accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
+        )
+    }
+    var voiceLanguage by remember {
+        mutableStateOf(assistantSettingsStorage.getLanguage().sttLanguageTag())
+    }
+    val cloudSettingsRepository = remember(appContext) {
+        CloudSettingsRepository(
+            local = InMemoryCloudSettingsLocalStore(appContext),
+            remote = SupabaseCloudSettingsRemoteStore(),
+            currentUserId = { authService.currentUser()?.id },
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        cloudSettingsRepository.synchronize()
+        viewModel.refreshSettings()
+        voiceLanguage = assistantSettingsStorage.getLanguage().sttLanguageTag()
+        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        // Returning from Settings: reload API key, prompt settings, name and voice language.
+        // Returning from Settings: reload cloud language and API key.
         viewModel.refreshSettings()
-        displayName = accountStorage.getUserName().ifBlank { "User" }
-        voiceLanguage = accountStorage.getLanguage().sttLanguageTag()
+        voiceLanguage = assistantSettingsStorage.getLanguage().sttLanguageTag()
+        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
     }
 
     // --- Voice + chat ---------------------------------------------------------

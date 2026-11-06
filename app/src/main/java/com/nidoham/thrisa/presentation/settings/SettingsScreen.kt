@@ -78,6 +78,8 @@ import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,6 +96,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -119,6 +122,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nidoham.thrisa.core.service.screen.ThrisaAccessibilityService
+import com.nidoham.thrisa.core.service.CloudSettingsRepository
+import com.nidoham.thrisa.core.service.CloudSettingsPatch
+import com.nidoham.thrisa.core.service.CloudSettingsSyncResult
+import com.nidoham.thrisa.core.service.InMemoryCloudSettingsLocalStore
+import com.nidoham.thrisa.core.service.SupabaseCloudSettingsRemoteStore
+import com.nidoham.thrisa.core.service.SupabaseAuthService
+import com.nidoham.thrisa.core.service.ProviderCredentialVault
+import com.nidoham.thrisa.core.service.ProviderVaultOpenResult
 import com.nidoham.thrisa.core.sound.SpeechEngine
 import com.nidoham.thrisa.core.theme.Aqua
 import com.nidoham.thrisa.core.theme.CardStroke
@@ -131,11 +142,13 @@ import com.nidoham.thrisa.domain.ApiKeyStorage
 import com.nidoham.thrisa.domain.AssistantProvider
 import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.AssistantLanguage
+import com.nidoham.thrisa.domain.AssistantSettingsStorage
 import com.nidoham.thrisa.domain.Gender
 import com.nidoham.thrisa.domain.RelationType
-import com.nidoham.thrisa.domain.RoleplaySettingsStorage
 import com.nidoham.thrisa.domain.SpeechSettingsStorage
+import com.nidoham.thrisa.domain.UserSettingsStorage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /* ------------------------------------------------------------------ */
 /*  Enums                                                              */
@@ -156,7 +169,8 @@ private enum class EditField(
     val requiresNonBlank: Boolean = false,
 ) {
     USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
-    PHONE("Phone number", "Used for your account. Stays on this device.", "+880 1XXXXXXXXX", isPhoneNumber = true),
+    DISPLAY_NAME("Display name", "Name shown on your profile.", "e.g. Rahim"),
+    PHONE("Phone number", "Your profile phone number.", "+880 1XXXXXXXXX", isPhoneNumber = true),
     ASSISTANT_NAME("Assistant name", "What you call your assistant.", "Thrisa"),
     OPENROUTER_MODEL(
         "OpenRouter model",
@@ -235,57 +249,64 @@ private fun RelationType.badgeLabel(): String = when {
 /* ------------------------------------------------------------------ */
 
 @Stable
-private class SettingsState(private val storage: ApiKeyStorage, context: Context) {
+private class SettingsState(
+    private val storage: ApiKeyStorage,
+    context: Context,
+    private val userId: String?,
+) {
     var notifications by mutableStateOf(true)
-    var voiceReplies by mutableStateOf(false)
-    var saveHistory by mutableStateOf(true)
-    var requestTimeout by mutableStateOf(30)
-    var selectedProvider by mutableStateOf(storage.getSelectedProvider())
-
-    // Loaded from SharedPreferences on creation — survive app restarts.
+    private val userSettingsStorage = UserSettingsStorage()
+    var voiceReplies by mutableStateOf(userSettingsStorage.getVoiceOutputEnabled())
+    var saveHistory by mutableStateOf(userSettingsStorage.getStoredHistory())
+    var saveMemories by mutableStateOf(userSettingsStorage.getStoredMemories())
+    var theme by mutableStateOf(userSettingsStorage.getTheme())
+    var fontSize by mutableStateOf(userSettingsStorage.getFontSize())
+    var requestTimeout by mutableIntStateOf(30)
+    var selectedProvider by mutableStateOf(storage.getSelectedProvider(userId))
     private var geminiKey by mutableStateOf(
-        storage.getApiKey(AssistantProvider.GEMINI.name).orEmpty()
+        userId?.let { storage.getApiKey(AssistantProvider.GEMINI.name, it) }.orEmpty()
     )
     private var openRouterKey by mutableStateOf(
-        storage.getApiKey(AssistantProvider.OPENROUTER.name).orEmpty()
+        userId?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
     )
-    var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId())
+    var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(userId))
     private val speechStorage = SpeechSettingsStorage(context)
-    private val roleplayStorage = RoleplaySettingsStorage(context)
     private val accountStorage = AccountSettingsStorage(context)
-    var relationType by mutableStateOf(roleplayStorage.getRelationType())
+    private val assistantStorage = AssistantSettingsStorage(context)
+    var assistantLanguage by mutableStateOf(assistantStorage.getLanguage())
+    var username by mutableStateOf(accountStorage.getUserName())
+    var displayName by mutableStateOf(accountStorage.getDisplayName())
+    var phone by mutableStateOf(accountStorage.getPhoneNumber())
+    var gender by mutableStateOf(accountStorage.getGender())
+    var assistantName by mutableStateOf(assistantStorage.getName())
+    var relationship by mutableStateOf(assistantStorage.getRelationship())
+    var assistantVoice by mutableStateOf(assistantStorage.getVoice())
     var speechEngine by mutableStateOf(
         runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }.getOrDefault(SpeechEngine.SYSTEM)
     )
-    var speechVoice by mutableStateOf(speechStorage.getVoice())
-
-    // Account profile + assistant identity
-    var username by mutableStateOf(accountStorage.getUserName())
-    var gender by mutableStateOf(accountStorage.getGender())
-    var phoneNumber by mutableStateOf(accountStorage.getPhoneNumber())
-    var assistantName by mutableStateOf(accountStorage.getAssistantName())
-    var assistantLanguage by mutableStateOf(accountStorage.getLanguage())
 
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
     }
 
-    fun setKey(provider: AssistantProvider, value: String) {
-        when (provider) {
-            AssistantProvider.GEMINI -> geminiKey = value
-            AssistantProvider.OPENROUTER -> openRouterKey = value
-        }
-        storage.saveApiKey(provider.name, value)
+    fun applyCredentials(credentials: Map<AssistantProvider, String>) {
+        geminiKey = credentials[AssistantProvider.GEMINI].orEmpty()
+        openRouterKey = credentials[AssistantProvider.OPENROUTER].orEmpty()
     }
 
-    fun saveProvider(provider: AssistantProvider) {
+    fun clearCredentials() {
+        geminiKey = ""
+        openRouterKey = ""
+    }
+
+    fun saveProvider(provider: AssistantProvider, userId: String?) {
         selectedProvider = provider
-        storage.saveSelectedProvider(provider)
+        storage.saveSelectedProvider(provider, userId)
     }
 
     fun saveOpenRouterModelId(value: String) {
-        storage.saveOpenRouterModelId(value)
+        storage.saveOpenRouterModelId(value, userId)
         openRouterModelId = value.trim()
     }
 
@@ -294,19 +315,31 @@ private class SettingsState(private val storage: ApiKeyStorage, context: Context
         speechStorage.setEngine(engine.name)
     }
 
-    fun saveSpeechVoice(voice: AssistantVoice) {
-        speechVoice = voice
-        speechStorage.setVoice(voice)
+    fun saveAssistantLanguage(value: AssistantLanguage) {
+        assistantLanguage = value
+        assistantStorage.setLanguage(value)
     }
 
-    fun saveRelationType(type: RelationType) {
-        relationType = type
-        roleplayStorage.setRelationType(type)
-    }
-
-    fun saveUserName(value: String) {
-        username = value.trim()
-        accountStorage.setUserName(username)
+    fun saveProfileField(field: EditField, value: String) {
+        when (field) {
+            EditField.USERNAME -> {
+                username = value
+                accountStorage.setUserName(value)
+            }
+            EditField.DISPLAY_NAME -> {
+                displayName = value
+                accountStorage.setDisplayName(value)
+            }
+            EditField.PHONE -> {
+                phone = value
+                accountStorage.setPhoneNumber(value)
+            }
+            EditField.ASSISTANT_NAME -> {
+                assistantName = value
+                assistantStorage.setName(value)
+            }
+            else -> Unit
+        }
     }
 
     fun saveGender(value: Gender) {
@@ -314,19 +347,47 @@ private class SettingsState(private val storage: ApiKeyStorage, context: Context
         accountStorage.setGender(value)
     }
 
-    fun savePhoneNumber(value: String) {
-        phoneNumber = value.trim()
-        accountStorage.setPhoneNumber(phoneNumber)
+    fun saveRelationship(value: RelationType) {
+        relationship = value
+        assistantStorage.setRelationship(value)
     }
 
-    fun saveAssistantName(value: String) {
-        accountStorage.setAssistantName(value)
-        assistantName = accountStorage.getAssistantName()
+    fun saveAssistantVoice(value: AssistantVoice) {
+        assistantVoice = value
+        assistantStorage.setVoice(value)
     }
 
-    fun saveAssistantLanguage(value: AssistantLanguage) {
-        assistantLanguage = value
-        accountStorage.setLanguage(value)
+    fun saveHistory(value: Boolean) {
+        saveHistory = value
+        userSettingsStorage.setStoredHistory(value)
+    }
+
+    fun saveMemories(value: Boolean) {
+        saveMemories = value
+        userSettingsStorage.setStoredMemories(value)
+    }
+
+    fun saveVoiceOutput(value: Boolean) {
+        voiceReplies = value
+        userSettingsStorage.setVoiceOutputEnabled(value)
+    }
+
+    fun refreshCloudBackedSettings() {
+        assistantLanguage = assistantStorage.getLanguage()
+        speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
+            .getOrDefault(SpeechEngine.SYSTEM)
+        username = accountStorage.getUserName()
+        displayName = accountStorage.getDisplayName()
+        phone = accountStorage.getPhoneNumber()
+        gender = accountStorage.getGender()
+        assistantName = assistantStorage.getName()
+        relationship = assistantStorage.getRelationship()
+        assistantVoice = assistantStorage.getVoice()
+        saveHistory = userSettingsStorage.getStoredHistory()
+        saveMemories = userSettingsStorage.getStoredMemories()
+        voiceReplies = userSettingsStorage.getVoiceOutputEnabled()
+        theme = userSettingsStorage.getTheme()
+        fontSize = userSettingsStorage.getFontSize()
     }
 }
 
@@ -341,13 +402,33 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val storage = remember { ApiKeyStorage(context.applicationContext) }
-    val state = remember { SettingsState(storage, context.applicationContext) }
+    val authService = remember { SupabaseAuthService() }
+    val userId = authService.currentUser()?.id
+    val state = remember(storage, userId) { SettingsState(storage, context.applicationContext, userId) }
+    val providerCredentialVault = remember(context) {
+        ProviderCredentialVault(context.applicationContext)
+    }
+    val cloudSettingsRepository = remember(context) {
+        CloudSettingsRepository(
+            local = InMemoryCloudSettingsLocalStore(context.applicationContext),
+            remote = SupabaseCloudSettingsRemoteStore(),
+            currentUserId = { authService.currentUser()?.id },
+        )
+    }
+    val coroutineScope = rememberCoroutineScope()
+    var cloudSyncError by remember { mutableStateOf<String?>(null) }
+    var vaultUnlocked by remember(userId) {
+        mutableStateOf(userId?.let(providerCredentialVault::isUnlocked) == true)
+    }
+    var showPinDialog by remember { mutableStateOf(false) }
+    var pinConfirmationRequired by remember { mutableStateOf(false) }
+    var pinDialogError by remember { mutableStateOf<String?>(null) }
+    var pinDialogBusy by remember { mutableStateOf(false) }
+    var legacyKeyCount by remember { mutableIntStateOf(0) }
 
     var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var editingProvider by remember { mutableStateOf<AssistantProvider?>(null) }
-    var showRelationSheet by remember { mutableStateOf(false) }
     var editingField by remember { mutableStateOf<EditField?>(null) }
-    var showGenderDialog by remember { mutableStateOf(false) }
 
     // Set while the user is in the system accessibility settings granting
     // screen access; consumed on the next ON_RESUME to give feedback and,
@@ -388,6 +469,169 @@ fun SettingsScreen(
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    fun synchronizeCloudSettings() {
+        coroutineScope.launch {
+            cloudSyncError = null
+            when (val result = cloudSettingsRepository.synchronize()) {
+                is CloudSettingsSyncResult.Synced -> state.refreshCloudBackedSettings()
+                CloudSettingsSyncResult.SignInRequired -> Unit
+                is CloudSettingsSyncResult.Failed ->
+                    cloudSyncError = result.message
+            }
+        }
+    }
+
+    fun applyVaultResult(result: ProviderVaultOpenResult) {
+        when (result) {
+            is ProviderVaultOpenResult.SetupRequired -> {
+                pinConfirmationRequired = true
+                legacyKeyCount = result.legacyKeyCount
+                pinDialogError = if (result.legacyKeyCount > 0) {
+                    "Create an 8-digit-or-longer PIN. Confirm below before migrating the existing keys."
+                } else {
+                    "Create an 8-digit-or-longer PIN to protect provider keys across your devices."
+                }
+            }
+            is ProviderVaultOpenResult.Unlocked -> {
+                vaultUnlocked = true
+                pinConfirmationRequired = false
+                state.applyCredentials(result.credentials)
+                state.saveProvider(result.activeProvider, userId)
+                pinDialogError = null
+                if (result.warning != null) {
+                    Toast.makeText(context, result.warning, Toast.LENGTH_LONG).show()
+                }
+                showPinDialog = false
+            }
+            is ProviderVaultOpenResult.Failed -> {
+                pinDialogError = result.message
+            }
+        }
+    }
+
+    fun openCredentialVault(
+        pin: String,
+        confirmation: String?,
+        legacyOwnershipConfirmed: Boolean,
+    ) {
+        val uid = userId
+        if (uid == null) {
+            pinDialogError = "Sign in before unlocking provider credentials."
+            return
+        }
+        coroutineScope.launch {
+            pinDialogBusy = true
+            val pinChars = pin.toCharArray()
+            val confirmationChars = confirmation?.toCharArray()
+            try {
+                applyVaultResult(
+                    providerCredentialVault.open(
+                        uid,
+                        pinChars,
+                        confirmationChars,
+                        legacyOwnershipConfirmed,
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pinDialogError = e.message ?: "Couldn't open provider credentials."
+            } finally {
+                pinChars.fill('\u0000')
+                confirmationChars?.fill('\u0000')
+                pinDialogBusy = false
+            }
+        }
+    }
+
+    fun saveProviderCredential(provider: AssistantProvider, key: String) {
+        val uid = userId
+        if (uid == null) {
+            Toast.makeText(context, "Sign in before saving provider keys.", Toast.LENGTH_LONG).show()
+            return
+        }
+        coroutineScope.launch {
+            try {
+                when (val result = providerCredentialVault.saveKey(uid, provider, key)) {
+                    is ProviderVaultOpenResult.Unlocked -> {
+                        state.applyCredentials(result.credentials)
+                        result.warning?.let {
+                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                        }
+                        editingProvider = null
+                    }
+                    is ProviderVaultOpenResult.Failed ->
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    is ProviderVaultOpenResult.SetupRequired -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    e.message ?: "Couldn't save the encrypted provider key.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    fun chooseActiveProvider(provider: AssistantProvider) {
+        val uid = userId
+        if (uid == null || !vaultUnlocked) {
+            pinDialogError = "Unlock provider credentials before changing the active provider."
+            showPinDialog = true
+            return
+        }
+        coroutineScope.launch {
+            try {
+                when (val result = providerCredentialVault.setActiveProvider(uid, provider)) {
+                    is ProviderVaultOpenResult.Unlocked -> {
+                        state.saveProvider(result.activeProvider, uid)
+                        result.warning?.let {
+                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    is ProviderVaultOpenResult.Failed ->
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    is ProviderVaultOpenResult.SetupRequired -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    e.message ?: "Couldn't save the active provider.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    fun toggleCredentialVault() {
+        if (vaultUnlocked && userId != null) {
+            providerCredentialVault.lock(userId)
+            state.clearCredentials()
+            vaultUnlocked = false
+            pinConfirmationRequired = false
+            pinDialogError = null
+            legacyKeyCount = 0
+        } else {
+            pinConfirmationRequired = false
+            pinDialogError = null
+            legacyKeyCount = 0
+            showPinDialog = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        synchronizeCloudSettings()
+    }
+
+    LaunchedEffect(refreshPermissionsTrigger) {
+        if (refreshPermissionsTrigger > 0) synchronizeCloudSettings()
     }
 
     val requestMultipleLauncher = rememberLauncherForActivityResult(
@@ -529,10 +773,59 @@ fun SettingsScreen(
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         onNavigate = onNavigate,
-        onEditKey = { editingProvider = it },
-        onEditRelation = { showRelationSheet = true },
+        vaultUnlocked = vaultUnlocked,
+        onToggleCredentialVault = ::toggleCredentialVault,
+        onSaveActiveProvider = ::chooseActiveProvider,
+        onEditKey = {
+            if (vaultUnlocked) {
+                editingProvider = it
+            } else {
+                pinConfirmationRequired = false
+                pinDialogError = null
+                showPinDialog = true
+            }
+        },
         onEditField = { editingField = it },
-        onEditGender = { showGenderDialog = true }
+        onSaveGender = { value ->
+            state.saveGender(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(gender = value))
+            synchronizeCloudSettings()
+        },
+        onSaveAssistantVoice = { value ->
+            state.saveAssistantVoice(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(assistantVoice = value))
+            synchronizeCloudSettings()
+        },
+        onSaveRelationship = { value ->
+            state.saveRelationship(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(relationship = value))
+            synchronizeCloudSettings()
+        },
+        onSaveLanguage = { value ->
+            state.saveAssistantLanguage(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(assistantLanguage = value))
+            synchronizeCloudSettings()
+        },
+        onSaveSpeechEngine = { value ->
+            state.saveSpeechEngine(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
+            synchronizeCloudSettings()
+        },
+        onSaveHistory = { value ->
+            state.saveHistory(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(storedHistory = value))
+            synchronizeCloudSettings()
+        },
+        onSaveMemories = { value ->
+            state.saveMemories(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(storedMemories = value))
+            synchronizeCloudSettings()
+        },
+        onSaveVoiceOutput = { value ->
+            state.saveVoiceOutput(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(voiceOutputEnabled = value))
+            synchronizeCloudSettings()
+        },
     )
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
@@ -551,6 +844,9 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
+            cloudSyncError?.let { message ->
+                SettingsCloudSyncErrorCard(message, ::synchronizeCloudSettings)
+            }
             if (isRoot) {
                 RootList(current.children) { id -> pathIds = pathIds + id }
             } else {
@@ -564,26 +860,35 @@ fun SettingsScreen(
         ApiKeyDialog(
             provider = provider,
             initialKey = state.keyFor(provider),
-            onSave = { newKey ->
-                state.setKey(provider, newKey.trim())
-                editingProvider = null
+            onSave = { newKey -> saveProviderCredential(provider, newKey.trim()) },
+            onRemove = {
+                saveProviderCredential(provider, "")
             },
             onDismiss = { editingProvider = null }
         )
     }
 
-    if (showRelationSheet) {
-        RelationTypeSheet(
-            selected = state.relationType,
-            onApply = { state.saveRelationType(it) },
-            onDismiss = { showRelationSheet = false }
+    if (showPinDialog) {
+        ProviderPinDialog(
+            confirmationRequired = pinConfirmationRequired,
+            legacyKeyCount = legacyKeyCount,
+            error = pinDialogError,
+            busy = pinDialogBusy,
+            onSubmit = ::openCredentialVault,
+            onDismiss = {
+                showPinDialog = false
+                pinConfirmationRequired = false
+                pinDialogError = null
+                legacyKeyCount = 0
+            },
         )
     }
 
     editingField?.let { field ->
         val initialValue = when (field) {
             EditField.USERNAME -> state.username
-            EditField.PHONE -> state.phoneNumber
+            EditField.DISPLAY_NAME -> state.displayName
+            EditField.PHONE -> state.phone
             EditField.ASSISTANT_NAME -> state.assistantName
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
         }
@@ -591,23 +896,23 @@ fun SettingsScreen(
             field = field,
             initialValue = initialValue,
             onSave = { value ->
-                when (field) {
-                    EditField.USERNAME -> state.saveUserName(value)
-                    EditField.PHONE -> state.savePhoneNumber(value)
-                    EditField.ASSISTANT_NAME -> state.saveAssistantName(value)
-                    EditField.OPENROUTER_MODEL -> state.saveOpenRouterModelId(value)
+                if (field == EditField.OPENROUTER_MODEL) {
+                    state.saveOpenRouterModelId(value)
+                } else {
+                    state.saveProfileField(field, value)
+                    val patch = when (field) {
+                        EditField.USERNAME -> CloudSettingsPatch(username = value.trim())
+                        EditField.DISPLAY_NAME -> CloudSettingsPatch(displayName = value.trim())
+                        EditField.PHONE -> CloudSettingsPatch(phone = value.trim())
+                        EditField.ASSISTANT_NAME -> CloudSettingsPatch(assistantName = value.trim())
+                        EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
+                    }
+                    cloudSettingsRepository.recordChange(patch)
+                    synchronizeCloudSettings()
                 }
                 editingField = null
             },
-            onDismiss = { editingField = null }
-        )
-    }
-
-    if (showGenderDialog) {
-        GenderDialog(
-            selected = state.gender,
-            onSelect = { state.saveGender(it) },
-            onDismiss = { showGenderDialog = false }
+            onDismiss = { editingField = null },
         )
     }
 
@@ -782,17 +1087,13 @@ private fun openExactAlarmSettings(context: Context) {
 }
 
 private fun openNotificationSettings(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val intent = Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        runCatching {
-            context.startActivity(intent)
-        }.recoverCatching {
-            openAppSettings(context)
-        }
-    } else {
+    val intent = Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching {
+        context.startActivity(intent)
+    }.recoverCatching {
         openAppSettings(context)
     }
 }
@@ -835,10 +1136,19 @@ private fun buildTree(
     permissionStatus: PermissionStatus,
     permissionActions: PermissionActions,
     onNavigate: (SettingsDestination) -> Unit,
+    vaultUnlocked: Boolean,
+    onToggleCredentialVault: () -> Unit,
+    onSaveActiveProvider: (AssistantProvider) -> Unit,
     onEditKey: (AssistantProvider) -> Unit,
-    onEditRelation: () -> Unit,
     onEditField: (EditField) -> Unit,
-    onEditGender: () -> Unit
+    onSaveGender: (Gender) -> Unit,
+    onSaveAssistantVoice: (AssistantVoice) -> Unit,
+    onSaveRelationship: (RelationType) -> Unit,
+    onSaveLanguage: (AssistantLanguage) -> Unit,
+    onSaveSpeechEngine: (SpeechEngine) -> Unit,
+    onSaveHistory: (Boolean) -> Unit,
+    onSaveMemories: (Boolean) -> Unit,
+    onSaveVoiceOutput: (Boolean) -> Unit,
 ): SettingsNode.Category = SettingsNode.Category(
     id = "root",
     title = "Settings",
@@ -855,23 +1165,30 @@ private fun buildTree(
                 SettingsNode.Item(
                     id = "username",
                     title = "Username",
-                    subtitle = state.username.ifBlank { "Not set" },
+                    subtitle = state.username.ifBlank { "Set your username" },
                     icon = Icons.Outlined.Person,
-                    onClick = { onEditField(EditField.USERNAME) }
+                    onClick = { onEditField(EditField.USERNAME) },
                 ),
                 SettingsNode.Item(
-                    id = "gender",
-                    title = "Gender",
-                    subtitle = state.gender.label,
-                    icon = Icons.Outlined.People,
-                    onClick = onEditGender
+                    id = "display-name",
+                    title = "Display name",
+                    subtitle = state.displayName.ifBlank { "Set your profile name" },
+                    icon = Icons.Outlined.Person,
+                    onClick = { onEditField(EditField.DISPLAY_NAME) },
                 ),
                 SettingsNode.Item(
                     id = "phone",
                     title = "Phone number",
-                    subtitle = state.phoneNumber.ifBlank { "Not set" },
+                    subtitle = state.phone.ifBlank { "Not set" },
                     icon = Icons.Outlined.Phone,
-                    onClick = { onEditField(EditField.PHONE) }
+                    onClick = { onEditField(EditField.PHONE) },
+                ),
+                SettingsNode.Item(
+                    id = "gender",
+                    title = "Gender",
+                    subtitle = "Profile information",
+                    icon = Icons.Outlined.Person,
+                    trailing = { GenderDropdown(state.gender, onSaveGender) },
                 ),
                 SettingsNode.Item(
                     id = "subscription",
@@ -894,7 +1211,7 @@ private fun buildTree(
         SettingsNode.Category(
             id = "assistant",
             title = "Assistant",
-            subtitle = "Name, language, roleplay & voice",
+            subtitle = "Language",
             icon = Icons.Outlined.AutoAwesome,
             children = listOf(
                 SettingsNode.Item(
@@ -902,7 +1219,7 @@ private fun buildTree(
                     title = "Assistant name",
                     subtitle = state.assistantName,
                     icon = Icons.Outlined.SmartToy,
-                    onClick = { onEditField(EditField.ASSISTANT_NAME) }
+                    onClick = { onEditField(EditField.ASSISTANT_NAME) },
                 ),
                 SettingsNode.Item(
                     id = "assistant-language",
@@ -910,25 +1227,29 @@ private fun buildTree(
                     subtitle = "Language the assistant replies in",
                     icon = Icons.Outlined.Language,
                     trailing = {
-                        LanguageDropdown(state.assistantLanguage, state::saveAssistantLanguage)
+                        LanguageDropdown(state.assistantLanguage, onSaveLanguage)
                     }
                 ),
                 SettingsNode.Item(
-                    id = "relation-type",
+                    id = "assistant-relationship",
                     title = "Relationship",
-                    subtitle = state.relationType.summary,
-                    icon = state.relationType.icon(),
-                    onClick = onEditRelation,
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TrailingBadge(
-                                state.relationType.badgeLabel(),
-                                state.relationType.accent()
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            TrailingChevron()
-                        }
-                    }
+                    subtitle = "Personalize the assistant's tone",
+                    icon = Icons.Outlined.People,
+                    trailing = { RelationTypeDropdown(state.relationship, onSaveRelationship) },
+                ),
+                SettingsNode.Item(
+                    id = "assistant-voice",
+                    title = "Assistant voice",
+                    subtitle = "Voice used for spoken replies",
+                    icon = Icons.Outlined.SettingsVoice,
+                    trailing = { AssistantVoiceDropdown(state.assistantVoice, onSaveAssistantVoice) },
+                ),
+                SettingsNode.Item(
+                    id = "voice-output",
+                    title = "Voice output",
+                    subtitle = "Speak assistant responses",
+                    icon = Icons.Outlined.GraphicEq,
+                    trailing = { TrailingSwitch(state.voiceReplies, onSaveVoiceOutput) },
                 ),
             )
         ),
@@ -936,7 +1257,7 @@ private fun buildTree(
         SettingsNode.Category(
             id = "engine",
             title = "Engine",
-            subtitle = "Speech output & voice engine",
+            subtitle = "Speech engine",
             icon = Icons.Outlined.SettingsVoice,
             children = listOf(
                 SettingsNode.Item(
@@ -947,16 +1268,7 @@ private fun buildTree(
                     else "Gemini TTS · uses your saved Gemini API key",
                     icon = Icons.Outlined.GraphicEq,
                     trailing = {
-                        SpeechEngineDropdown(state.speechEngine, state::saveSpeechEngine)
-                    }
-                ),
-                SettingsNode.Item(
-                    id = "assistant-voice",
-                    title = "Assistant voice",
-                    subtitle = "Gemini uses the selected voice; local uses a matching installed voice when available",
-                    icon = Icons.Outlined.GraphicEq,
-                    trailing = {
-                        AssistantVoiceDropdown(state.speechVoice, state::saveSpeechVoice)
+                        SpeechEngineDropdown(state.speechEngine, onSaveSpeechEngine)
                     }
                 ),
             )
@@ -969,6 +1281,23 @@ private fun buildTree(
             icon = Icons.Outlined.VpnKey,
             children = listOf(
                 SettingsNode.Item(
+                    id = "provider-vault",
+                    title = if (vaultUnlocked) "Lock provider keys" else "Unlock provider keys",
+                    subtitle = if (vaultUnlocked) {
+                        "Keys are unlocked for this signed-in session"
+                    } else {
+                        "Enter your PIN to unlock encrypted keys"
+                    },
+                    icon = Icons.Outlined.Lock,
+                    onClick = onToggleCredentialVault,
+                    trailing = {
+                        TrailingBadge(
+                            text = if (vaultUnlocked) "UNLOCKED" else "LOCKED",
+                            accent = if (vaultUnlocked) Success else Aqua,
+                        )
+                    },
+                ),
+                SettingsNode.Item(
                     id = "provider",
                     title = "Provider",
                     subtitle = "Choose your default",
@@ -976,7 +1305,7 @@ private fun buildTree(
                     trailing = {
                         ProviderDropdownTrailing(
                             selected = state.selectedProvider,
-                            onSelect = state::saveProvider
+                            onSelect = onSaveActiveProvider,
                         )
                     }
                 ),
@@ -991,30 +1320,26 @@ private fun buildTree(
                                 SettingsNode.Item(
                                     id = "key-${provider.name.lowercase()}",
                                     title = "${provider.displayName} API Key",
-                                    subtitle = state.keyFor(provider).let { key ->
-                                        if (key.isBlank()) "Not configured"
-                                        else "••••••••" + key.takeLast(4)
+                                    subtitle = when {
+                                        !vaultUnlocked -> "Locked"
+                                        state.keyFor(provider).isBlank() -> "Not configured"
+                                        else -> "Encrypted and configured"
                                     },
                                     icon = Icons.Outlined.Key,
                                     onClick = { onEditKey(provider) },
                                     trailing = {
-                                        if (state.keyFor(provider).isBlank()) {
+                                        if (!vaultUnlocked) {
+                                            TrailingBadge("LOCKED", TextSoft)
+                                        } else if (state.keyFor(provider).isBlank()) {
                                             TrailingBadge("SET UP", Aqua)
                                         } else {
-                                            TrailingBadge("ACTIVE", Success)
+                                            TrailingBadge("SAVED", Success)
                                         }
                                     }
                                 )
                             )
                         }
                     }
-                ),
-                SettingsNode.Item(
-                    id = "openrouter-model",
-                    title = "OpenRouter Model",
-                    subtitle = state.openRouterModelId,
-                    icon = Icons.Outlined.SmartToy,
-                    onClick = { onEditField(EditField.OPENROUTER_MODEL) }
                 ),
             )
         ),
@@ -1029,13 +1354,13 @@ private fun buildTree(
                     id = "theme", title = "Theme",
                     icon = Icons.Outlined.DarkMode,
                     onClick = { onNavigate(SettingsDestination.APPEARANCE) },
-                    trailing = { TrailingValue("Dark") }
+                    trailing = { TrailingValue(state.theme.replaceFirstChar { it.uppercase() }) }
                 ),
                 SettingsNode.Item(
                     id = "textsize", title = "Text size",
                     icon = Icons.Outlined.FormatSize,
                     onClick = { onNavigate(SettingsDestination.APPEARANCE) },
-                    trailing = { TrailingValue("Medium") }
+                    trailing = { TrailingValue(state.fontSize.replaceFirstChar { it.uppercase() }) }
                 ),
                 SettingsNode.Item(
                     id = "language", title = "Language",
@@ -1218,12 +1543,20 @@ private fun buildTree(
                 SettingsNode.Item(
                     id = "history",
                     title = "Chat history",
-                    subtitle = "Keep chats on device",
+                    subtitle = "Allow chat history to be stored",
                     icon = Icons.Outlined.History,
-                    onClick = { state.saveHistory = !state.saveHistory },
+                    onClick = { onSaveHistory(!state.saveHistory) },
                     trailing = {
-                        TrailingSwitch(state.saveHistory) { state.saveHistory = it }
+                        TrailingSwitch(state.saveHistory, onSaveHistory)
                     }
+                ),
+                SettingsNode.Item(
+                    id = "stored-memories",
+                    title = "Stored memories",
+                    subtitle = "Allow assistant memories to be stored",
+                    icon = Icons.Outlined.History,
+                    onClick = { onSaveMemories(!state.saveMemories) },
+                    trailing = { TrailingSwitch(state.saveMemories, onSaveMemories) },
                 ),
                 SettingsNode.Item(
                     id = "export",
@@ -1302,6 +1635,48 @@ private fun TopBar(title: String, onBack: () -> Unit) {
 /* ------------------------------------------------------------------ */
 /*  Root list — prominent category cards                               */
 /* ------------------------------------------------------------------ */
+
+@Composable
+private fun SettingsCloudSyncErrorCard(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF171C2C))
+            .border(1.dp, CardStroke, RoundedCornerShape(18.dp))
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = Color(0xFFFFB36B),
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Settings couldn't sync",
+                    color = TextHigh,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(message, color = TextSoft, fontSize = 12.sp)
+            }
+        }
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier.align(Alignment.End),
+        ) {
+            Text("Retry", color = Aqua)
+        }
+    }
+}
 
 @Composable
 private fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
@@ -1673,15 +2048,207 @@ private fun AssistantVoiceDropdown(
     }
 }
 
+@Composable
+private fun GenderDropdown(
+    selected: Gender,
+    onSelect: (Gender) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.label, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose gender",
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            Gender.entries.forEach { gender ->
+                DropdownMenuItem(
+                    text = { Text(gender.label, color = TextHigh, fontSize = 14.sp) },
+                    onClick = { onSelect(gender); expanded = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelationTypeDropdown(
+    selected: RelationType,
+    onSelect: (RelationType) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.title, color = selected.accent(), fontSize = 13.sp,
+                fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose relationship",
+                tint = TextSoft, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            RelationType.entries.forEach { relationship ->
+                DropdownMenuItem(
+                    text = { Text(relationship.title, color = TextHigh, fontSize = 14.sp) },
+                    onClick = { onSelect(relationship); expanded = false },
+                )
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*  API key dialog                                                     */
 /* ------------------------------------------------------------------ */
+
+@Composable
+private fun ProviderPinDialog(
+    confirmationRequired: Boolean,
+    legacyKeyCount: Int,
+    error: String?,
+    busy: Boolean,
+    onSubmit: (String, String?, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var pin by remember(confirmationRequired) { mutableStateOf("") }
+    var confirmation by remember(confirmationRequired) { mutableStateOf("") }
+    var legacyOwnershipConfirmed by remember(confirmationRequired) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = {
+            Text(
+                if (confirmationRequired) "Set provider PIN" else "Unlock provider keys",
+                color = TextHigh,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    if (confirmationRequired) {
+                        "Choose a PIN with at least 8 digits. It is never uploaded. If forgotten, encrypted keys cannot be recovered."
+                    } else {
+                        "Enter your PIN to decrypt your provider keys on this device. The PIN is never uploaded."
+                    },
+                    color = TextSoft,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { value ->
+                        if (value.all(Char::isDigit) && value.length <= 32) pin = value
+                    },
+                    enabled = !busy,
+                    singleLine = true,
+                    label = { Text("PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (confirmationRequired) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = confirmation,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit) && value.length <= 32) confirmation = value
+                        },
+                        enabled = !busy,
+                        singleLine = true,
+                        label = { Text("Confirm PIN") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (confirmationRequired && legacyKeyCount > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = legacyOwnershipConfirmed,
+                            onCheckedChange = { legacyOwnershipConfirmed = it },
+                            enabled = !busy,
+                        )
+                        Text(
+                            "I confirm these $legacyKeyCount saved keys belong to this account.",
+                            color = TextSoft,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(error, color = Color(0xFFFFB36B), fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val submittedPin = pin
+                    val submittedConfirmation = confirmation.takeIf { confirmationRequired }
+                    pin = ""
+                    confirmation = ""
+                    onSubmit(
+                        submittedPin,
+                        submittedConfirmation,
+                        legacyOwnershipConfirmed,
+                    )
+                },
+                enabled = !busy && pin.length >= 8 &&
+                    (!confirmationRequired || confirmation.length >= 8) &&
+                    (legacyKeyCount == 0 || !confirmationRequired || legacyOwnershipConfirmed),
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Aqua,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(
+                        if (confirmationRequired) "Create PIN" else "Unlock",
+                        color = Aqua,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text("Cancel", color = TextSoft)
+            }
+        },
+    )
+}
 
 @Composable
 private fun ApiKeyDialog(
     provider: AssistantProvider,
     initialKey: String,
     onSave: (String) -> Unit,
+    onRemove: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var key by remember(provider) { mutableStateOf(initialKey) }
@@ -1694,7 +2261,8 @@ private fun ApiKeyDialog(
         },
         text = {
             Column {
-                Text("Paste your API key. It stays on this device and is never uploaded.",
+                Text(
+                    "Your key is encrypted with your PIN before it is synced. The server stores only ciphertext.",
                     color = TextSoft, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -1713,7 +2281,14 @@ private fun ApiKeyDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+            Row {
+                if (initialKey.isNotBlank()) {
+                    TextButton(onClick = onRemove) {
+                        Text("Remove", color = Color(0xFFFF6B6B))
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+            }
         }
     )
 }
@@ -1812,51 +2387,6 @@ private fun EditFieldDialog(
                 Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
-        }
-    )
-}
-
-/* ------------------------------------------------------------------ */
-/*  Gender dialog                                                      */
-/* ------------------------------------------------------------------ */
-
-@Composable
-private fun GenderDialog(
-    selected: Gender,
-    onSelect: (Gender) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = RowSurface,
-        title = {
-            Text("Gender", color = TextHigh, fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold)
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Gender.entries.forEach { option ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .selectable(
-                                selected = option == selected,
-                                role = Role.RadioButton,
-                                onClick = { onSelect(option); onDismiss() }
-                            )
-                            .padding(horizontal = 6.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioDot(selected = option == selected, accent = Aqua)
-                        Spacer(Modifier.width(12.dp))
-                        Text(option.label, color = TextHigh, fontSize = 14.sp)
-                    }
-                }
-            }
-        },
-        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
         }

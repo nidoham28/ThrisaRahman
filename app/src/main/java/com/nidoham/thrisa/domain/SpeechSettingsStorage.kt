@@ -1,7 +1,6 @@
 package com.nidoham.thrisa.domain
 
 import android.content.Context
-import androidx.core.content.edit
 
 enum class AssistantVoice(
     val label: String,
@@ -16,27 +15,26 @@ enum class AssistantVoice(
     }
 }
 
-/** Stores speech preferences locally on this device. */
+/** Holds the currently loaded cloud speech engine in memory. */
 class SpeechSettingsStorage(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val assistantSettingsStorage = AssistantSettingsStorage(context.applicationContext)
 
-    fun getEngine(): String = prefs.getString(KEY_ENGINE, SYSTEM_ENGINE) ?: SYSTEM_ENGINE
+    fun getEngine(): String = engine
 
     fun setEngine(engine: String) {
-        prefs.edit { putString(KEY_ENGINE, engine) }
+        SpeechSettingsStorage.engine = engine
     }
 
-    fun getVoice(): AssistantVoice =
-        AssistantVoice.fromStorageValue(prefs.getString(KEY_VOICE, null))
+    fun getVoice(): AssistantVoice = assistantSettingsStorage.getVoice()
 
     fun setVoice(voice: AssistantVoice) {
-        prefs.edit { putString(KEY_VOICE, voice.name) }
+        assistantSettingsStorage.setVoice(voice)
     }
 
     private companion object {
-        const val PREFS_NAME = "speech_settings"
-        const val KEY_ENGINE = "tts_engine"
-        const val KEY_VOICE = "assistant_voice"
         const val SYSTEM_ENGINE = "SYSTEM"
+
+        @Volatile
+        var engine: String = SYSTEM_ENGINE
     }
 }

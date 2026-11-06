@@ -7,16 +7,17 @@ import com.nidoham.thrisa.ai.AssistantApiService
 import com.nidoham.thrisa.core.prompt.Instructions
 import com.nidoham.thrisa.core.prompt.InstructionsConfig
 import com.nidoham.thrisa.core.service.image.InlineImage
+import com.nidoham.thrisa.core.service.SupabaseAuthService
 import com.nidoham.thrisa.core.tools.executor.BuiltinToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ScreenToolExecutor
-import com.nidoham.thrisa.domain.RelationType
-import com.nidoham.thrisa.domain.RoleplaySettingsStorage
 import com.nidoham.thrisa.domain.ApiKeyStorage
 import com.nidoham.thrisa.domain.AssistantProvider
 import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.AssistantLanguage
-import com.nidoham.thrisa.domain.Gender
+import com.nidoham.thrisa.domain.AssistantSettingsStorage
+import com.nidoham.thrisa.domain.UserSettingsStorage
+import com.nidoham.thrisa.domain.ProviderCredentialSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -69,15 +70,12 @@ class AssistantViewModel(
     private val appContext = context.applicationContext
     private val assistantApi = AssistantApiService(appContext)
     private val apiKeyStorage = ApiKeyStorage(appContext)
+    private val authService = SupabaseAuthService()
     private val modelHistory = mutableListOf<AgentMessage>()
-    private val roleplayStorage = RoleplaySettingsStorage(appContext)
-    private var activeRelationType: RelationType = roleplayStorage.getRelationType()
     private val accountStorage = AccountSettingsStorage(appContext)
-    private var activeLanguage: AssistantLanguage = accountStorage.getLanguage()
-    private var activeAssistantName: String = accountStorage.getAssistantName()
-    private var activeUserName: String = accountStorage.getUserName()
-    private var activeUserGender: String =
-        accountStorage.getGender().takeIf { it != Gender.PREFER_NOT_TO_SAY }?.label.orEmpty()
+    private val assistantSettingsStorage = AssistantSettingsStorage(appContext)
+    private val userSettingsStorage = UserSettingsStorage()
+    private var activeLanguage: AssistantLanguage = assistantSettingsStorage.getLanguage()
     private var systemInstruction = buildInstructions()
 
     /** Tool executor with access to the Android context (needed for device/battery info). */
@@ -101,57 +99,39 @@ class AssistantViewModel(
 
     private fun buildInstructions(): String = Instructions(
         InstructionsConfig(
-            assistantName = activeAssistantName,
+            assistantName = assistantSettingsStorage.getName(),
             language = activeLanguage.code,
-            relationship = activeRelationType.name, // or a label/description property if your enum has one
-            userName = activeUserName,
-            userContext = if (activeUserGender.isNotBlank()) "Gender: $activeUserGender" else "",
-            voiceMode = false, // wire to your voice setting if you have one
+            relationship = assistantSettingsStorage.getRelationship().id,
+            userName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
+            userContext = "",
+            voiceMode = userSettingsStorage.getVoiceOutputEnabled(),
         )
     ).build()
 
-    /** Reload the relationship instructions whenever the user changes the setting. */
-    fun refreshRelationType() {
-        val current = roleplayStorage.getRelationType()
-        if (current != activeRelationType) {
-            activeRelationType = current
-            systemInstruction = buildInstructions()
-        }
-    }
-
-    /** Reload the account / assistant-identity instructions when settings change. */
+    /** Reload the cloud-backed assistant language when returning from settings. */
     fun refreshAssistantIdentity() {
-        val language = accountStorage.getLanguage()
-        val assistantName = accountStorage.getAssistantName()
-        val userName = accountStorage.getUserName()
-        val userGender = accountStorage.getGender()
-            .takeIf { it != Gender.PREFER_NOT_TO_SAY }?.label.orEmpty()
-        if (language != activeLanguage || assistantName != activeAssistantName ||
-            userName != activeUserName || userGender != activeUserGender
-        ) {
-            activeLanguage = language
-            activeAssistantName = assistantName
-            activeUserName = userName
-            activeUserGender = userGender
-            systemInstruction = buildInstructions()
-        }
+        activeLanguage = assistantSettingsStorage.getLanguage()
+        systemInstruction = buildInstructions()
     }
 
-    /** Reload settings (API key, relationship prompt, identity) when returning from settings. */
+    /** Reload cloud language and saved API key when returning from settings. */
     fun refreshSettings() {
-        refreshRelationType()
         refreshAssistantIdentity()
         refreshApiKey()
     }
 
     /** Reload the saved key after returning from provider settings. */
     fun refreshApiKey() {
-        activeProvider = apiKeyStorage.getSelectedProvider()
+        val userId = authService.currentUser()?.id
+        activeProvider = apiKeyStorage.getSelectedProvider(userId)
         activeModelId = when (activeProvider) {
             AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
-            AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterModelId().trim()
+            AssistantProvider.OPENROUTER -> AssistantApiService.DEFAULT_MODEL_OPENROUTER
         }
-        val savedKey = apiKeyStorage.getApiKey(activeProvider.name).orEmpty().trim()
+        val savedKey = userId
+            ?.let { apiKeyStorage.getApiKey(activeProvider.name, it) }
+            .orEmpty()
+            .trim()
         activeApiKey = savedKey.takeIf { it.isNotEmpty() }
     }
 
@@ -216,9 +196,14 @@ class AssistantViewModel(
             try {
                 val apiKey = activeApiKey
                 if (apiKey.isNullOrBlank()) {
-                    throw IllegalStateException(
-                        "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
-                    )
+                    val userId = authService.currentUser()?.id
+                    val message = when {
+                        userId == null -> "Sign in to use your saved ${provider.displayName} API key."
+                        !ProviderCredentialSession.isUnlocked(userId) ->
+                            "Unlock your provider keys in Settings → AI Providers before chatting."
+                        else -> "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
+                    }
+                    throw IllegalStateException(message)
                 }
                 if (modelId.isBlank()) {
                     throw IllegalStateException(
