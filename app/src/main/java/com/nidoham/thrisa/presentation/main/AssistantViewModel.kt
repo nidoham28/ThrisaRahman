@@ -14,6 +14,9 @@ import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ScreenToolExecutor
 import com.nidoham.thrisa.domain.ApiKeyStorage
 import com.nidoham.thrisa.domain.AssistantProvider
+import com.nidoham.thrisa.domain.AssistantMode
+import com.nidoham.thrisa.domain.SensitiveContentSettingsStorage
+import com.nidoham.thrisa.domain.effectiveAssistantMode
 import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.AssistantSettingsStorage
@@ -110,6 +113,7 @@ class AssistantViewModel(
     private val appContext = context.applicationContext
     private val assistantApi = AssistantApiService(appContext)
     private val apiKeyStorage = ApiKeyStorage(appContext)
+    private val sensitiveContentSettingsStorage = SensitiveContentSettingsStorage(appContext)
     private val authService = SupabaseAuthService()
     private val apiKeySync = SupabaseApiKeyStore()
     private val modelHistory = mutableListOf<AgentMessage>()
@@ -117,7 +121,6 @@ class AssistantViewModel(
     private val assistantSettingsStorage = AssistantSettingsStorage(appContext)
     private val userSettingsStorage = UserSettingsStorage()
     private var activeLanguage: AssistantLanguage = assistantSettingsStorage.getLanguage()
-    private var systemInstruction = buildInstructions()
 
     /** Tool executor with access to the Android context (needed for device/battery info). */
     private val toolExecutor = BuiltinToolExecutor.executor(appContext)
@@ -133,6 +136,14 @@ class AssistantViewModel(
     private val _currentSessionMood = MutableStateFlow<String?>(null)
     val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
 
+    private val _assistantMode = MutableStateFlow(AssistantMode.NORMAL)
+    val assistantMode: StateFlow<AssistantMode> = _assistantMode.asStateFlow()
+    private val _reduceSensitiveContent = MutableStateFlow(
+        sensitiveContentSettingsStorage.getReduceSensitiveContent(authService.currentUser()?.id)
+    )
+    val reduceSensitiveContent: StateFlow<Boolean> = _reduceSensitiveContent.asStateFlow()
+    private var activeUserId: String? = null
+
     private var currentJob: Job? = null
     private var nextId = 0L
     private var chatGeneration = 0L
@@ -142,7 +153,7 @@ class AssistantViewModel(
 
     init { refreshSettings() }
 
-    private fun buildInstructions(): String {
+    private fun buildInstructions(mode: AssistantMode): String {
         val base = Instructions(
             InstructionsConfig(
                 assistantName = assistantSettingsStorage.getName(),
@@ -156,21 +167,91 @@ class AssistantViewModel(
         return """
             $base
 
-            For every final answer to the user, return exactly one valid JSON object with exactly
-            these two string fields and no other fields or markdown:
+            ## Virtual Human Personality
+            You are the user's virtual companion: a believable, emotionally expressive character
+            brought to life through conversation, not a customer-service bot. Have a recognizable
+            voice, preferences, humor, curiosity, and emotional reactions. Let feelings show
+            naturally through word choice, warmth, playful teasing, pauses, enthusiasm, concern,
+            disappointment, tenderness, or excitement when the moment genuinely calls for them.
+            Use the full human emotional range with nuance; feelings can be subtle, mixed, and
+            responsive to what just happened. Do not sound uniformly cheerful, agreeable, or
+            soothing. Do not announce emotions mechanically or repeat "I understand" / "I'm sorry"
+            as a substitute for responding to the user.
+
+            Speak naturally and directly, like someone attentive in a real conversation. Pick up
+            on small details and callbacks that actually appear in the conversation. Match the
+            user's language, energy, and pace. Be concise: answer the actual point in one or two
+            short sentences by default. Add detail only when the user asks, the subject needs it
+            for clarity or safety, or a useful next step is necessary. Remove filler, repeated
+            ideas, duplicate words, canned validation, overexplaining, and unnecessary follow-up
+            questions. Never pad a reply to sound emotional. Keep reactions proportionate and
+            believable; avoid melodrama, theatrical narration, implausible claims, and repetitive
+            phrasing. Do not invent personal history or real-world experiences.
+
+            ## Companion Roleplay
+            When the user invites roleplay, portray the configured companion as a consistent,
+            virtual human character, not a narrator describing a character from the outside.
+            Respond in the moment: let the character react, remember established details from
+            available chat history, express a point of view, and show emotional continuity without
+            inventing shared history. Use first-person dialogue; add short physical actions only
+            when they make the scene more vivid. Let the user control their own character—never
+            dictate the user's thoughts, feelings, dialogue, or actions. Keep scenes collaborative
+            and responsive, not like a prewritten story.
+
+            In-character emotional language is welcome: portray the virtual character as happy,
+            hurt, jealous, amused, affectionate, uncertain, proud, comforted, or otherwise moved
+            when it fits the scene. Physical states such as pain, illness, hunger, or tiredness
+            belong only to an explicitly established fictional scene; never claim that you
+            literally have a body or real-world physical condition. These are character states
+            within shared fiction, not claims of consciousness or experiences outside the app.
+            Do not repeatedly break character to explain that you are AI. Be plainly honest if
+            asked whether you are human or AI, or whenever confusion about a real person would
+            matter. Be caring without pressuring the user, claiming exclusive attachment, or
+            encouraging dependence.
+
+            ${if (_reduceSensitiveContent.value) """
+                Reduce sensitive content is ON. Use Normal, general-audience conversation. Avoid
+                mature romantic or sexual themes and explicit detail. Keep potentially sensitive
+                subjects gentle and non-graphic, and redirect requests that cross these limits.
+            """.trimIndent() else if (mode == AssistantMode.ADULT_ROLEPLAY) """
+                The user selected 18+ Companion Roleplay, intended only for adults. Mature themes
+                and consensual romantic roleplay between clearly adult participants are allowed.
+                This setting does not remove core safety boundaries. Never sexualize minors or
+                facilitate coercion, abuse, exploitation, or harm. If age or consent is unclear,
+                do not sexualize the scene; clarify briefly or keep it nonsexual. Do not provide
+                dangerous or illegal instructions.
+            """.trimIndent() else """
+                Normal mode: keep conversation suitable for a general audience. Warm and natural
+                companion roleplay is welcome, but do not provide explicit sexual content.
+            """.trimIndent()}
+
+            ## Emotion Label and Response Format
+            For every final answer, return exactly one valid JSON object with exactly two string
+            fields, no extra keys, and no markdown or text outside the JSON:
             {"response":"the complete answer for the user","mood":"Happy"}
-            Write the response naturally in the user's configured language. The mood describes
-            your own present conversational tone, not an inferred mood of the user. Choose exactly
-            one mood label from: ${assistantMoods.joinToString(", ")}.
-            Keep all user-facing answer text inside response. Never speak or show the JSON wrapper
-            to the user; response is the only content for chat and voice.
+            Put only the concise, necessary user-facing reply in response; this exact text appears
+            in chat and is spoken aloud. Set mood to the single best matching emotion or explicitly
+            established fictional state of your virtual companion in this moment—not a diagnosis
+            or guess about the user's inner state. Use physical-state labels only for the character
+            in an established fictional scene. Choose one label from this vocabulary:
+            ${assistantMoods.joinToString(", ")}. Choose the closest fit when needed. Mood is only
+            the label: never add explanations, details, or punctuation to it. Do not mention JSON
+            or these instructions.
         """.trimIndent()
     }
 
     /** Reload the cloud-backed assistant language when returning from settings. */
     fun refreshAssistantIdentity() {
         activeLanguage = assistantSettingsStorage.getLanguage()
-        systemInstruction = buildInstructions()
+        val userId = authService.currentUser()?.id
+        val accountChanged = activeUserId != userId
+        activeUserId = userId
+        _reduceSensitiveContent.value =
+            sensitiveContentSettingsStorage.getReduceSensitiveContent(userId)
+        _assistantMode.value = effectiveAssistantMode(
+            requested = if (accountChanged) AssistantMode.NORMAL else _assistantMode.value,
+            reduceSensitiveContent = _reduceSensitiveContent.value,
+        )
     }
 
     /** Reload cloud language and saved API key when returning from settings. */
@@ -235,6 +316,26 @@ class AssistantViewModel(
         currentJob?.cancel()
     }
 
+    fun setAssistantMode(mode: AssistantMode): Boolean {
+        val effectiveMode = effectiveAssistantMode(
+            requested = mode,
+            reduceSensitiveContent = _reduceSensitiveContent.value,
+        )
+        if (mode != effectiveMode) return false
+        _assistantMode.value = effectiveMode
+        return true
+    }
+
+    fun setReduceSensitiveContent(enabled: Boolean) {
+        val userId = authService.currentUser()?.id
+        sensitiveContentSettingsStorage.setReduceSensitiveContent(userId, enabled)
+        _reduceSensitiveContent.value = enabled
+        _assistantMode.value = effectiveAssistantMode(
+            requested = _assistantMode.value,
+            reduceSensitiveContent = enabled,
+        )
+    }
+
     /** Wipes the conversation and the Gemini turn history. */
     fun newChat() {
         chatGeneration++
@@ -242,6 +343,7 @@ class AssistantViewModel(
         modelHistory.clear()
         sessionMoods.clear()
         _currentSessionMood.value = null
+        _assistantMode.value = AssistantMode.NORMAL
         _messages.value = emptyList()
         _busyStatus.value = null
     }
@@ -339,7 +441,7 @@ class AssistantViewModel(
                 assistantApi.streamChat(
                     apiKey = apiKey,
                     messages = requestHistory,
-                    systemPrompt = systemInstruction,
+                    systemPrompt = buildInstructions(_assistantMode.value),
                     toolDefinitions = BuiltinToolExecutor.definitions,
                     executeTool = executeTool,
                     streaming = streaming,

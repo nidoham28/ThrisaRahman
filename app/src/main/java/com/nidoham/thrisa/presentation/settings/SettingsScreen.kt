@@ -142,6 +142,7 @@ import com.nidoham.thrisa.domain.AssistantProvider
 import com.nidoham.thrisa.domain.AssistantVoice
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.AssistantSettingsStorage
+import com.nidoham.thrisa.domain.SensitiveContentSettingsStorage
 import com.nidoham.thrisa.domain.Gender
 import com.nidoham.thrisa.domain.RelationType
 import com.nidoham.thrisa.domain.SpeechSettingsStorage
@@ -255,6 +256,10 @@ private class SettingsState(
 ) {
     var notifications by mutableStateOf(true)
     private val userSettingsStorage = UserSettingsStorage()
+    private val sensitiveContentSettingsStorage = SensitiveContentSettingsStorage(context)
+    var reduceSensitiveContent by mutableStateOf(
+        sensitiveContentSettingsStorage.getReduceSensitiveContent(userId)
+    )
     var voiceReplies by mutableStateOf(userSettingsStorage.getVoiceOutputEnabled())
     var saveHistory by mutableStateOf(userSettingsStorage.getStoredHistory())
     var saveMemories by mutableStateOf(userSettingsStorage.getStoredMemories())
@@ -380,6 +385,11 @@ private class SettingsState(
         userSettingsStorage.setVoiceOutputEnabled(value)
     }
 
+    fun saveReduceSensitiveContent(value: Boolean) {
+        reduceSensitiveContent = value
+        sensitiveContentSettingsStorage.setReduceSensitiveContent(userId, value)
+    }
+
     fun refreshCloudBackedSettings() {
         assistantLanguage = assistantStorage.getLanguage()
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
@@ -394,6 +404,8 @@ private class SettingsState(
         saveHistory = userSettingsStorage.getStoredHistory()
         saveMemories = userSettingsStorage.getStoredMemories()
         voiceReplies = userSettingsStorage.getVoiceOutputEnabled()
+        reduceSensitiveContent =
+            sensitiveContentSettingsStorage.getReduceSensitiveContent(userId)
         theme = userSettingsStorage.getTheme()
         fontSize = userSettingsStorage.getFontSize()
     }
@@ -734,6 +746,7 @@ fun SettingsScreen(
             cloudSettingsRepository.recordChange(CloudSettingsPatch(voiceOutputEnabled = value))
             synchronizeCloudSettings()
         },
+        onSaveReduceSensitiveContent = state::saveReduceSensitiveContent,
     )
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
@@ -1053,6 +1066,7 @@ private fun buildTree(
     onSaveHistory: (Boolean) -> Unit,
     onSaveMemories: (Boolean) -> Unit,
     onSaveVoiceOutput: (Boolean) -> Unit,
+    onSaveReduceSensitiveContent: (Boolean) -> Unit,
 ): SettingsNode.Category = SettingsNode.Category(
     id = "root",
     title = "Settings",
@@ -1445,6 +1459,25 @@ private fun buildTree(
                             accent = if (permissionStatus.allGranted) Success else Aqua
                         )
                     }
+                ),
+                SettingsNode.Item(
+                    id = "reduce-sensitive-content",
+                    title = "Reduce sensitive content",
+                    subtitle = if (state.reduceSensitiveContent) {
+                        "Extra safeguards; Normal mode only"
+                    } else {
+                        "Normal and age-verified 18+ modes available"
+                    },
+                    icon = Icons.Outlined.Security,
+                    onClick = {
+                        onSaveReduceSensitiveContent(!state.reduceSensitiveContent)
+                    },
+                    trailing = {
+                        TrailingSwitch(
+                            state.reduceSensitiveContent,
+                            onSaveReduceSensitiveContent,
+                        )
+                    },
                 ),
                 SettingsNode.Item(
                     id = "history",

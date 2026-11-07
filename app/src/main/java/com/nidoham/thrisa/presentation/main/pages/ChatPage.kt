@@ -39,12 +39,15 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -75,6 +78,7 @@ import com.nidoham.thrisa.core.theme.Night
 import com.nidoham.thrisa.core.theme.OnAqua
 import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
+import com.nidoham.thrisa.domain.AssistantMode
 import com.nidoham.thrisa.presentation.main.UiMessage
 import kotlinx.coroutines.launch
 
@@ -111,11 +115,15 @@ fun ChatPage(
     onOpenImage: (String) -> Unit,
     modifier: Modifier = Modifier,
     onStop: (() -> Unit)? = null,
+    assistantMode: AssistantMode = AssistantMode.NORMAL,
+    reduceSensitiveContent: Boolean = true,
+    onSelectAssistantMode: (AssistantMode) -> Unit = {},
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     var attachedImage by rememberSaveable { mutableStateOf<String?>(null) }
     val isBusy = busyStatus != null
     val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy
+    var modeMenuExpanded by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -157,6 +165,46 @@ fun ChatPage(
             .imePadding()
             .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Assistant mode", color = TextSoft, fontSize = CaptionSize)
+            Box {
+                TextButton(
+                    onClick = { modeMenuExpanded = true },
+                    enabled = !isBusy,
+                ) {
+                    Text(
+                        if (assistantMode == AssistantMode.NORMAL) "Normal ▾" else "18+ Companion ▾",
+                        color = if (assistantMode == AssistantMode.NORMAL) Aqua else Color(0xFFFF9F9F),
+                    )
+                }
+                DropdownMenu(
+                    expanded = modeMenuExpanded,
+                    onDismissRequest = { modeMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Normal") },
+                        onClick = {
+                            onSelectAssistantMode(AssistantMode.NORMAL)
+                            modeMenuExpanded = false
+                        },
+                    )
+                    if (!reduceSensitiveContent) {
+                        DropdownMenuItem(
+                            text = { Text("18+ Companion") },
+                            onClick = {
+                                modeMenuExpanded = false
+                                onSelectAssistantMode(AssistantMode.ADULT_ROLEPLAY)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (messages.isEmpty()) {
                 EmptyChatState(
@@ -204,6 +252,7 @@ fun ChatPage(
                         Text("Latest", color = TextHigh, fontSize = CaptionSize)
                     }
                 }
+
             }
         }
 
@@ -277,6 +326,7 @@ fun ChatPage(
                 )
             }
         }
+
     }
 }
 

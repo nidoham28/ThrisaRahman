@@ -38,6 +38,7 @@ import com.nidoham.thrisa.core.service.SupabaseCloudSettingsRemoteStore
 import com.nidoham.thrisa.core.theme.Night
 import com.nidoham.thrisa.core.util.GreetingProvider
 import com.nidoham.thrisa.domain.AccountSettingsStorage
+import com.nidoham.thrisa.domain.AssistantMode
 import com.nidoham.thrisa.domain.AssistantSettingsStorage
 import com.nidoham.thrisa.domain.sttLanguageTag
 import com.nidoham.thrisa.presentation.main.component.AppDrawer
@@ -124,6 +125,8 @@ fun MainScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
     val currentSessionMood by viewModel.currentSessionMood.collectAsStateWithLifecycle()
+    val assistantMode by viewModel.assistantMode.collectAsStateWithLifecycle()
+    val reduceSensitiveContent by viewModel.reduceSensitiveContent.collectAsStateWithLifecycle()
 
     // --- Reminders ------------------------------------------------------------
     val reminderRepository = remember { SupabaseReminderRepository.getInstance() }
@@ -187,7 +190,10 @@ fun MainScreen(
                         busyStatus = chatBusyStatus,
                         onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
                         onOpenImage = { imageUri -> openImage(context, imageUri) },
-                        onStop = viewModel::cancelCurrent
+                        onStop = viewModel::cancelCurrent,
+                        assistantMode = assistantMode,
+                        reduceSensitiveContent = reduceSensitiveContent,
+                        onSelectAssistantMode = viewModel::setAssistantMode,
                     )
 
                     Tab.MEMORIES -> MemoriesPage()

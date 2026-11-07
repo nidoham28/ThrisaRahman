@@ -32,11 +32,34 @@ class AssistantMoodTest {
     }
 
     @Test
-    fun `rejects invalid moods extra fields and non-string values`() {
+    fun `uses neutral when the mood is missing or unrecognized`() {
         listOf(
-            """{"response":"Hi","mood":"Worried"}""",
-            """{"response":"Hi","mood":"Happy","details":"extra"}""",
+            """{"response":"Hi","mood":"NotARealMood"}""",
+            """{"response":"Hi"}""",
+        ).forEach { raw ->
+            assertEquals(
+                AssistantResponse("Hi", "Neutral"),
+                decodeAssistantResponse(raw, isFinal = true),
+            )
+        }
+    }
+
+    @Test
+    fun `decodes fenced json and ignores unrelated fields`() {
+        assertEquals(
+            AssistantResponse("Hello!", "Happy"),
+            decodeAssistantResponse(
+                "```json\n{\"response\":\"Hello!\",\"mood\":\"Happy\",\"extra\":\"ignored\"}\n```",
+                isFinal = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects missing responses and non-string response values`() {
+        listOf(
             """{"response":42,"mood":"Happy"}""",
+            """{"mood":"Happy"}""",
         ).forEach { raw ->
             assertThrows(IllegalStateException::class.java) {
                 decodeAssistantResponse(raw, isFinal = true)
@@ -60,5 +83,27 @@ class AssistantMoodTest {
             val words = assistantMoodCaption(mood).split(' ')
             assertTrue(words.size in 2..3)
         }
+    }
+
+    @Test
+    fun `accepts the full companion emotion vocabulary`() {
+        assistantMoods.forEach { mood ->
+            assertEquals(
+                AssistantResponse("A natural reply.", mood),
+                decodeAssistantResponse(
+                    """{"response":"A natural reply.","mood":"$mood"}""",
+                    isFinal = true,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `includes requested emotional and roleplay states`() {
+        assertTrue(
+            assistantMoods.containsAll(
+                listOf("Jealous", "Unwell", "Naughty", "Pain", "Hungry", "Horrified"),
+            ),
+        )
     }
 }
