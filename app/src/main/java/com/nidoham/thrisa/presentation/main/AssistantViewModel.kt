@@ -129,6 +129,10 @@ class AssistantViewModel(
     private val _busyStatus = MutableStateFlow<String?>(null)
     val busyStatus: StateFlow<String?> = _busyStatus.asStateFlow()
 
+    private val sessionMoods = mutableListOf<String>()
+    private val _currentSessionMood = MutableStateFlow<String?>(null)
+    val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
+
     private var currentJob: Job? = null
     private var nextId = 0L
     private var chatGeneration = 0L
@@ -138,16 +142,30 @@ class AssistantViewModel(
 
     init { refreshSettings() }
 
-    private fun buildInstructions(): String = Instructions(
-        InstructionsConfig(
-            assistantName = assistantSettingsStorage.getName(),
-            language = activeLanguage.code,
-            relationship = assistantSettingsStorage.getRelationship().id,
-            userName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
-            userContext = "",
-            voiceMode = userSettingsStorage.getVoiceOutputEnabled(),
-        )
-    ).build()
+    private fun buildInstructions(): String {
+        val base = Instructions(
+            InstructionsConfig(
+                assistantName = assistantSettingsStorage.getName(),
+                language = activeLanguage.code,
+                relationship = assistantSettingsStorage.getRelationship().id,
+                userName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
+                userContext = "",
+                voiceMode = userSettingsStorage.getVoiceOutputEnabled(),
+            )
+        ).build()
+        return """
+            $base
+
+            For every final answer to the user, return exactly one valid JSON object with exactly
+            these two string fields and no other fields or markdown:
+            {"response":"the complete answer for the user","mood":"Happy"}
+            Write the response naturally in the user's configured language. The mood describes
+            your own present conversational tone, not an inferred mood of the user. Choose exactly
+            one mood label from: ${assistantMoods.joinToString(", ")}.
+            Keep all user-facing answer text inside response. Never speak or show the JSON wrapper
+            to the user; response is the only content for chat and voice.
+        """.trimIndent()
+    }
 
     /** Reload the cloud-backed assistant language when returning from settings. */
     fun refreshAssistantIdentity() {
@@ -222,6 +240,8 @@ class AssistantViewModel(
         chatGeneration++
         currentJob?.cancel()
         modelHistory.clear()
+        sessionMoods.clear()
+        _currentSessionMood.value = null
         _messages.value = emptyList()
         _busyStatus.value = null
     }
@@ -257,6 +277,7 @@ class AssistantViewModel(
         val modelId = activeModelId
         var generatedImageUri: String? = null
         var generatedImageSavedTo: String? = null
+        var finishedAssistantResponse: AssistantResponse? = null
         currentJob = viewModelScope.launch {
             try {
                 val apiKey = activeApiKey
@@ -332,8 +353,19 @@ class AssistantViewModel(
                     }
                     if (assistantMessage != null) {
                         if (event is AgentEvent.Finished) finishedAssistantMessage = assistantMessage
+                        val decodedResponse = decodeAssistantResponse(
+                            raw = assistantMessage.toText(),
+                            isFinal = event is AgentEvent.Finished,
+                        )
+                        if (event is AgentEvent.Finished && requestGeneration == chatGeneration) {
+                            finishedAssistantResponse = decodedResponse
+                            decodedResponse?.mood?.let { mood ->
+                                sessionMoods += mood
+                                _currentSessionMood.value = mostFrequentAssistantMood(sessionMoods)
+                            }
+                        }
                         if (streaming) {
-                            setText(assistantId, assistantMessage.toText())
+                            setText(assistantId, decodedResponse?.response.orEmpty())
                         }
                         assistantMessage.getTools().forEach { tool ->
                             val output = tool.output.filterIsInstance<AgentPart.Text>()
@@ -362,7 +394,8 @@ class AssistantViewModel(
                         _messages.update { list ->
                             list.map {
                                 if (it.id == assistantId) it.copy(
-                                    text = if (streaming) it.text else assistantMessage.toText(),
+                                    text = if (streaming) it.text
+                                    else decodedResponse?.response.orEmpty(),
                                     imageUri = generatedImageUri ?: it.imageUri,
                                     imageSavedTo = generatedImageSavedTo ?: it.imageSavedTo,
                                 ) else it
@@ -380,7 +413,7 @@ class AssistantViewModel(
                 if (!streaming) {
                     _messages.update {
                         it + UiMessage(
-                            assistantId, finishedAssistantMessage?.toText().orEmpty(), isUser = false,
+                            assistantId, finishedAssistantResponse?.response.orEmpty(), isUser = false,
                             imageUri = generatedImageUri,
                             imageSavedTo = generatedImageSavedTo,
                         )

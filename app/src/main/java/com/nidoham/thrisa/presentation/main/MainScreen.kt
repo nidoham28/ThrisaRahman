@@ -87,7 +87,8 @@ fun MainScreen(
     val authService = remember { SupabaseAuthService() }
     var displayName by remember {
         mutableStateOf(
-            accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
+            accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }
+                .ifBlank { "User" }
         )
     }
     var voiceLanguage by remember {
@@ -105,14 +106,16 @@ fun MainScreen(
         cloudSettingsRepository.synchronize()
         viewModel.refreshSettings()
         voiceLanguage = assistantSettingsStorage.getLanguage().sttLanguageTag()
-        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
+        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }
+            .ifBlank { "User" }
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         // Returning from Settings: reload cloud language and API key.
         viewModel.refreshSettings()
         voiceLanguage = assistantSettingsStorage.getLanguage().sttLanguageTag()
-        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }.ifBlank { "User" }
+        displayName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() }
+            .ifBlank { "User" }
     }
 
     // --- Voice + chat ---------------------------------------------------------
@@ -120,6 +123,7 @@ fun MainScreen(
     val voice = rememberVoiceSession(viewModel, voiceLanguage)
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
+    val currentSessionMood by viewModel.currentSessionMood.collectAsStateWithLifecycle()
 
     // --- Reminders ------------------------------------------------------------
     val reminderRepository = remember { SupabaseReminderRepository.getInstance() }
@@ -167,7 +171,11 @@ fun MainScreen(
                 )
             }
         ) { innerPadding ->
-            Column(Modifier.fillMaxSize().padding(innerPadding)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
                 Header(
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onNotificationsClick = { showReminderInbox = true },
@@ -181,9 +189,14 @@ fun MainScreen(
                         onOpenImage = { imageUri -> openImage(context, imageUri) },
                         onStop = viewModel::cancelCurrent
                     )
+
                     Tab.MEMORIES -> MemoriesPage()
                     Tab.PROFILE -> ProfilePage()
-                    else -> HomePage(voice.state, displayName)
+                    else -> HomePage(
+                        voice = voice.state,
+                        displayName = displayName,
+                        mood = currentSessionMood
+                    )
                 }
             }
         }
