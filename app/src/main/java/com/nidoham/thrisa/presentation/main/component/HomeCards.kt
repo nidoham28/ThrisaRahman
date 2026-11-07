@@ -1,3 +1,4 @@
+
 package com.nidoham.thrisa.presentation.main.component
 
 import androidx.compose.foundation.background
@@ -9,18 +10,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,17 +37,45 @@ import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
 import com.nidoham.thrisa.domain.Inspiration
 
-// ───────────────────────── Cards ─────────────────────────
+// -----------------------------------------------------
+// GLASS CARD
+// -----------------------------------------------------
+
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Box(
-        modifier
-            .clip(CardShape)
-            .background(CardBrush)
-            .border(1.dp, CardStroke, CardShape)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-    ) { content() }
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val cardModifier = modifier
+        .clip(CardShape)
+        .background(CardBrush)
+        .border(
+            width = 1.dp,
+            color = CardStroke,
+            shape = CardShape
+        )
+
+    Surface(
+        modifier = if (onClick != null) {
+            cardModifier.clickable(
+                role = Role.Button,
+                onClick = onClick
+            )
+        } else {
+            cardModifier
+        },
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = CardShape
+    ) {
+        content()
+    }
 }
+
+// -----------------------------------------------------
+// INFO CARD
+// -----------------------------------------------------
 
 @Composable
 fun InfoCard(
@@ -51,40 +83,109 @@ fun InfoCard(
     caption: String,
     modifier: Modifier = Modifier,
     titleTrailing: (@Composable () -> Unit)? = null,
-    value: @Composable RowScope.() -> Unit,
+    value: @Composable RowScope.() -> Unit
 ) {
-    GlassCard(modifier.height(Dim.InfoCard)) {
-        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    GlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = Dim.InfoCard)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    title, color = TextSoft, fontSize = 12.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    color = TextSoft,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 if (titleTrailing != null) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     titleTrailing()
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, content = value)
-            Text(caption, color = TextSoft, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+            // Main value
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = value
+            )
+
+            // Description
+            Text(
+                text = caption,
+                color = TextSoft,
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
+// -----------------------------------------------------
+// INSPIRATION CARD
+// -----------------------------------------------------
+
 @Composable
-fun InspirationCard(item: Inspiration, modifier: Modifier = Modifier) {
-    GlassCard(modifier.size(60.dp), onClick = {}) {
-        Box(
-            Modifier.fillMaxSize().padding(12.dp),
-            contentAlignment = Alignment.Center
-        ){
-            Row(
-                Modifier.wrapContentSize(),
+fun InspirationCard(
+    item: Inspiration,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    GlassCard(
+        modifier = modifier,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            // Icon container
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(item.tint.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(item.icon, null, tint = item.tint, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(item.title, color = TextHigh, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = null,
+                    tint = item.tint,
+                    modifier = Modifier.size(20.dp)
+                )
             }
+
+            // Title
+            Text(
+                text = item.title,
+                modifier = Modifier.weight(1f),
+                color = TextHigh,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

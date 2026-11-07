@@ -43,14 +43,12 @@ import com.nidoham.thrisa.orb.OrbState
 fun HeroCard(
     voice: VoiceState,
     modifier: Modifier = Modifier,
-    busy: String? = null,   // no longer used, kept so existing callers still compile
-    reply: String = "",     // no longer used, kept so existing callers still compile
     level: Float? = null,   // optional live mic/TTS amplitude 0f..1f (null = simulated)
     displayName: String = "User"
 ) {
     val provider = remember { GreetingProvider() }
     val name = displayName.trim().takeUnless { it.isBlank() || it.equals("User", ignoreCase = true) }
-    val greeting = name?.let { "${provider.currentMessage()}, $it" } ?: provider.currentMessage()
+    val greeting = provider.currentMessage()
 
     Column(
         modifier
@@ -73,7 +71,9 @@ fun HeroCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(4.dp))
-                Text("I’m here whenever you need me.", color = TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                if (name != null) {
+                    Text(name, color = TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
             }
             Spacer(Modifier.width(12.dp))
         }
