@@ -100,6 +100,7 @@ object BuiltinToolExecutor {
         val noteRepo = SqliteNoteDatabase.getInstance(context)
         val todoRepo = SqliteTodoDatabase.getInstance(context)
         val alarmRepo = SqliteAlarmDatabase.getInstance(context)
+        val cricketToolExecutor = CricketToolExecutor(context)
 
         return { call ->
             try {
@@ -117,6 +118,16 @@ object BuiltinToolExecutor {
 
                     "terminal_calculate" ->
                         executeTerminalCalculation(call, context)
+
+                    // ── Cricket ────────────────────────────────────────────────
+                    "get_live_cricket_scores" ->
+                        cricketToolExecutor.getLiveScores()
+
+                    "get_cricket_matches" ->
+                        cricketToolExecutor.getMatches(call)
+
+                    "get_cricket_scorecard" ->
+                        cricketToolExecutor.getScorecard(call)
 
                     // ── Applications ─────────────────────────────────────────────
                     "list_installed_apps" ->

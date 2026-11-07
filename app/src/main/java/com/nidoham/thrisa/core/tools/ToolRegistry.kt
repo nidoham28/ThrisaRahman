@@ -3,6 +3,8 @@ package com.nidoham.thrisa.core.tools
 import com.nidoham.thrisa.core.tools.definition.bluetoothControlTool
 import com.nidoham.thrisa.core.tools.definition.checkAppInstalledTool
 import com.nidoham.thrisa.core.tools.definition.createAlarmTool
+import com.nidoham.thrisa.core.tools.definition.cricketMatchesTool
+import com.nidoham.thrisa.core.tools.definition.cricketScorecardTool
 import com.nidoham.thrisa.core.tools.definition.createCalendarEventTool
 import com.nidoham.thrisa.core.tools.definition.createNoteTool
 import com.nidoham.thrisa.core.tools.definition.flashlightControlTool
@@ -28,6 +30,7 @@ import com.nidoham.thrisa.core.tools.definition.listNotesTool
 import com.nidoham.thrisa.core.tools.definition.listMemoriesTool
 import com.nidoham.thrisa.core.tools.definition.listRemindersTool
 import com.nidoham.thrisa.core.tools.definition.listTodosTool
+import com.nidoham.thrisa.core.tools.definition.liveCricketScoresTool
 import com.nidoham.thrisa.core.tools.definition.markReminderDoneTool
 import com.nidoham.thrisa.core.tools.definition.markTodoDoneTool
 import com.nidoham.thrisa.core.tools.definition.markTodoUndoneTool
@@ -67,6 +70,11 @@ object ToolRegistry {
         deviceInfoTool(),
         findTerminalTool(),
         terminalCalculationTool(),
+
+        // Cricket
+        liveCricketScoresTool(),
+        cricketMatchesTool(),
+        cricketScorecardTool(),
 
         // Applications
         listInstalledAppsTool(),

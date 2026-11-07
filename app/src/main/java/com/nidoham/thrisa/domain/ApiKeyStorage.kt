@@ -49,6 +49,17 @@ class ApiKeyStorage(context: Context) {
         }
     }
 
+    fun getCricApiKey(userId: String): String? =
+        prefs.getString(cricApiKeyKey(userId), null)?.takeIf(String::isNotBlank)
+
+    fun saveCricApiKey(userId: String, key: String) {
+        val cleaned = key.trim()
+        prefs.edit {
+            if (cleaned.isBlank()) remove(cricApiKeyKey(userId))
+            else putString(cricApiKeyKey(userId), cleaned)
+        }
+    }
+
     fun getSelectedProvider(userId: String? = null): AssistantProvider =
         AssistantProvider.fromStorageValue(
             prefs.getString(selectedProviderKey(userId), null)
@@ -78,6 +89,9 @@ class ApiKeyStorage(context: Context) {
 
         fun apiKeyKey(provider: AssistantProvider, userId: String) =
             "key_${provider.name}_${userId.lowercase(Locale.ROOT)}"
+
+        fun cricApiKeyKey(userId: String) =
+            "key_cricapi_${userId.lowercase(Locale.ROOT)}"
 
         fun openRouterModelKey(userId: String?) =
             userId?.let { "openrouter_model_${it.lowercase(Locale.ROOT)}" } ?: "openrouter_model"

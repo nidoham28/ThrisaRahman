@@ -268,6 +268,9 @@ private class SettingsState(
     private var openRouterKey by mutableStateOf(
         userId?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
     )
+    var cricketApiKey by mutableStateOf(
+        userId?.let(storage::getCricApiKey).orEmpty()
+    )
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(userId))
     private val speechStorage = SpeechSettingsStorage(context)
     private val accountStorage = AccountSettingsStorage(context)
@@ -297,6 +300,12 @@ private class SettingsState(
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
         }
         userId?.let { storage.saveApiKey(provider.name, it, cleaned) }
+    }
+
+    fun saveCricketApiKey(value: String) {
+        val cleaned = value.trim()
+        cricketApiKey = cleaned
+        userId?.let { storage.saveCricApiKey(it, cleaned) }
     }
 
     fun saveProvider(provider: AssistantProvider, userId: String?) {
@@ -417,6 +426,7 @@ fun SettingsScreen(
 
     var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var editingProvider by remember { mutableStateOf<AssistantProvider?>(null) }
+    var editingCricketApiKey by remember { mutableStateOf(false) }
     var editingField by remember { mutableStateOf<EditField?>(null) }
 
     // Set while the user is in the system accessibility settings granting
@@ -499,6 +509,23 @@ fun SettingsScreen(
                     Toast.LENGTH_LONG,
                 ).show()
             }
+        }
+    }
+
+    fun saveCricketCredential(key: String) {
+        if (userId == null) {
+            Toast.makeText(context, "Sign in before saving an API key.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            state.saveCricketApiKey(key)
+            editingCricketApiKey = false
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                e.message ?: "Couldn't save the CricAPI key.",
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
@@ -665,6 +692,7 @@ fun SettingsScreen(
         onNavigate = onNavigate,
         onSaveActiveProvider = ::chooseActiveProvider,
         onEditKey = { editingProvider = it },
+        onEditCricketApiKey = { editingCricketApiKey = true },
         onEditField = { editingField = it },
         onSaveGender = { value ->
             state.saveGender(value)
@@ -738,13 +766,26 @@ fun SettingsScreen(
 
     editingProvider?.let { provider ->
         ApiKeyDialog(
-            provider = provider,
+            title = "${provider.displayName} API Key",
+            placeholder = provider.placeholder,
             initialKey = state.keyFor(provider),
             onSave = { newKey -> saveProviderCredential(provider, newKey.trim()) },
             onRemove = {
                 saveProviderCredential(provider, "")
             },
             onDismiss = { editingProvider = null }
+        )
+    }
+
+    if (editingCricketApiKey) {
+        ApiKeyDialog(
+            title = "CricAPI Key",
+            placeholder = "Enter your CricAPI key",
+            description = "Get a free API key at cricapi.com. It is stored on this device for your signed-in account.",
+            initialKey = state.cricketApiKey,
+            onSave = ::saveCricketCredential,
+            onRemove = { saveCricketCredential("") },
+            onDismiss = { editingCricketApiKey = false },
         )
     }
 
@@ -1002,6 +1043,7 @@ private fun buildTree(
     onNavigate: (SettingsDestination) -> Unit,
     onSaveActiveProvider: (AssistantProvider) -> Unit,
     onEditKey: (AssistantProvider) -> Unit,
+    onEditCricketApiKey: () -> Unit,
     onEditField: (EditField) -> Unit,
     onSaveGender: (Gender) -> Unit,
     onSaveAssistantVoice: (AssistantVoice) -> Unit,
@@ -1184,6 +1226,28 @@ private fun buildTree(
                     }
                 ),
             )
+        ),
+
+        SettingsNode.Category(
+            id = "cricket",
+            title = "Cricket",
+            subtitle = "Live scores and match details",
+            icon = Icons.Outlined.Info,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "cricapi-key",
+                    title = "CricAPI Key",
+                    subtitle = if (state.cricketApiKey.isBlank()) "Not configured" else "Configured",
+                    icon = Icons.Outlined.Key,
+                    onClick = onEditCricketApiKey,
+                    trailing = {
+                        TrailingBadge(
+                            if (state.cricketApiKey.isBlank()) "SET UP" else "SAVED",
+                            if (state.cricketApiKey.isBlank()) Aqua else Success,
+                        )
+                    },
+                ),
+            ),
         ),
 
         SettingsNode.Category(
@@ -1965,24 +2029,26 @@ private fun RelationTypeDropdown(
 
 @Composable
 private fun ApiKeyDialog(
-    provider: AssistantProvider,
+    title: String,
+    placeholder: String,
+    description: String = "The key is stored on this device for your signed-in account.",
     initialKey: String,
     onSave: (String) -> Unit,
     onRemove: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var key by remember(provider) { mutableStateOf(initialKey) }
+    var key by remember(title) { mutableStateOf(initialKey) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = RowSurface,
         title = {
-            Text("${provider.displayName} API Key", color = TextHigh,
+            Text(title, color = TextHigh,
                 fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         },
         text = {
             Column {
                 Text(
-                    "The key is stored on this device for your signed-in account.",
+                    description,
                     color = TextSoft, fontSize = 13.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -1990,7 +2056,7 @@ private fun ApiKeyDialog(
                     onValueChange = { key = it },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
-                    placeholder = { Text(provider.placeholder, color = TextSoft.copy(alpha = 0.5f)) },
+                    placeholder = { Text(placeholder, color = TextSoft.copy(alpha = 0.5f)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
