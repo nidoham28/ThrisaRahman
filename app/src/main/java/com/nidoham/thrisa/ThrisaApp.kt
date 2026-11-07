@@ -9,14 +9,20 @@ class ThrisaApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-
         initializeApp()
     }
 
     private fun initializeApp() {
-        LegacySettingsCleanup.clearUnsupportedSettings(this)
+        runCatching {
+            LegacySettingsCleanup.clearUnsupportedSettings(this)
+        }.onFailure { error ->
+            if (BuildConfig.DEBUG) {
+                Log.e(TAG, "Settings cleanup failed", error)
+            }
+        }
+
         if (BuildConfig.DEBUG) {
-            Log.d(TAG, "Thrisa initialized successfully")
+            Log.d(TAG, "Application initialized")
         }
     }
 

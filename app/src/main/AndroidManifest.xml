@@ -2,73 +2,77 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Voice & Speech -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Shared media access: granular permissions on Android 13+, legacy storage on older devices. -->
+    <!-- Media access: Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <!-- Android 14+ may grant access to selected photos/videos only. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
+    <!-- Android 14+ selected media access -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
+    <!-- Legacy media access -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
-    <!-- Optional broad file-manager access; users grant this from Android special app access settings. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-
-    <!-- Calendar: read and write device calendar events -->
+    <!-- Calendar -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
-    <!-- Clock & Alarms: set alarms and timers -->
+    <!-- Alarms & Reminders -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
-
-    <!-- Reminders: local notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Reminders: exact alarm scheduling (API 31+) -->
+
     <uses-permission
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
         tools:targetApi="31" />
-    <!-- Reminders: wake device to fire alarms -->
+
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Optional: route voice via Bluetooth headset on API 31+ -->
+    <!-- Bluetooth -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
-        android:usesPermissionFlags="neverForLocation"
         tools:targetApi="31" />
 
-    <!-- Device toggles: read and switch Bluetooth on API <= 30 (API 31+ uses BLUETOOTH_CONNECT) -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
+
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
 
-    <!-- Device toggles: read Wi-Fi state; switch it only on API <= 28 (API 29+ opens the system panel) -->
+    <!-- Wi-Fi -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <uses-permission
         android:name="android.permission.CHANGE_WIFI_STATE"
         android:maxSdkVersion="28" />
 
-    <!-- Query installed apps on device for app launcher tools -->
+    <!-- Installed apps discovery -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    <!-- Required on Android 11+ so SpeechRecognizer services and launcher apps are visible -->
+    <!-- Speech recognition service discovery -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -81,23 +85,28 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/app_icon"
-        android:label="@string/app_name"
-        android:resizeableActivity="true"
         android:roundIcon="@drawable/app_icon"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.ThrisaRahman"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ThrisaRahman">
+        android:resizeableActivity="true"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="33">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:resizeableActivity="true"
-            android:theme="@style/Theme.ThrisaRahman"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.ThrisaRahman">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
+
     </application>
 
 </manifest>

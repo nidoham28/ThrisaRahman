@@ -20,18 +20,21 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Stop
@@ -44,9 +47,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +62,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -70,6 +76,7 @@ import com.nidoham.thrisa.core.theme.OnAqua
 import com.nidoham.thrisa.core.theme.TextHigh
 import com.nidoham.thrisa.core.theme.TextSoft
 import com.nidoham.thrisa.presentation.main.UiMessage
+import kotlinx.coroutines.launch
 
 // Local surface colors
 private val FieldSurface = Color(0xFF0D1520)
@@ -118,13 +125,29 @@ fun ChatPage(
 
     val listState = rememberLazyListState()
     val reversed = remember(messages) { messages.asReversed() }
+    val scope = rememberCoroutineScope()
 
-    // ✅ FIX: শুধু ইউজার নিচে থাকলে অটো-স্ক্রল করো।
-    // রিসাইজ/কনফিগারেশন চেঞ্জে ইউজারকে জোর করে নিচে নামাবে না।
-    LaunchedEffect(messages.size, isBusy) {
-        if (messages.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
+    // Floating "Latest" pill appears only after the user scrolls up a bit.
+    val showJumpToLatest by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
+
+    val lastMessageId = messages.lastOrNull()?.id
+
+    // Sticky auto-scroll: follow the conversation when the user is near the
+    // latest message, and ALWAYS when the newest message is their own send.
+    LaunchedEffect(lastMessageId, isBusy) {
+        val last = messages.lastOrNull() ?: return@LaunchedEffect
+        if (listState.firstVisibleItemIndex <= 1 || last.isUser) {
             listState.animateScrollToItem(0)
         }
+    }
+
+    fun sendDraft() {
+        if (!canSend) return
+        onSend(draft.trim(), attachedImage)
+        draft = ""
+        attachedImage = null
     }
 
     Column(
@@ -153,6 +176,32 @@ fun ChatPage(
                     }
                     items(reversed, key = { it.id }) { message ->
                         MessageBubble(message, onOpenImage)
+                    }
+                }
+
+                // One-tap jump back to the newest message.
+                if (showJumpToLatest) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(FieldSurface)
+                            .border(1.dp, CardStroke, RoundedCornerShape(20.dp))
+                            .clickable(role = Role.Button) {
+                                scope.launch { listState.animateScrollToItem(0) }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.ArrowDownward,
+                            contentDescription = null,
+                            tint = Aqua,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text("Latest", color = TextHigh, fontSize = CaptionSize)
                     }
                 }
             }
@@ -195,7 +244,11 @@ fun ChatPage(
                     )
                 },
                 shape = RoundedCornerShape(24.dp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Send
+                ),
+                keyboardActions = KeyboardActions(onSend = { sendDraft() }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = TextHigh,
                     unfocusedTextColor = TextHigh,
@@ -220,11 +273,7 @@ fun ChatPage(
                     description = "Send message",
                     enabled = canSend,
                     filled = true,
-                    onClick = {
-                        onSend(draft.trim(), attachedImage)
-                        draft = ""
-                        attachedImage = null
-                    },
+                    onClick = { sendDraft() },
                 )
             }
         }
@@ -369,16 +418,11 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
         Spacer(Modifier.height(24.dp))
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.widthIn(max = 420.dp)
         ) {
             Suggestions.forEach { suggestion ->
-                Text(
-                    suggestion,
-                    color = TextHigh,
-                    fontSize = SecondarySize,
-                    lineHeight = 20.sp,
-                    textAlign = TextAlign.Center,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = MinTouchTarget)
@@ -387,7 +431,21 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
                         .border(1.dp, CardStroke, RoundedCornerShape(16.dp))
                         .clickable(role = Role.Button) { onSuggestion(suggestion) }
                         .padding(horizontal = 16.dp, vertical = 14.dp)
-                )
+                ) {
+                    Icon(
+                        Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = Aqua,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        suggestion,
+                        color = TextHigh,
+                        fontSize = SecondarySize,
+                        lineHeight = 20.sp
+                    )
+                }
             }
         }
     }
@@ -456,7 +514,7 @@ private fun MessageImage(
     val canOpen = imageUri.startsWith("content://")
     if (hasText) Spacer(Modifier.height(10.dp))
 
-    // ✅ FIX: minHeight দিয়ে লোড হওয়ার আগে 0-হাইট জাম্প বন্ধ করা হলো
+    // minHeight keeps the bubble from collapsing to 0 while the image loads.
     AsyncImage(
         model = imageUri.toUri(),
         contentDescription = if (isUser) "Attached photo" else "Generated image",
