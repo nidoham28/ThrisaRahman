@@ -3,24 +3,6 @@ package com.nidoham.thrisa.domain
 import android.content.Context
 import androidx.core.content.edit
 
-enum class AssistantMode {
-    NORMAL,
-    ADULT_ROLEPLAY,
-}
-
-internal fun effectiveAssistantMode(
-    requested: AssistantMode,
-    reduceSensitiveContent: Boolean,
-): AssistantMode =
-    if (
-        requested == AssistantMode.ADULT_ROLEPLAY &&
-        reduceSensitiveContent
-    ) {
-        AssistantMode.NORMAL
-    } else {
-        requested
-    }
-
 class SensitiveContentSettingsStorage(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
         "assistant_mode_access",

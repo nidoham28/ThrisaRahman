@@ -1464,9 +1464,9 @@ private fun buildTree(
                     id = "reduce-sensitive-content",
                     title = "Reduce sensitive content",
                     subtitle = if (state.reduceSensitiveContent) {
-                        "Extra safeguards; Normal mode only"
+                        "Extra safeguards; general-audience content"
                     } else {
-                        "Normal and age-verified 18+ modes available"
+                        "Mature themes allowed; core safeguards remain"
                     },
                     icon = Icons.Outlined.Security,
                     onClick = {

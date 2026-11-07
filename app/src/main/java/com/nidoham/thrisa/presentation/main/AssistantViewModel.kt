@@ -14,9 +14,7 @@ import com.nidoham.thrisa.core.tools.executor.ImageToolExecutor
 import com.nidoham.thrisa.core.tools.executor.ScreenToolExecutor
 import com.nidoham.thrisa.domain.ApiKeyStorage
 import com.nidoham.thrisa.domain.AssistantProvider
-import com.nidoham.thrisa.domain.AssistantMode
 import com.nidoham.thrisa.domain.SensitiveContentSettingsStorage
-import com.nidoham.thrisa.domain.effectiveAssistantMode
 import com.nidoham.thrisa.domain.AccountSettingsStorage
 import com.nidoham.thrisa.domain.AssistantLanguage
 import com.nidoham.thrisa.domain.AssistantSettingsStorage
@@ -136,13 +134,9 @@ class AssistantViewModel(
     private val _currentSessionMood = MutableStateFlow<String?>(null)
     val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
 
-    private val _assistantMode = MutableStateFlow(AssistantMode.NORMAL)
-    val assistantMode: StateFlow<AssistantMode> = _assistantMode.asStateFlow()
     private val _reduceSensitiveContent = MutableStateFlow(
         sensitiveContentSettingsStorage.getReduceSensitiveContent(authService.currentUser()?.id)
     )
-    val reduceSensitiveContent: StateFlow<Boolean> = _reduceSensitiveContent.asStateFlow()
-    private var activeUserId: String? = null
 
     private var currentJob: Job? = null
     private var nextId = 0L
@@ -153,7 +147,7 @@ class AssistantViewModel(
 
     init { refreshSettings() }
 
-    private fun buildInstructions(mode: AssistantMode): String {
+    private fun buildInstructions(): String {
         val base = Instructions(
             InstructionsConfig(
                 assistantName = assistantSettingsStorage.getName(),
@@ -213,16 +207,13 @@ class AssistantViewModel(
                 Reduce sensitive content is ON. Use Normal, general-audience conversation. Avoid
                 mature romantic or sexual themes and explicit detail. Keep potentially sensitive
                 subjects gentle and non-graphic, and redirect requests that cross these limits.
-            """.trimIndent() else if (mode == AssistantMode.ADULT_ROLEPLAY) """
-                The user selected 18+ Companion Roleplay, intended only for adults. Mature themes
-                and consensual romantic roleplay between clearly adult participants are allowed.
-                This setting does not remove core safety boundaries. Never sexualize minors or
-                facilitate coercion, abuse, exploitation, or harm. If age or consent is unclear,
-                do not sexualize the scene; clarify briefly or keep it nonsexual. Do not provide
-                dangerous or illegal instructions.
             """.trimIndent() else """
-                Normal mode: keep conversation suitable for a general audience. Warm and natural
-                companion roleplay is welcome, but do not provide explicit sexual content.
+                Reduce sensitive content is OFF. Mature themes and consensual romantic roleplay
+                between clearly adult participants are allowed. This setting does not remove core
+                safety boundaries. Never sexualize minors or facilitate coercion, abuse,
+                exploitation, or harm. If age or consent is unclear, do not sexualize the scene;
+                clarify briefly or keep it nonsexual. Do not provide dangerous or illegal
+                instructions.
             """.trimIndent()}
 
             ## Emotion Label and Response Format
@@ -244,14 +235,8 @@ class AssistantViewModel(
     fun refreshAssistantIdentity() {
         activeLanguage = assistantSettingsStorage.getLanguage()
         val userId = authService.currentUser()?.id
-        val accountChanged = activeUserId != userId
-        activeUserId = userId
         _reduceSensitiveContent.value =
             sensitiveContentSettingsStorage.getReduceSensitiveContent(userId)
-        _assistantMode.value = effectiveAssistantMode(
-            requested = if (accountChanged) AssistantMode.NORMAL else _assistantMode.value,
-            reduceSensitiveContent = _reduceSensitiveContent.value,
-        )
     }
 
     /** Reload cloud language and saved API key when returning from settings. */
@@ -316,24 +301,10 @@ class AssistantViewModel(
         currentJob?.cancel()
     }
 
-    fun setAssistantMode(mode: AssistantMode): Boolean {
-        val effectiveMode = effectiveAssistantMode(
-            requested = mode,
-            reduceSensitiveContent = _reduceSensitiveContent.value,
-        )
-        if (mode != effectiveMode) return false
-        _assistantMode.value = effectiveMode
-        return true
-    }
-
     fun setReduceSensitiveContent(enabled: Boolean) {
         val userId = authService.currentUser()?.id
         sensitiveContentSettingsStorage.setReduceSensitiveContent(userId, enabled)
         _reduceSensitiveContent.value = enabled
-        _assistantMode.value = effectiveAssistantMode(
-            requested = _assistantMode.value,
-            reduceSensitiveContent = enabled,
-        )
     }
 
     /** Wipes the conversation and the Gemini turn history. */
@@ -343,7 +314,6 @@ class AssistantViewModel(
         modelHistory.clear()
         sessionMoods.clear()
         _currentSessionMood.value = null
-        _assistantMode.value = AssistantMode.NORMAL
         _messages.value = emptyList()
         _busyStatus.value = null
     }
@@ -441,7 +411,7 @@ class AssistantViewModel(
                 assistantApi.streamChat(
                     apiKey = apiKey,
                     messages = requestHistory,
-                    systemPrompt = buildInstructions(_assistantMode.value),
+                    systemPrompt = buildInstructions(),
                     toolDefinitions = BuiltinToolExecutor.definitions,
                     executeTool = executeTool,
                     streaming = streaming,
