@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "com.nidoham.thrisa"
+    namespace = "com.naira.assistant"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.nidoham.thrisa"
+        applicationId = "com.naira.assistant"
         minSdk = 26
         targetSdk = 37
         versionCode = 3

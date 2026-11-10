@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Thrisa Rahman"
+rootProject.name = "Naira Assistant"
 include(":app")
 include(":ai")
 include(":search")
