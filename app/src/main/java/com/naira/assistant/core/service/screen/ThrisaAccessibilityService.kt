@@ -19,13 +19,13 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
+import androidx.core.graphics.scale
 
 /**
  * The app's accessibility service — the engine behind the AI screen-access tools
@@ -45,7 +45,19 @@ class ThrisaAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "ThrisaA11y"
 
-        /** The live service, or null while accessibility is disabled in system settings. */
+        /** Duration of a single tap / long-press stroke, in milliseconds. */
+        private const val TAP_DURATION_MS = 50L
+
+        /** Gap between the two strokes of a double-tap. */
+        private const val DOUBLE_TAP_GAP_MS = 100L
+
+        /**
+         * The live service, or null while accessibility is disabled in system settings.
+         *
+         * `@Volatile` ensures the read/write barrier is visible to callers on
+         * other threads (background coroutines using `isRunning` before
+         * calling `instance?.foo()`).
+         */
         @Volatile
         var instance: ThrisaAccessibilityService? = null
             private set
@@ -60,7 +72,7 @@ class ThrisaAccessibilityService : AccessibilityService() {
          */
         fun isEnabledInSettings(context: Context): Boolean {
             val manager = context.getSystemService(ACCESSIBILITY_SERVICE)
-                as? AccessibilityManager ?: return false
+                    as? AccessibilityManager ?: return false
             val expected = ComponentName(context, ThrisaAccessibilityService::class.java)
             return manager.getEnabledAccessibilityServiceList(
                 AccessibilityServiceInfo.FEEDBACK_ALL_MASK
@@ -105,6 +117,11 @@ class ThrisaAccessibilityService : AccessibilityService() {
      *
      * The system rate-limits screenshots (~1/second); callers should treat
      * null as "try again shortly or fall back to [readScreenText]".
+     *
+     * Bitmap lifecycle: every bitmap allocated in this method is released on
+     * every exit path — success, `null` return, and exception — because the
+     * intermediate hardware bitmap, the software copy, and the JPEG-encoded
+     * byte array must all release their native memory.
      */
     suspend fun takeScreenshot(maxDim: Int = 1536, quality: Int = 80): ByteArray? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
@@ -130,33 +147,51 @@ class ThrisaAccessibilityService : AccessibilityService() {
         return withContext(Dispatchers.IO) {
             runCatching {
                 val buffer = result.hardwareBuffer
+                var hardware: Bitmap? = null
+                var software: Bitmap? = null
                 try {
-                    val hardware = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: return@runCatching null
-                    val software = hardware.copy(Bitmap.Config.ARGB_8888, false)
-                    hardware.recycle()
-                    software ?: return@runCatching null
+                    hardware = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                        ?: return@runCatching null
+                    software = hardware.copy(Bitmap.Config.ARGB_8888, false)
+                        ?: return@runCatching null
                     software.downscaleAndCompress(maxDim, quality)
                 } finally {
+                    // `Bitmap.recycle()` is idempotent, so double-recycling
+                    // after `downscaleAndCompress`'s own `recycle()` is safe.
+                    // The point of doing it here is to guarantee release when
+                    // the pipeline threw before reaching its internal cleanup.
+                    software?.recycle()
+                    hardware?.recycle()
                     buffer.close()
                 }
             }.getOrNull()
         }
     }
 
+    /**
+     * Downscales and JPEG-compresses [this], recycling **both** the intermediate
+     * scaled bitmap and the receiver on success. Throws if the pipeline fails —
+     * the caller is responsible for recycling the receiver on the failure path.
+     */
     private fun Bitmap.downscaleAndCompress(maxDim: Int, quality: Int): ByteArray {
         val scale = maxOf(width, height).toFloat() / maxDim
         val output = if (scale > 1f) {
-            Bitmap.createScaledBitmap(this, (width / scale).toInt(), (height / scale).toInt(), true)
+            this.scale((width / scale).toInt(), (height / scale).toInt())
         } else {
             this
         }
-        val bytes = ByteArrayOutputStream().use { stream ->
-            output.compress(Bitmap.CompressFormat.JPEG, quality, stream)
-            stream.toByteArray()
+        try {
+            return ByteArrayOutputStream().use { stream ->
+                output.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+                stream.toByteArray()
+            }
+        } finally {
+            // Only recycle the *intermediate* here. The receiver is owned by
+            // the caller's outer `finally` — recycling it here on the exception
+            // path would still be fine (idempotent), but keeping ownership in
+            // one place makes the lifecycle easier to reason about.
+            if (output !== this) output.recycle()
         }
-        if (output !== this) output.recycle()
-        recycle()
-        return bytes
     }
 
     // ------------------------------------------------------------------
@@ -167,6 +202,10 @@ class ThrisaAccessibilityService : AccessibilityService() {
      * Reads the visible text of the active window: one header line with the
      * foreground package, then the text / content description / resource-id of
      * up to [maxNodes] nodes, capped at [maxChars] characters.
+     *
+     * Returns **null** when the active window is unavailable *or* when the
+     * window's tree contains no readable text. Callers should treat null as
+     * "no screen content" rather than "empty screen".
      */
     suspend fun readScreenText(maxNodes: Int = 150, maxChars: Int = 4000): String? =
         withContext(Dispatchers.Main.immediate) { readScreenTextBlocking(maxNodes, maxChars) }
@@ -174,7 +213,14 @@ class ThrisaAccessibilityService : AccessibilityService() {
     private fun readScreenTextBlocking(maxNodes: Int, maxChars: Int): String? {
         val root = rootInActiveWindow ?: return null
         val builder = StringBuilder()
-        builder.append("Active app: ").append(root.packageName).append('\n')
+        builder.append("Active app: ")
+            .append(root.packageName ?: "unknown")
+            .append('\n')
+        // Snapshot the header length so we can tell whether *content* was
+        // added — the previous check (`length > "Active app: ".length + 2`)
+        // passed even when the package name alone pushed length over the
+        // threshold, returning a header-only string to the AI.
+        val headerEnd = builder.length
 
         var visited = 0
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -195,10 +241,16 @@ class ThrisaAccessibilityService : AccessibilityService() {
                 }
             }
         }
-        return builder.toString().takeIf { it.length > "Active app: ".length + 2 }
+
+        return if (builder.length > headerEnd) builder.toString() else null
     }
 
-    private fun appendNodeLine(builder: StringBuilder, node: AccessibilityNodeInfo, content: CharSequence, maxChars: Int) {
+    private fun appendNodeLine(
+        builder: StringBuilder,
+        node: AccessibilityNodeInfo,
+        content: CharSequence,
+        maxChars: Int,
+    ) {
         if (builder.length >= maxChars) return
         val id = node.viewIdResourceName?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
         val prefix = if (node.isEditable) "[input] " else if (node.isClickable) "[button] " else ""
@@ -211,22 +263,26 @@ class ThrisaAccessibilityService : AccessibilityService() {
             }
         }
         val suffix = details.takeIf { it.isNotEmpty() }?.joinToString(prefix = " (", postfix = ")").orEmpty()
-        builder.append(prefix).append(content.toString().lineSequence().firstOrNull() ?: "").append(suffix).append('\n')
+        builder.append(prefix)
+            .append(content.toString().lineSequence().firstOrNull() ?: "")
+            .append(suffix)
+            .append('\n')
         if (builder.length > maxChars) builder.setLength(maxChars)
     }
 
     /** Clicks a visible element by its text, content description, or resource ID. */
     suspend fun clickElement(target: String): Boolean = withContext(Dispatchers.Main.immediate) {
-        val node = findNode(target) ?: return@withContext false
-        var candidate: AccessibilityNodeInfo? = node
-        repeat(6) {
-            val current = candidate ?: return@repeat
+        var candidate = findNode(target) ?: return@withContext false
+        var attempts = 0
+        while (attempts < 6) {
+            val current = candidate
             if (AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK in current.actionList &&
                 current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             ) {
                 return@withContext true
             }
             candidate = current.parent
+            attempts++
         }
         false
     }
@@ -242,8 +298,9 @@ class ThrisaAccessibilityService : AccessibilityService() {
             if (candidate == null && target.isNullOrBlank()) {
                 candidate = findNodes().firstOrNull { it.isScrollable }
             }
-            repeat(6) {
-                val current = candidate ?: return@repeat
+            var attempts = 0
+            while (attempts < 6 && candidate != null) {
+                val current = candidate
                 if (current.isScrollable) {
                     val action = if (forward) {
                         AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
@@ -253,6 +310,7 @@ class ThrisaAccessibilityService : AccessibilityService() {
                     if (current.performAction(action)) return@withContext true
                 }
                 candidate = current.parent
+                attempts++
             }
             false
         }
@@ -296,16 +354,33 @@ class ThrisaAccessibilityService : AccessibilityService() {
     // ------------------------------------------------------------------
 
     /** Taps at the given screen coordinates. Suspends until the gesture finishes. */
-    suspend fun tap(x: Float, y: Float): Boolean = stroke(Path().apply { moveTo(x, y); lineTo(x + 0.1f, y + 0.1f) }, 50)
+    suspend fun tap(x: Float, y: Float): Boolean =
+        stroke(Path().apply { moveTo(x, y); lineTo(x + 0.1f, y + 0.1f) }, TAP_DURATION_MS)
 
     /** Long-presses at the given screen coordinates. */
-    suspend fun longPress(x: Float, y: Float): Boolean = stroke(Path().apply { moveTo(x, y); lineTo(x + 0.1f, y + 0.1f) }, 600)
+    suspend fun longPress(x: Float, y: Float): Boolean =
+        stroke(Path().apply { moveTo(x, y); lineTo(x + 0.1f, y + 0.1f) }, 600)
 
-    /** Double-taps at the given screen coordinates. */
+    /**
+     * Double-taps at the given screen coordinates.
+     *
+     * Sent as a **single** [GestureDescription] with two strokes (0 ms and
+     * [DOUBLE_TAP_GAP_MS]) rather than two separate taps. Two dispatches get
+     * treated as independent single taps by some views because dispatch
+     * overhead pushes the inter-tap interval past the double-tap timeout —
+     * the fix is to let the OS see both strokes in the same gesture.
+     */
     suspend fun doubleTap(x: Float, y: Float): Boolean {
-        if (!tap(x, y)) return false
-        delay(120)
-        return tap(x, y)
+        val path = Path().apply { moveTo(x, y); lineTo(x + 0.1f, y + 0.1f) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(
+                GestureDescription.StrokeDescription(path, 0L, TAP_DURATION_MS)
+            )
+            .addStroke(
+                GestureDescription.StrokeDescription(path, DOUBLE_TAP_GAP_MS, TAP_DURATION_MS)
+            )
+            .build()
+        return dispatchGestureAndWait(gesture)
     }
 
     /** Swipes from ([x1], [y1]) to ([x2], [y2]) over [durationMs] milliseconds. */
@@ -318,10 +393,19 @@ class ThrisaAccessibilityService : AccessibilityService() {
     }
 
     private suspend fun stroke(path: Path, durationMs: Long): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        // GestureDescription requires duration > 0. Clamp defensively so a
+        // caller passing 0 (or a computed negative) doesn't crash here with
+        // an unrelated IllegalArgumentException.
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+            .addStroke(
+                GestureDescription.StrokeDescription(path, 0L, durationMs.coerceAtLeast(1L))
+            )
             .build()
+        return dispatchGestureAndWait(gesture)
+    }
+
+    /** Dispatches [gesture] and suspends until the system reports completion or cancellation. */
+    private suspend fun dispatchGestureAndWait(gesture: GestureDescription): Boolean {
         return suspendCancellableCoroutine<Boolean> { continuation ->
             val resumed = AtomicBoolean(false)
             fun resumeOnce(value: Boolean) {
@@ -330,8 +414,11 @@ class ThrisaAccessibilityService : AccessibilityService() {
             val dispatched = dispatchGesture(
                 gesture,
                 object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) = resumeOnce(true)
-                    override fun onCancelled(gestureDescription: GestureDescription?) = resumeOnce(false)
+                    override fun onCompleted(gestureDescription: GestureDescription?) =
+                        resumeOnce(true)
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) =
+                        resumeOnce(false)
                 },
                 null,
             )
@@ -380,6 +467,9 @@ class ThrisaAccessibilityService : AccessibilityService() {
      * Searches every interactive window for the node the user's text should go
      * into, preferring the focused field and falling back to the first visible
      * input that can receive text.
+     *
+     * When [target] is specified and doesn't match any input, returns null —
+     * writing into a *different* field would be worse than failing.
      */
     private fun findTextInput(target: String? = null): AccessibilityNodeInfo? {
         var focused: AccessibilityNodeInfo? = null
@@ -404,18 +494,17 @@ class ThrisaAccessibilityService : AccessibilityService() {
             }
         }
 
-        // The focused node wins only if it can actually receive text; otherwise
+        // Explicit target: only that field is a valid destination. If it wasn't
+        // found, return null (a bad guess is worse than a clean failure).
+        if (!target.isNullOrBlank()) return matching
+
+        // No target: prefer the focused field if it can receive text; otherwise
         // the first visible editable / settable node (usually the only input on
         // screen). A focused but non-input node (a button, a scroll container)
         // must not hijack the target.
-        return when {
-            !target.isNullOrBlank() -> matching
-            matching != null -> matching
-            focused != null && (focused.isEditable || supportsSetText(focused)) -> focused
-            editable != null -> editable
-            settable != null -> settable
-            else -> null
-        }
+        return focused?.takeIf { it.isEditable || supportsSetText(it) }
+            ?: editable
+            ?: settable
     }
 
     private fun supportsSetText(node: AccessibilityNodeInfo): Boolean =

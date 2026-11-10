@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
  * @param onBack   Shows the top-left back arrow when non-null.
  * @param notice   One-off message to show on arrival (e.g. "Password updated").
  *                 [onNoticeShown] is called right after so the caller can clear it.
+ * @param assistantName  Used in the subtitle. Defaults to the app wordmark.
  */
 @Composable
 fun LoginScreen(
@@ -68,17 +69,30 @@ fun LoginScreen(
     onForgotPasswordClick: (() -> Unit)? = null,
     notice: String? = null,
     onNoticeShown: () -> Unit = {},
+    assistantName: String = "NAIRA",
 ) {
     var email by rememberSaveable { mutableStateOf("") }
-    // Passwords are deliberately NOT saveable: they would be written into the saved-state bundle.
+    // Passwords are deliberately NOT saveable: they would be written into the
+    // saved-state bundle. Trade-off: rotating the device clears the password
+    // and the user must retype.
     var password by remember { mutableStateOf("") }
     var obscure by rememberSaveable { mutableStateOf(true) }
-    // Not saveable on purpose: a restored "loading = true" would lock the form forever.
+    // Not saveable: a restored "loading = true" would lock the form forever.
     var loading by remember { mutableStateOf(false) }
-    var submitAttempted by rememberSaveable { mutableStateOf(false) }
+    // Not saveable: pairs with `password` being non-saveable. If this survived
+    // a rotation but the password did not, the user would see "Password is
+    // required" for a field they never emptied. Resetting on rotation gives a
+    // clean state — email preserved, password empty, no phantom errors.
+    var submitAttempted by remember { mutableStateOf(false) }
 
-    // Derived, so they can never go out of sync with the fields.
-    val emailError = if (submitAttempted) validateEmail(email.trim()) else null
+    // `email` is whitespace-free by `stripWhitespace` on every keystroke, so
+    // no `.trim()` here. `validateEmail` also trims internally, for defence
+    // in depth.
+    val emailError = if (submitAttempted) validateEmail(email) else null
+    // Login only requires the field to be non-empty — NOT `authService
+    // .passwordError(password)`. Existing users may have registered under an
+    // older, looser password policy; the server is the source of truth for
+    // login validity. RegisterScreen is where new-password rules apply.
     val passwordError =
         if (submitAttempted && password.isEmpty()) "Password is required" else null
 
@@ -96,19 +110,32 @@ fun LoginScreen(
 
     fun submit() {
         if (loading) return
-        focusManager.clearFocus()
-
         submitAttempted = true
-        if (validateEmail(email.trim()) != null || password.isEmpty()) return
 
-        // Set before launching so a fast double-tap can't start two requests.
+        // Validate BEFORE dismissing the keyboard — otherwise the user sees
+        // errors but has to re-tap the field to fix them. Cache the checks
+        // so each is evaluated once, not twice.
+        val currentEmailError = validateEmail(email)
+        if (currentEmailError != null || password.isEmpty()) return
+
+        // Validation passed → dismiss the keyboard and run the async call.
+        focusManager.clearFocus()
         loading = true
         scope.launch {
             try {
-                authService.login(email = email.trim(), password = password)
-                    .onSuccess { onLoggedIn?.invoke() }
+                authService.login(email = email, password = password)
+                    .onSuccess {
+                        onLoggedIn?.invoke() ?: scope.showFeedback(
+                            snackbarHostState,
+                            "Signed in successfully.",
+                        )
+                    }
                     .onFailure {
-                        scope.showFeedback(snackbarHostState, authService.friendlyMessage(it), isError = true)
+                        scope.showFeedback(
+                            snackbarHostState,
+                            authService.friendlyMessage(it),
+                            isError = true,
+                        )
                     }
             } finally {
                 loading = false
@@ -123,7 +150,10 @@ fun LoginScreen(
         navigationEnabled = !loading,
     ) {
         AuthIllustration()
-        AuthHeader(title = "Welcome Back", subtitle = "Sign in to continue to Aurafeed")
+        AuthHeader(
+            title = "Welcome Back",
+            subtitle = "Sign in to continue to $assistantName",
+        )
 
         OutlinedTextField(
             value = email,

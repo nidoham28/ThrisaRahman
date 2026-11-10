@@ -1,3 +1,5 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.naira.assistant.presentation.settings
 
 import android.Manifest
@@ -75,16 +77,13 @@ import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -97,11 +96,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,15 +114,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
-import com.naira.assistant.core.service.CloudSettingsRepository
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.naira.assistant.core.service.CloudSettingsPatch
+import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.InMemoryCloudSettingsLocalStore
-import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.SupabaseAuthService
-import com.naira.assistant.core.sync.SupabaseApiKeyStore
+import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
+import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.sound.SpeechEngine
+import com.naira.assistant.core.sync.SupabaseApiKeyStore
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.Lilac
@@ -135,16 +135,16 @@ import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.domain.AccountSettingsStorage
 import com.naira.assistant.domain.ApiKeyStorage
-import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantCharacter
 import com.naira.assistant.domain.AssistantLanguage
+import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantSettingsStorage
 import com.naira.assistant.domain.Gender
 import com.naira.assistant.domain.RelationType
 import com.naira.assistant.domain.SpeechSettingsStorage
 import com.naira.assistant.domain.UserSettingsStorage
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 /* ------------------------------------------------------------------ */
 /*  Enums                                                              */
@@ -156,7 +156,6 @@ enum class SettingsDestination {
 
 private enum class RowStyle { NORMAL, PREMIUM, DANGER }
 
-/** Text fields the user can edit through a dialog. */
 private enum class EditField(
     val title: String,
     val description: String,
@@ -200,7 +199,7 @@ private sealed interface SettingsNode {
         val style: RowStyle = RowStyle.NORMAL,
         val enabled: Boolean = true,
         val onClick: (() -> Unit)? = null,
-        val trailing: @Composable () -> Unit = { TrailingChevron() }
+        val trailing: (@Composable () -> Unit)? = null,
     ) : SettingsNode
 }
 
@@ -233,12 +232,6 @@ private fun RelationType.icon(): ImageVector = when (this) {
     RelationType.WIFE -> Icons.Outlined.Favorite
 }
 
-private fun RelationType.badgeLabel(): String = when {
-    isMature -> "18+"
-    isRomantic -> "ROMANTIC"
-    else -> "BOND"
-}
-
 /* ------------------------------------------------------------------ */
 /*  State holder                                                       */
 /* ------------------------------------------------------------------ */
@@ -247,24 +240,22 @@ private fun RelationType.badgeLabel(): String = when {
 private class SettingsState(
     private val storage: ApiKeyStorage,
     context: Context,
-    private val userId: String?,
+    private val currentUserId: () -> String?,
 ) {
-    var notifications by mutableStateOf(true)
     private val userSettingsStorage = UserSettingsStorage()
     var theme by mutableStateOf(userSettingsStorage.getTheme())
     var fontSize by mutableStateOf(userSettingsStorage.getFontSize())
-    var requestTimeout by mutableIntStateOf(30)
-    var selectedProvider by mutableStateOf(storage.getSelectedProvider(userId))
+    var selectedProvider by mutableStateOf(storage.getSelectedProvider(currentUserId()))
     private var geminiKey by mutableStateOf(
-        userId?.let { storage.getApiKey(AssistantProvider.GEMINI.name, it) }.orEmpty()
+        currentUserId()?.let { storage.getApiKey(AssistantProvider.GEMINI.name, it) }.orEmpty()
     )
     private var openRouterKey by mutableStateOf(
-        userId?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
+        currentUserId()?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
     )
     var cricketApiKey by mutableStateOf(
-        userId?.let(storage::getCricApiKey).orEmpty()
+        currentUserId()?.let(storage::getCricApiKey).orEmpty()
     )
-    var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(userId))
+    var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
     private val speechStorage = SpeechSettingsStorage(context)
     private val accountStorage = AccountSettingsStorage(context)
     private val assistantStorage = AssistantSettingsStorage(context)
@@ -276,7 +267,8 @@ private class SettingsState(
     var assistantName by mutableStateOf(assistantStorage.getName())
     var relationship by mutableStateOf(assistantStorage.getRelationship())
     var speechEngine by mutableStateOf(
-        runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }.getOrDefault(SpeechEngine.SYSTEM)
+        runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
+            .getOrDefault(SpeechEngine.SYSTEM)
     )
 
     fun keyFor(provider: AssistantProvider): String = when (provider) {
@@ -284,20 +276,19 @@ private class SettingsState(
         AssistantProvider.OPENROUTER -> openRouterKey
     }
 
-    /** Saves the key directly (plaintext SharedPreferences) and updates the UI state. */
     fun saveApiKey(provider: AssistantProvider, value: String) {
         val cleaned = value.trim()
         when (provider) {
             AssistantProvider.GEMINI -> geminiKey = cleaned
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
         }
-        userId?.let { storage.saveApiKey(provider.name, it, cleaned) }
+        currentUserId()?.let { storage.saveApiKey(provider.name, it, cleaned) }
     }
 
     fun saveCricketApiKey(value: String) {
         val cleaned = value.trim()
         cricketApiKey = cleaned
-        userId?.let { storage.saveCricApiKey(it, cleaned) }
+        currentUserId()?.let { storage.saveCricApiKey(it, cleaned) }
     }
 
     fun saveProvider(provider: AssistantProvider, userId: String?) {
@@ -306,8 +297,9 @@ private class SettingsState(
     }
 
     fun saveOpenRouterModelId(value: String) {
-        storage.saveOpenRouterModelId(value, userId)
-        openRouterModelId = value.trim()
+        val cleaned = value.trim()
+        storage.saveOpenRouterModelId(cleaned, currentUserId())
+        openRouterModelId = cleaned
     }
 
     fun saveSpeechEngine(engine: SpeechEngine) {
@@ -321,26 +313,19 @@ private class SettingsState(
     }
 
     fun saveProfileField(field: EditField, value: String) {
+        val trimmed = value.trim()
         when (field) {
-            EditField.USERNAME -> {
-                username = value
-                accountStorage.setUserName(value)
-            }
-            EditField.DISPLAY_NAME -> {
-                displayName = value
-                accountStorage.setDisplayName(value)
-            }
-            EditField.PHONE -> {
-                phone = value
-                accountStorage.setPhoneNumber(value)
-            }
+            EditField.USERNAME -> { username = trimmed; accountStorage.setUserName(trimmed) }
+            EditField.DISPLAY_NAME -> { displayName = trimmed; accountStorage.setDisplayName(trimmed) }
+            EditField.PHONE -> { phone = trimmed; accountStorage.setPhoneNumber(trimmed) }
             else -> Unit
         }
     }
 
     fun saveAssistantName(value: String) {
-        assistantName = value
-        assistantStorage.setName(value)
+        val trimmed = value.trim()
+        assistantName = trimmed
+        assistantStorage.setName(trimmed)
     }
 
     fun saveGender(value: Gender) {
@@ -374,14 +359,20 @@ private class SettingsState(
 
 @Composable
 fun SettingsScreen(
+    modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
-    onNavigate: (SettingsDestination) -> Unit = {}
+    onNavigate: (SettingsDestination) -> Unit = {},
 ) {
     val context = LocalContext.current
     val storage = remember { ApiKeyStorage(context.applicationContext) }
     val authService = remember { SupabaseAuthService() }
-    val userId = authService.currentUser()?.id
-    val state = remember(storage, userId) { SettingsState(storage, context.applicationContext, userId) }
+    val state = remember(storage) {
+        SettingsState(
+            storage = storage,
+            context = context.applicationContext,
+            currentUserId = { authService.currentUser()?.id },
+        )
+    }
     val cloudSettingsRepository = remember(context) {
         CloudSettingsRepository(
             local = InMemoryCloudSettingsLocalStore(context.applicationContext),
@@ -393,37 +384,33 @@ fun SettingsScreen(
     val apiKeySync = remember(context) { SupabaseApiKeyStore() }
     var cloudSyncError by remember { mutableStateOf<String?>(null) }
 
-    var pathIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    var editingProvider by remember { mutableStateOf<AssistantProvider?>(null) }
-    var editingCricketApiKey by remember { mutableStateOf(false) }
-    var editingField by remember { mutableStateOf<EditField?>(null) }
+    var pathIds by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var editingProviderName by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingProvider = editingProviderName?.let { name ->
+        AssistantProvider.entries.firstOrNull { it.name == name }
+    }
+    var editingCricketApiKey by rememberSaveable { mutableStateOf(false) }
+    var editingFieldName by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingField = editingFieldName?.let { name ->
+        EditField.entries.firstOrNull { it.name == name }
+    }
 
-    // Set while the user is in the system accessibility settings granting
-    // screen access; consumed on the next ON_RESUME to give feedback and,
-    // on Android 13-15, to guide past the "Restricted setting" toggle block.
     var awaitingAccessibilityGrant by remember { mutableStateOf(false) }
     var showAccessibilityHelp by remember { mutableStateOf(false) }
 
-    var refreshPermissionsTrigger by remember { mutableStateOf(0) }
-    val permissionStatus = remember(refreshPermissionsTrigger) {
-        checkPermissions(context)
-    }
+    var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
+    val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
+    val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.id }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refreshPermissionsTrigger++
-            }
+            if (event == Lifecycle.Event.ON_RESUME) refreshPermissionsTrigger++
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
 
-    // When the user comes back from the accessibility settings without having
-    // enabled the service, tell them what to do next: on Android 13-15 an
-    // escape hatch for the "Restricted setting" toggle block that applies to
-    // sideloaded installs, and on older versions a hint where to find it.
     LaunchedEffect(refreshPermissionsTrigger) {
         if (!awaitingAccessibilityGrant) return@LaunchedEffect
         awaitingAccessibilityGrant = false
@@ -442,16 +429,22 @@ fun SettingsScreen(
     fun synchronizeCloudSettings() {
         coroutineScope.launch {
             cloudSyncError = null
-            when (val result = cloudSettingsRepository.synchronize()) {
+            val result = try {
+                cloudSettingsRepository.synchronize()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                cloudSyncError = e.message ?: "Couldn't sync settings."
+                return@launch
+            }
+            when (result) {
                 is CloudSettingsSyncResult.Synced -> state.refreshCloudBackedSettings()
                 CloudSettingsSyncResult.SignInRequired -> Unit
-                is CloudSettingsSyncResult.Failed ->
-                    cloudSyncError = result.message
+                is CloudSettingsSyncResult.Failed -> cloudSyncError = result.message
             }
         }
     }
 
-    /** Saves the key locally and pushes it to the cloud for every device. */
     fun saveProviderCredential(provider: AssistantProvider, key: String) {
         val uid = userId
         if (uid == null) {
@@ -460,17 +453,20 @@ fun SettingsScreen(
         }
         try {
             state.saveApiKey(provider, key)
-            editingProvider = null
+            editingProviderName = null
         } catch (e: Exception) {
-            Toast.makeText(
-                context,
-                e.message ?: "Couldn't save the provider key.",
-                Toast.LENGTH_LONG,
-            ).show()
+            Toast.makeText(context, e.message ?: "Couldn't save the provider key.", Toast.LENGTH_LONG).show()
             return
         }
         coroutineScope.launch {
-            val synced = if (key.isBlank()) apiKeySync.delete(provider) else apiKeySync.push(provider, key)
+            val synced = try {
+                if (key.isBlank()) apiKeySync.delete(provider)
+                else apiKeySync.push(provider, key)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
             if (!synced) {
                 Toast.makeText(
                     context,
@@ -490,11 +486,7 @@ fun SettingsScreen(
             state.saveCricketApiKey(key)
             editingCricketApiKey = false
         } catch (e: Exception) {
-            Toast.makeText(
-                context,
-                e.message ?: "Couldn't save the CricAPI key.",
-                Toast.LENGTH_LONG,
-            ).show()
+            Toast.makeText(context, e.message ?: "Couldn't save the CricAPI key.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -502,18 +494,16 @@ fun SettingsScreen(
         state.saveProvider(provider, userId)
     }
 
-    LaunchedEffect(Unit) {
-        synchronizeCloudSettings()
-    }
-
-    // Cloud is the source of truth for provider keys: pull on entry so keys
-    // saved on another device (or a fresh install) appear here.
     LaunchedEffect(userId) {
-        val uid = userId ?: return@LaunchedEffect
-        val cloudKeys = apiKeySync.fetchAll()
-        if (cloudKeys.isNotEmpty()) {
-            cloudKeys.forEach { (provider, key) -> state.saveApiKey(provider, key) }
+        if (userId == null) return@LaunchedEffect
+        val cloudKeys = try {
+            apiKeySync.fetchAll()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyMap()
         }
+        cloudKeys.forEach { (provider, key) -> state.saveApiKey(provider, key) }
     }
 
     LaunchedEffect(refreshPermissionsTrigger) {
@@ -536,11 +526,8 @@ fun SettingsScreen(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         refreshPermissionsTrigger++
-        if (isGranted) {
-            Toast.makeText(context, "Permission granted.", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Permission not granted.", Toast.LENGTH_SHORT).show()
-        }
+        if (isGranted) Toast.makeText(context, "Permission granted.", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(context, "Permission not granted.", Toast.LENGTH_SHORT).show()
     }
 
     val permissionActions = remember(context, permissionStatus) {
@@ -565,7 +552,6 @@ fun SettingsScreen(
                 if (!permissionStatus.hasBluetooth && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     missing.add(Manifest.permission.BLUETOOTH_CONNECT)
                 }
-
                 if (missing.isNotEmpty()) {
                     requestMultipleLauncher.launch(missing.toTypedArray())
                 } else if (!permissionStatus.hasExactAlarm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -580,50 +566,40 @@ fun SettingsScreen(
                 }
             },
             onRequestMic = {
-                if (permissionStatus.hasMic) {
-                    Toast.makeText(context, "Microphone permission is already granted.", Toast.LENGTH_SHORT).show()
-                } else {
-                    requestSingleLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
+                if (permissionStatus.hasMic) Toast.makeText(context, "Microphone permission is already granted.", Toast.LENGTH_SHORT).show()
+                else requestSingleLauncher.launch(Manifest.permission.RECORD_AUDIO)
             },
             onRequestCalendar = {
-                if (permissionStatus.hasCalendar) {
-                    Toast.makeText(context, "Calendar permissions are already granted.", Toast.LENGTH_SHORT).show()
-                } else {
-                    requestMultipleLauncher.launch(
-                        arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-                    )
-                }
+                if (permissionStatus.hasCalendar) Toast.makeText(context, "Calendar permissions are already granted.", Toast.LENGTH_SHORT).show()
+                else requestMultipleLauncher.launch(
+                    arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+                )
             },
             onRequestNotifications = {
-                if (permissionStatus.hasNotifications) {
-                    Toast.makeText(context, "Notification permission is already granted.", Toast.LENGTH_SHORT).show()
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    requestSingleLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    openNotificationSettings(context)
+                when {
+                    permissionStatus.hasNotifications ->
+                        Toast.makeText(context, "Notification permission is already granted.", Toast.LENGTH_SHORT).show()
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                        requestSingleLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    else -> openNotificationSettings(context)
                 }
             },
             onRequestExactAlarm = {
-                if (permissionStatus.hasExactAlarm) {
-                    Toast.makeText(context, "Exact alarm permission is already granted.", Toast.LENGTH_SHORT).show()
-                } else {
-                    openExactAlarmSettings(context)
-                }
+                if (permissionStatus.hasExactAlarm) Toast.makeText(context, "Exact alarm permission is already granted.", Toast.LENGTH_SHORT).show()
+                else openExactAlarmSettings(context)
             },
             onRequestBluetooth = {
-                if (permissionStatus.hasBluetooth) {
-                    Toast.makeText(context, "Bluetooth permission is already granted.", Toast.LENGTH_SHORT).show()
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    requestSingleLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                } else {
-                    Toast.makeText(context, "Bluetooth permission is granted by default on this version.", Toast.LENGTH_SHORT).show()
+                when {
+                    permissionStatus.hasBluetooth ->
+                        Toast.makeText(context, "Bluetooth permission is already granted.", Toast.LENGTH_SHORT).show()
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                        requestSingleLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    else -> Toast.makeText(context, "Bluetooth permission is granted by default on this version.", Toast.LENGTH_SHORT).show()
                 }
             },
             onRequestMedia = {
-                if (permissionStatus.hasAllMedia) {
-                    Toast.makeText(context, "Media access is already granted.", Toast.LENGTH_SHORT).show()
-                } else {
+                if (permissionStatus.hasAllMedia) Toast.makeText(context, "Media access is already granted.", Toast.LENGTH_SHORT).show()
+                else {
                     val missing = mediaReadPermissions().filter {
                         ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
                     }
@@ -631,26 +607,18 @@ fun SettingsScreen(
                 }
             },
             onRequestAllFiles = {
-                if (permissionStatus.hasAllFiles) {
-                    Toast.makeText(context, "All-files access is already granted.", Toast.LENGTH_SHORT).show()
-                } else {
-                    openAllFilesAccessSettings(context)
-                }
+                if (permissionStatus.hasAllFiles) Toast.makeText(context, "All-files access is already granted.", Toast.LENGTH_SHORT).show()
+                else openAllFilesAccessSettings(context)
             },
             onOpenAccessibility = {
-                if (permissionStatus.hasAccessibility) {
-                    Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
-                } else {
+                if (permissionStatus.hasAccessibility) Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
+                else {
                     awaitingAccessibilityGrant = true
                     openAccessibilitySettings(context)
                 }
             },
-            onOpenAppSettings = {
-                openAppSettings(context)
-            },
-            onOpenPermissions = {
-                pathIds = listOf("permissions")
-            }
+            onOpenAppSettings = { openAppSettings(context) },
+            onOpenPermissions = { pathIds = listOf("permissions") },
         )
     }
 
@@ -660,9 +628,9 @@ fun SettingsScreen(
         permissionActions = permissionActions,
         onNavigate = onNavigate,
         onSaveActiveProvider = ::chooseActiveProvider,
-        onEditKey = { editingProvider = it },
+        onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
-        onEditField = { editingField = it },
+        onEditField = { editingFieldName = it.name },
         onSaveGender = { value ->
             state.saveGender(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(gender = value))
@@ -670,7 +638,9 @@ fun SettingsScreen(
         },
         onSaveAssistantName = { value ->
             state.saveAssistantName(value)
-            cloudSettingsRepository.recordChange(CloudSettingsPatch(assistantName = value))
+            cloudSettingsRepository.recordChange(
+                CloudSettingsPatch(assistantName = state.assistantName)
+            )
             synchronizeCloudSettings()
         },
         onSaveRelationship = { value ->
@@ -696,15 +666,14 @@ fun SettingsScreen(
         if (isRoot) onBack() else pathIds = pathIds.dropLast(1)
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Night).statusBarsPadding()
-    ) {
+    Column(modifier.fillMaxSize().background(Night).statusBarsPadding()) {
         TopBar(title = current.title, onBack = handleBack)
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
+                .navigationBarsPadding()
         ) {
             cloudSyncError?.let { message ->
                 SettingsCloudSyncErrorCard(message, ::synchronizeCloudSettings)
@@ -723,11 +692,9 @@ fun SettingsScreen(
             title = "${provider.displayName} API Key",
             placeholder = provider.placeholder,
             initialKey = state.keyFor(provider),
-            onSave = { newKey -> saveProviderCredential(provider, newKey.trim()) },
-            onRemove = {
-                saveProviderCredential(provider, "")
-            },
-            onDismiss = { editingProvider = null }
+            onSave = { newKey: String -> saveProviderCredential(provider, newKey.trim()) },
+            onRemove = { saveProviderCredential(provider, "") },
+            onDismiss = { editingProviderName = null }
         )
     }
 
@@ -753,23 +720,23 @@ fun SettingsScreen(
         EditFieldDialog(
             field = field,
             initialValue = initialValue,
-            onSave = { value ->
+            onSave = { value: String ->
                 if (field == EditField.OPENROUTER_MODEL) {
                     state.saveOpenRouterModelId(value)
                 } else {
                     state.saveProfileField(field, value)
                     val patch = when (field) {
-                        EditField.USERNAME -> CloudSettingsPatch(username = value.trim())
-                        EditField.DISPLAY_NAME -> CloudSettingsPatch(displayName = value.trim())
-                        EditField.PHONE -> CloudSettingsPatch(phone = value.trim())
+                        EditField.USERNAME -> CloudSettingsPatch(username = state.username)
+                        EditField.DISPLAY_NAME -> CloudSettingsPatch(displayName = state.displayName)
+                        EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
                         EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
                     }
                     cloudSettingsRepository.recordChange(patch)
                     synchronizeCloudSettings()
                 }
-                editingField = null
+                editingFieldName = null
             },
-            onDismiss = { editingField = null },
+            onDismiss = { editingFieldName = null },
         )
     }
 
@@ -780,23 +747,20 @@ fun SettingsScreen(
             text = {
                 Text(
                     "If the \"Thrisa AI Screen Access\" toggle was greyed out with a " +
-                        "\"Restricted setting\" message, Android 13 and newer block sideloaded " +
-                        "apps from enabling accessibility services. To unblock it:\n\n" +
-                        "1. Open Thrisa's App info page\n" +
-                        "2. Tap the ⋮ menu in the top-right corner\n" +
-                        "3. Tap \"Allow restricted settings\"\n" +
-                        "4. Come back and grant Screen access again\n\n" +
-                        "Otherwise, enable \"Thrisa AI Screen Access\" directly in " +
-                        "Settings → Accessibility."
+                            "\"Restricted setting\" message, Android 13 and newer block sideloaded " +
+                            "apps from enabling accessibility services. To unblock it:\n\n" +
+                            "1. Open Thrisa's App info page\n" +
+                            "2. Tap the ⋮ menu in the top-right corner\n" +
+                            "3. Tap \"Allow restricted settings\"\n" +
+                            "4. Come back and grant Screen access again\n\n" +
+                            "Otherwise, enable \"Thrisa AI Screen Access\" directly in " +
+                            "Settings → Accessibility."
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showAccessibilityHelp = false
-                        openAppSettings(context)
-                    }
-                ) { Text("Open app info") }
+                TextButton(onClick = { showAccessibilityHelp = false; openAppSettings(context) }) {
+                    Text("Open app info")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showAccessibilityHelp = false }) { Text("Later") }
@@ -822,7 +786,10 @@ private data class PermissionStatus(
 ) {
     val totalCount: Int = 8
     val grantedCount: Int
-        get() = listOf(hasMic, hasCalendar, hasNotifications, hasExactAlarm, hasBluetooth, hasAllMedia, hasAllFiles, hasAccessibility).count { it }
+        get() = listOf(
+            hasMic, hasCalendar, hasNotifications, hasExactAlarm,
+            hasBluetooth, hasAllMedia, hasAllFiles, hasAccessibility
+        ).count { it }
     val allGranted: Boolean
         get() = grantedCount == totalCount
 }
@@ -864,16 +831,16 @@ private fun checkPermissions(context: Context): PermissionStatus {
     val hasExactAlarm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         am?.canScheduleExactAlarms() != false
-    } else {
-        true
-    }
+    } else true
 
     val hasBluetooth = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ContextCompat.checkSelfPermission(
         context, Manifest.permission.BLUETOOTH_CONNECT
     ) == PackageManager.PERMISSION_GRANTED
 
     val mediaPermissions = mediaReadPermissions()
-    val fullMediaPermissions = mediaPermissions.filterNot { it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED }
+    val fullMediaPermissions = mediaPermissions.filterNot {
+        it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    }
     val grantedMediaCount = fullMediaPermissions.count {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
@@ -883,9 +850,6 @@ private fun checkPermissions(context: Context): PermissionStatus {
     ) == PackageManager.PERMISSION_GRANTED
     val hasMedia = hasAllMedia || hasSelectedVisualMedia || grantedMediaCount > 0
     val hasAllFiles = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
-
-    // Special access: the AI screen-access accessibility service, enabled by the
-    // user in the system accessibility settings (re-checked on every ON_RESUME).
     val hasAccessibility = ThrisaAccessibilityService.isEnabledInSettings(context)
 
     return PermissionStatus(
@@ -933,11 +897,7 @@ private fun openExactAlarmSettings(context: Context) {
             data = Uri.fromParts("package", context.packageName, null)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        runCatching {
-            context.startActivity(intent)
-        }.recoverCatching {
-            openAppSettings(context)
-        }
+        runCatching { context.startActivity(intent) }.recoverCatching { openAppSettings(context) }
     } else {
         Toast.makeText(context, "Exact alarm permission is granted by default on this version.", Toast.LENGTH_SHORT).show()
     }
@@ -948,11 +908,7 @@ private fun openNotificationSettings(context: Context) {
         putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    runCatching {
-        context.startActivity(intent)
-    }.recoverCatching {
-        openAppSettings(context)
-    }
+    runCatching { context.startActivity(intent) }.recoverCatching { openAppSettings(context) }
 }
 
 private fun openAllFilesAccessSettings(context: Context) {
@@ -975,13 +931,10 @@ private fun openAccessibilitySettings(context: Context) {
     val intent = Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    runCatching {
-        context.startActivity(intent)
-    }.recoverCatching {
-        openAppSettings(context)
-    }.onFailure {
-        Toast.makeText(context, "Unable to open accessibility settings.", Toast.LENGTH_SHORT).show()
-    }
+    runCatching { context.startActivity(intent) }.recoverCatching { openAppSettings(context) }
+        .onFailure {
+            Toast.makeText(context, "Unable to open accessibility settings.", Toast.LENGTH_SHORT).show()
+        }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1007,46 +960,35 @@ private fun buildTree(
     title = "Settings",
     icon = Icons.Outlined.Tune,
     children = listOf(
-
-        // "Persona & Roleplay" used to duplicate "Roleplay type" below — removed.
         SettingsNode.Category(
-            id = "account",
-            title = "Account",
-            subtitle = "Profile, plan & sign in",
+            id = "account", title = "Account", subtitle = "Profile, plan & sign in",
             icon = Icons.Outlined.Person,
             children = listOf(
                 SettingsNode.Item(
-                    id = "username",
-                    title = "Username",
+                    id = "username", title = "Username",
                     subtitle = state.username.ifBlank { "Set your username" },
                     icon = Icons.Outlined.Person,
                     onClick = { onEditField(EditField.USERNAME) },
                 ),
                 SettingsNode.Item(
-                    id = "display-name",
-                    title = "Display name",
+                    id = "display-name", title = "Display name",
                     subtitle = state.displayName.ifBlank { "Set your profile name" },
                     icon = Icons.Outlined.Person,
                     onClick = { onEditField(EditField.DISPLAY_NAME) },
                 ),
                 SettingsNode.Item(
-                    id = "phone",
-                    title = "Phone number",
+                    id = "phone", title = "Phone number",
                     subtitle = state.phone.ifBlank { "Not set" },
                     icon = Icons.Outlined.Phone,
                     onClick = { onEditField(EditField.PHONE) },
                 ),
                 SettingsNode.Item(
-                    id = "gender",
-                    title = "Gender",
-                    subtitle = "Profile information",
+                    id = "gender", title = "Gender", subtitle = "Profile information",
                     icon = Icons.Outlined.Person,
                     trailing = { GenderDropdown(state.gender, onSaveGender) },
                 ),
                 SettingsNode.Item(
-                    id = "subscription",
-                    title = "Subscription",
-                    subtitle = "Free plan",
+                    id = "subscription", title = "Subscription", subtitle = "Free plan",
                     icon = Icons.Outlined.WorkspacePremium,
                     style = RowStyle.PREMIUM,
                     onClick = { onNavigate(SettingsDestination.SUBSCRIPTION) },
@@ -1060,73 +1002,52 @@ private fun buildTree(
                 ),
             )
         ),
-
         SettingsNode.Category(
-            id = "assistant",
-            title = "Assistant",
-            subtitle = "Language",
+            id = "assistant", title = "Assistant", subtitle = "Language",
             icon = Icons.Outlined.AutoAwesome,
             children = listOf(
                 SettingsNode.Item(
-                    id = "assistant-name",
-                    title = "Assistant character",
+                    id = "assistant-name", title = "Assistant character",
                     subtitle = AssistantCharacter.fromName(state.assistantName).let {
                         "${it.gender} · ${it.voice.geminiVoiceName} voice"
                     },
                     icon = Icons.Outlined.SmartToy,
-                    trailing = {
-                        AssistantNameDropdown(state.assistantName, onSaveAssistantName)
-                    },
+                    trailing = { AssistantNameDropdown(state.assistantName, onSaveAssistantName) },
                 ),
                 SettingsNode.Item(
-                    id = "assistant-language",
-                    title = "Assistant language",
+                    id = "assistant-language", title = "Assistant language",
                     subtitle = "Language the assistant replies in",
                     icon = Icons.Outlined.Language,
-                    trailing = {
-                        LanguageDropdown(state.assistantLanguage, onSaveLanguage)
-                    }
+                    trailing = { LanguageDropdown(state.assistantLanguage, onSaveLanguage) }
                 ),
                 SettingsNode.Item(
-                    id = "assistant-relationship",
-                    title = "Relationship",
+                    id = "assistant-relationship", title = "Relationship",
                     subtitle = "Personalize the assistant's tone",
                     icon = Icons.Outlined.People,
                     trailing = { RelationTypeDropdown(state.relationship, onSaveRelationship) },
                 ),
             )
         ),
-
         SettingsNode.Category(
-            id = "engine",
-            title = "Engine",
-            subtitle = "Speech engine",
+            id = "engine", title = "Engine", subtitle = "Speech engine",
             icon = Icons.Outlined.SettingsVoice,
             children = listOf(
                 SettingsNode.Item(
-                    id = "tts-engine",
-                    title = "Speech engine",
+                    id = "tts-engine", title = "Speech engine",
                     subtitle = if (state.speechEngine == SpeechEngine.SYSTEM)
                         "Local Device TTS · runs on this device"
                     else "Gemini TTS · uses your saved Gemini API key",
                     icon = Icons.Outlined.GraphicEq,
-                    trailing = {
-                        SpeechEngineDropdown(state.speechEngine, onSaveSpeechEngine)
-                    }
+                    trailing = { SpeechEngineDropdown(state.speechEngine, onSaveSpeechEngine) }
                 ),
             )
         ),
-
         SettingsNode.Category(
-            id = "ai",
-            title = "AI Providers",
-            subtitle = "Connect model providers",
+            id = "ai", title = "AI Providers", subtitle = "Connect model providers",
             icon = Icons.Outlined.VpnKey,
             children = listOf(
                 SettingsNode.Item(
-                    id = "provider",
-                    title = "Provider",
-                    subtitle = "Choose your default",
+                    id = "provider", title = "Provider", subtitle = "Choose your default",
                     icon = Icons.Outlined.VpnKey,
                     trailing = {
                         ProviderDropdownTrailing(
@@ -1136,9 +1057,7 @@ private fun buildTree(
                     }
                 ),
                 SettingsNode.Category(
-                    id = "credentials",
-                    title = "Credentials",
-                    subtitle = "API keys per provider",
+                    id = "credentials", title = "Credentials", subtitle = "API keys per provider",
                     icon = Icons.Outlined.Key,
                     children = buildList {
                         AssistantProvider.entries.forEach { provider ->
@@ -1146,10 +1065,7 @@ private fun buildTree(
                                 SettingsNode.Item(
                                     id = "key-${provider.name.lowercase()}",
                                     title = "${provider.displayName} API Key",
-                                    subtitle = when {
-                                        state.keyFor(provider).isBlank() -> "Not configured"
-                                        else -> "Configured"
-                                    },
+                                    subtitle = if (state.keyFor(provider).isBlank()) "Not configured" else "Configured",
                                     icon = Icons.Outlined.Key,
                                     onClick = { onEditKey(provider) },
                                     trailing = {
@@ -1166,16 +1082,12 @@ private fun buildTree(
                 ),
             )
         ),
-
         SettingsNode.Category(
-            id = "cricket",
-            title = "Cricket",
-            subtitle = "Live scores and match details",
+            id = "cricket", title = "Cricket", subtitle = "Live scores and match details",
             icon = Icons.Outlined.Info,
             children = listOf(
                 SettingsNode.Item(
-                    id = "cricapi-key",
-                    title = "CricAPI Key",
+                    id = "cricapi-key", title = "CricAPI Key",
                     subtitle = if (state.cricketApiKey.isBlank()) "Not configured" else "Configured",
                     icon = Icons.Outlined.Key,
                     onClick = onEditCricketApiKey,
@@ -1188,11 +1100,8 @@ private fun buildTree(
                 ),
             ),
         ),
-
         SettingsNode.Category(
-            id = "appearance",
-            title = "Appearance",
-            subtitle = "Theme, text & language",
+            id = "appearance", title = "Appearance", subtitle = "Theme, text & language",
             icon = Icons.Outlined.DarkMode,
             children = listOf(
                 SettingsNode.Item(
@@ -1215,10 +1124,8 @@ private fun buildTree(
                 )
             )
         ),
-
         SettingsNode.Category(
-            id = "permissions",
-            title = "Permissions",
+            id = "permissions", title = "Permissions",
             subtitle = if (permissionStatus.allGranted) "All permissions granted"
             else "${permissionStatus.grantedCount} of ${permissionStatus.totalCount} granted · Tap to manage",
             icon = Icons.Outlined.Security,
@@ -1226,84 +1133,75 @@ private fun buildTree(
             children = listOfNotNull(
                 if (!permissionStatus.allGranted) {
                     SettingsNode.Item(
-                        id = "grant-all-permissions",
-                        title = "Request all permissions",
+                        id = "grant-all-permissions", title = "Request all permissions",
                         subtitle = "Ask for all required permissions at once",
                         icon = Icons.Outlined.CheckCircle,
                         onClick = permissionActions.onRequestAll,
-                        trailing = {
-                            TrailingBadge("REQUEST ALL", Aqua)
-                        }
+                        trailing = { TrailingBadge("REQUEST ALL", Aqua) }
                     )
                 } else null,
                 SettingsNode.Item(
-                    id = "permission-mic",
-                    title = "Microphone",
+                    id = "permission-mic", title = "Microphone",
                     subtitle = "Voice conversations & speech recognition",
                     icon = Icons.Outlined.Mic,
                     onClick = permissionActions.onRequestMic,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasMic) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasMic) Success else Aqua
+                            if (permissionStatus.hasMic) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasMic) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-calendar",
-                    title = "Calendar",
+                    id = "permission-calendar", title = "Calendar",
                     subtitle = "Read & create calendar events",
                     icon = Icons.Outlined.CalendarMonth,
                     onClick = permissionActions.onRequestCalendar,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasCalendar) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasCalendar) Success else Aqua
+                            if (permissionStatus.hasCalendar) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasCalendar) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-notifications",
-                    title = "Notifications",
+                    id = "permission-notifications", title = "Notifications",
                     subtitle = "Reminders, alerts & assistant updates",
                     icon = Icons.Outlined.Notifications,
                     onClick = permissionActions.onRequestNotifications,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasNotifications) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasNotifications) Success else Aqua
+                            if (permissionStatus.hasNotifications) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasNotifications) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-exact-alarm",
-                    title = "Alarms & Reminders",
+                    id = "permission-exact-alarm", title = "Alarms & Reminders",
                     subtitle = "Schedule alarms and timers accurately on time",
                     icon = Icons.Outlined.Alarm,
                     onClick = permissionActions.onRequestExactAlarm,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasExactAlarm) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasExactAlarm) Success else Aqua
+                            if (permissionStatus.hasExactAlarm) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasExactAlarm) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-bluetooth",
-                    title = "Nearby devices (Bluetooth)",
+                    id = "permission-bluetooth", title = "Nearby devices (Bluetooth)",
                     subtitle = "Route voice audio to Bluetooth headsets",
                     icon = Icons.Outlined.Bluetooth,
                     onClick = permissionActions.onRequestBluetooth,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasBluetooth) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasBluetooth) Success else Aqua
+                            if (permissionStatus.hasBluetooth) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasBluetooth) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-media",
-                    title = "Photos, videos & audio",
+                    id = "permission-media", title = "Photos, videos & audio",
                     subtitle = when {
                         permissionStatus.hasAllMedia -> "Full access to shared media"
                         permissionStatus.hasMedia -> "Selected media access is available"
@@ -1313,85 +1211,73 @@ private fun buildTree(
                     onClick = permissionActions.onRequestMedia,
                     trailing = {
                         TrailingBadge(
-                            text = when {
+                            when {
                                 permissionStatus.hasAllMedia -> "ALLOWED"
                                 permissionStatus.hasMedia -> "SELECTED"
                                 else -> "GRANT"
                             },
-                            accent = if (permissionStatus.hasMedia) Success else Aqua
+                            if (permissionStatus.hasMedia) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-all-files",
-                    title = "All files access",
+                    id = "permission-all-files", title = "All files access",
                     subtitle = "Manage shared files and folders on this device",
                     icon = Icons.Outlined.FolderOpen,
                     onClick = permissionActions.onRequestAllFiles,
                     trailing = {
                         TrailingBadge(
-                            text = when {
+                            when {
                                 Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> "NOT NEEDED"
                                 permissionStatus.hasAllFiles -> "ALLOWED"
                                 else -> "GRANT"
                             },
-                            accent = if (permissionStatus.hasAllFiles) Success else Aqua
+                            if (permissionStatus.hasAllFiles) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-accessibility",
-                    title = "Screen access (Accessibility)",
+                    id = "permission-accessibility", title = "Screen access (Accessibility)",
                     subtitle = "Let the AI see your screen and execute tasks for you",
                     icon = Icons.Outlined.TouchApp,
                     onClick = permissionActions.onOpenAccessibility,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.hasAccessibility) "ALLOWED" else "GRANT",
-                            accent = if (permissionStatus.hasAccessibility) Success else Aqua
+                            if (permissionStatus.hasAccessibility) "ALLOWED" else "GRANT",
+                            if (permissionStatus.hasAccessibility) Success else Aqua
                         )
                     }
                 ),
                 SettingsNode.Item(
-                    id = "permission-app-settings",
-                    title = "System app settings",
+                    id = "permission-app-settings", title = "System app settings",
                     subtitle = "Manage all permissions directly in Android Settings",
                     icon = Icons.Outlined.Settings,
                     onClick = permissionActions.onOpenAppSettings,
-                    trailing = {
-                        TrailingChevron()
-                    }
+                    trailing = { TrailingChevron() }
                 )
             )
         ),
-
         SettingsNode.Category(
-            id = "data",
-            title = "Data & Privacy",
-            subtitle = "Your data, your control",
+            id = "data", title = "Data & Privacy", subtitle = "Your data, your control",
             icon = Icons.Outlined.Lock,
             children = listOf(
                 SettingsNode.Item(
-                    id = "privacy-permissions",
-                    title = "App permissions",
+                    id = "privacy-permissions", title = "App permissions",
                     subtitle = if (permissionStatus.allGranted) "All permissions granted"
                     else "${permissionStatus.grantedCount} of ${permissionStatus.totalCount} granted",
                     icon = Icons.Outlined.Security,
                     onClick = permissionActions.onOpenPermissions,
                     trailing = {
                         TrailingBadge(
-                            text = if (permissionStatus.allGranted) "ALLOWED" else "MANAGE",
-                            accent = if (permissionStatus.allGranted) Success else Aqua
+                            if (permissionStatus.allGranted) "ALLOWED" else "MANAGE",
+                            if (permissionStatus.allGranted) Success else Aqua
                         )
                     }
                 ),
             )
         ),
-
         SettingsNode.Category(
-            id = "about",
-            title = "About",
-            subtitle = "Version & legal",
+            id = "about", title = "About", subtitle = "Version & legal",
             icon = Icons.Outlined.Info,
             children = listOf(
                 SettingsNode.Item(
@@ -1425,19 +1311,16 @@ private fun resolveCategory(
 @Composable
 private fun TopBar(title: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
+        IconButton(onClick = onBack) {
             Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack,
+                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
                 tint = TextHigh,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(22.dp),
             )
         }
         Text(title, color = TextHigh, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
@@ -1445,14 +1328,11 @@ private fun TopBar(title: String, onBack: () -> Unit) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Root list — prominent category cards                               */
+/*  Root list                                                          */
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun SettingsCloudSyncErrorCard(
-    message: String,
-    onRetry: () -> Unit,
-) {
+private fun SettingsCloudSyncErrorCard(message: String, onRetry: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -1471,20 +1351,12 @@ private fun SettingsCloudSyncErrorCard(
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    "Settings couldn't sync",
-                    color = TextHigh,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                )
+                Text("Settings couldn't sync", color = TextHigh, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.height(3.dp))
                 Text(message, color = TextSoft, fontSize = 12.sp)
             }
         }
-        TextButton(
-            onClick = onRetry,
-            modifier = Modifier.align(Alignment.End),
-        ) {
+        TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) {
             Text("Retry", color = Aqua)
         }
     }
@@ -1492,10 +1364,7 @@ private fun SettingsCloudSyncErrorCard(
 
 @Composable
 private fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         nodes.forEach { node ->
             when (node) {
                 is SettingsNode.Category -> RootCategoryCard(node) { onOpen(node.id) }
@@ -1522,17 +1391,14 @@ private fun RootCategoryCard(category: SettingsNode.Category, onClick: () -> Uni
                 .background(category.accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(category.icon, contentDescription = null, tint = category.accent,
-                modifier = Modifier.size(18.dp))
+            Icon(category.icon, contentDescription = null, tint = category.accent, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(category.title, color = TextHigh, fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold)
+            Text(category.title, color = TextHigh, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             category.subtitle?.let {
                 Spacer(Modifier.height(2.dp))
-                Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
+                Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -1552,7 +1418,7 @@ private fun RootItemCard(item: SettingsNode.Item) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Nested list — uniform card                                         */
+/*  Nested list                                                        */
 /* ------------------------------------------------------------------ */
 
 @Composable
@@ -1589,18 +1455,15 @@ private fun CategoryRow(
                     .background(category.accent.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(category.icon, contentDescription = null, tint = category.accent,
-                    modifier = Modifier.size(16.dp))
+                Icon(category.icon, contentDescription = null, tint = category.accent, modifier = Modifier.size(16.dp))
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(category.title, color = TextHigh, fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 category.subtitle?.let {
                     Spacer(Modifier.height(2.dp))
-                    Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
+                    Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.width(8.dp))
@@ -1636,23 +1499,26 @@ private fun ItemRow(item: SettingsNode.Item, isLast: Boolean) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (item.icon != null) {
-                Icon(item.icon, contentDescription = null, tint = iconTint,
-                    modifier = Modifier.size(20.dp))
+                Icon(item.icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(14.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(item.title, color = titleColor, fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
+                    fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 item.subtitle?.let {
                     Spacer(Modifier.height(2.dp))
                     Text(it, color = TextSoft.copy(alpha = if (item.enabled) 1f else 0.45f),
-                        fontSize = 12.sp, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis)
+                        fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.width(12.dp))
-            item.trailing()
+            // Fall back to the default trailing when none is provided:
+            // chevron for clickable rows, nothing otherwise.
+            when {
+                item.trailing != null -> item.trailing.invoke()
+                click != null && item.enabled -> TrailingChevron()
+                else -> Unit
+            }
         }
         if (!isLast) Divider(startPadding = if (item.icon != null) 50.dp else 16.dp)
     }
@@ -1662,8 +1528,7 @@ private fun ItemRow(item: SettingsNode.Item, isLast: Boolean) {
 private fun Divider(startPadding: Dp) {
     Row(Modifier.fillMaxWidth()) {
         Spacer(Modifier.width(startPadding))
-        Box(Modifier.weight(1f).height(1.dp)
-            .background(CardStroke.copy(alpha = 0.4f)))
+        Box(Modifier.weight(1f).height(1.dp).background(CardStroke.copy(alpha = 0.4f)))
     }
 }
 
@@ -1674,7 +1539,7 @@ private fun Divider(startPadding: Dp) {
 @Composable
 private fun TrailingChevron() {
     Icon(
-        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
         contentDescription = null,
         tint = TextSoft.copy(alpha = 0.6f),
         modifier = Modifier.size(20.dp)
@@ -1693,23 +1558,8 @@ private fun TrailingBadge(text: String, accent: Color = Aqua) {
             .background(accent.copy(alpha = 0.16f))
             .padding(horizontal = 7.dp, vertical = 2.dp)
     ) {
-        Text(text, color = accent, fontSize = 9.sp, letterSpacing = 0.8.sp,
-            fontWeight = FontWeight.Bold)
+        Text(text, color = accent, fontSize = 9.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold)
     }
-}
-
-@Composable
-private fun TrailingSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Night,
-            checkedTrackColor = Aqua,
-            uncheckedThumbColor = TextSoft,
-            uncheckedTrackColor = CardStroke
-        )
-    )
 }
 
 @Composable
@@ -1725,8 +1575,7 @@ private fun ProviderDropdownTrailing(
                 .clickable { expanded = true }
                 .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
-            Text(selected.displayName, color = Aqua, fontSize = 13.sp,
-                fontWeight = FontWeight.Medium)
+            Text(selected.displayName, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.width(4.dp))
             Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null,
                 tint = TextSoft, modifier = Modifier.size(18.dp))
@@ -1741,18 +1590,16 @@ private fun ProviderDropdownTrailing(
                 val isSelected = provider == selected
                 DropdownMenuItem(
                     text = {
-                        Row(Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(provider.displayName,
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                provider.displayName,
                                 color = TextHigh,
                                 fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold
-                                else FontWeight.Normal)
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                            )
                             Spacer(Modifier.weight(1f))
-                            Spacer(Modifier.width(12.dp))
-                            when {
-                                isSelected -> Icon(Icons.Outlined.Check,
-                                    contentDescription = null, tint = Aqua,
+                            if (isSelected) {
+                                Icon(Icons.Outlined.Check, contentDescription = null, tint = Aqua,
                                     modifier = Modifier.size(16.dp))
                             }
                         }
@@ -1793,8 +1640,10 @@ private fun SpeechEngineDropdown(
                     text = {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(engine.label, color = TextHigh, fontSize = 14.sp,
-                                    fontWeight = if (engine == selected) FontWeight.SemiBold else FontWeight.Normal)
+                                Text(
+                                    engine.label, color = TextHigh, fontSize = 14.sp,
+                                    fontWeight = if (engine == selected) FontWeight.SemiBold else FontWeight.Normal
+                                )
                                 if (engine == selected) {
                                     Spacer(Modifier.width(10.dp))
                                     Icon(Icons.Outlined.Check, contentDescription = null,
@@ -1812,10 +1661,7 @@ private fun SpeechEngineDropdown(
 }
 
 @Composable
-private fun AssistantNameDropdown(
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
+private fun AssistantNameDropdown(selected: String, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -1841,16 +1687,10 @@ private fun AssistantNameDropdown(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    name,
-                                    color = TextHigh,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold
-                                    else FontWeight.Normal,
+                                    name, color = TextHigh, fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                 )
                                 Spacer(Modifier.weight(1f))
                                 if (isSelected) {
@@ -1860,8 +1700,7 @@ private fun AssistantNameDropdown(
                             }
                             Text(
                                 "${character.gender} · ${character.voice.geminiVoiceName} voice",
-                                color = TextSoft,
-                                fontSize = 11.sp,
+                                color = TextSoft, fontSize = 11.sp
                             )
                         }
                     },
@@ -1873,10 +1712,7 @@ private fun AssistantNameDropdown(
 }
 
 @Composable
-private fun GenderDropdown(
-    selected: Gender,
-    onSelect: (Gender) -> Unit,
-) {
+private fun GenderDropdown(selected: Gender, onSelect: (Gender) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -1907,10 +1743,7 @@ private fun GenderDropdown(
 }
 
 @Composable
-private fun RelationTypeDropdown(
-    selected: RelationType,
-    onSelect: (RelationType) -> Unit,
-) {
+private fun RelationTypeDropdown(selected: RelationType, onSelect: (RelationType) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -1919,8 +1752,7 @@ private fun RelationTypeDropdown(
                 .clickable { expanded = true }
                 .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
-            Text(selected.title, color = selected.accent(), fontSize = 13.sp,
-                fontWeight = FontWeight.Medium)
+            Text(selected.title, color = selected.accent(), fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.width(4.dp))
             Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose relationship",
                 tint = TextSoft, modifier = Modifier.size(18.dp))
@@ -1941,71 +1773,8 @@ private fun RelationTypeDropdown(
     }
 }
 
-/* ------------------------------------------------------------------ */
-/*  API key dialog                                                     */
-/* ------------------------------------------------------------------ */
-
 @Composable
-private fun ApiKeyDialog(
-    title: String,
-    placeholder: String,
-    description: String = "The key is stored on this device for your signed-in account.",
-    initialKey: String,
-    onSave: (String) -> Unit,
-    onRemove: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var key by remember(title) { mutableStateOf(initialKey) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = RowSurface,
-        title = {
-            Text(title, color = TextHigh,
-                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        },
-        text = {
-            Column {
-                Text(
-                    description,
-                    color = TextSoft, fontSize = 13.sp)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    placeholder = { Text(placeholder, color = TextSoft.copy(alpha = 0.5f)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(key) }) {
-                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            Row {
-                if (initialKey.isNotBlank()) {
-                    TextButton(onClick = onRemove) {
-                        Text("Remove", color = Color(0xFFFF6B6B))
-                    }
-                }
-                TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
-            }
-        }
-    )
-}
-
-/* ------------------------------------------------------------------ */
-/*  Assistant language dropdown                                        */
-/* ------------------------------------------------------------------ */
-
-@Composable
-private fun LanguageDropdown(
-    selected: AssistantLanguage,
-    onSelect: (AssistantLanguage) -> Unit
-) {
+private fun LanguageDropdown(selected: AssistantLanguage, onSelect: (AssistantLanguage) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -2026,15 +1795,16 @@ private fun LanguageDropdown(
                 .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
         ) {
             AssistantLanguage.entries.forEach { language ->
+                val isSelected = language == selected
                 DropdownMenuItem(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(language.label, color = TextHigh, fontSize = 14.sp,
-                                fontWeight = if (language == selected) FontWeight.SemiBold
-                                else FontWeight.Normal)
+                            Text(
+                                language.label, color = TextHigh, fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                            )
                             Spacer(Modifier.weight(1f))
-                            Spacer(Modifier.width(12.dp))
-                            if (language == selected) {
+                            if (isSelected) {
                                 Icon(Icons.Outlined.Check, contentDescription = null,
                                     tint = Aqua, modifier = Modifier.size(16.dp))
                             }
@@ -2048,8 +1818,55 @@ private fun LanguageDropdown(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Text edit dialog (username / phone / assistant name)               */
+/*  Dialogs                                                            */
 /* ------------------------------------------------------------------ */
+
+@Composable
+private fun ApiKeyDialog(
+    title: String,
+    placeholder: String,
+    description: String = "The key is stored on this device for your signed-in account.",
+    initialKey: String,
+    onSave: (String) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var key by remember(title) { mutableStateOf(initialKey) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = { Text(title, color = TextHigh, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                Text(description, color = TextSoft, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    placeholder = { Text(placeholder, color = TextSoft.copy(alpha = 0.5f)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(key) }) {
+                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (initialKey.isNotBlank()) {
+                    TextButton(onClick = onRemove) {
+                        Text("Remove", color = Danger)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
+            }
+        }
+    )
+}
 
 @Composable
 private fun EditFieldDialog(
@@ -2062,10 +1879,7 @@ private fun EditFieldDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = RowSurface,
-        title = {
-            Text(field.title, color = TextHigh, fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold)
-        },
+        title = { Text(field.title, color = TextHigh, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
                 Text(field.description, color = TextSoft, fontSize = 13.sp)
@@ -2076,8 +1890,7 @@ private fun EditFieldDialog(
                     singleLine = true,
                     placeholder = { Text(field.placeholder, color = TextSoft.copy(alpha = 0.5f)) },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (field.isPhoneNumber) KeyboardType.Phone
-                        else KeyboardType.Text
+                        keyboardType = if (field.isPhoneNumber) KeyboardType.Phone else KeyboardType.Text
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2097,7 +1910,13 @@ private fun EditFieldDialog(
     )
 }
 
+/* ------------------------------------------------------------------ */
+/*  Unused-but-referenced helpers                                      */
+/*  (kept for the flow described in the comments; wire up when needed) */
+/* ------------------------------------------------------------------ */
+
 @Composable
+@Suppress("unused")
 private fun SectionLabel(text: String) {
     Text(
         text,
@@ -2111,6 +1930,7 @@ private fun SectionLabel(text: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("unused")
 private fun RelationTypeSheet(
     selected: RelationType,
     onApply: (RelationType) -> Unit,
@@ -2136,12 +1956,8 @@ private fun RelationTypeSheet(
         contentColor = TextHigh
     ) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp)
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp)
         ) {
-            // Header
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
@@ -2153,20 +1969,15 @@ private fun RelationTypeSheet(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("Relationship", color = TextHigh, fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold)
+                    Text("Relationship", color = TextHigh, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(2.dp))
-                    Text("Who she is to you — from stranger to wife", color = TextSoft,
-                        fontSize = 12.sp)
+                    Text("Who she is to you — from stranger to wife", color = TextSoft, fontSize = 12.sp)
                 }
             }
             Spacer(Modifier.height(16.dp))
 
-            // Options
             Column(
-                Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 platonic.forEach { type ->
@@ -2182,7 +1993,6 @@ private fun RelationTypeSheet(
 
             Spacer(Modifier.height(12.dp))
 
-            // Primary action — switching to Wife asks for an explicit 18+ confirmation.
             val changed = pending != selected
             Button(
                 onClick = {
@@ -2218,8 +2028,7 @@ private fun RelationTypeSheet(
                     tint = Danger, modifier = Modifier.size(26.dp))
             },
             title = {
-                Text("Enable 18+ content?", color = TextHigh, fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold)
+                Text("Enable 18+ content?", color = TextHigh, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             },
             text = {
                 Text(
@@ -2229,23 +2038,19 @@ private fun RelationTypeSheet(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmMature = false
-                    applyAndClose(pending)
-                }) {
+                TextButton(onClick = { confirmMature = false; applyAndClose(pending) }) {
                     Text("I'm 18 or older", color = Danger, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmMature = false }) {
-                    Text("Cancel", color = TextSoft)
-                }
+                TextButton(onClick = { confirmMature = false }) { Text("Cancel", color = TextSoft) }
             }
         )
     }
 }
 
 @Composable
+@Suppress("unused")
 private fun RelationOptionCard(
     type: RelationType,
     isSelected: Boolean,
@@ -2284,24 +2089,19 @@ private fun RelationOptionCard(
                 .background(accent.copy(alpha = if (isSelected) 0.22f else 0.12f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(type.icon(), contentDescription = null, tint = accent,
-                modifier = Modifier.size(19.dp))
+            Icon(type.icon(), contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
         }
         Spacer(Modifier.width(12.dp))
 
         Column(Modifier.weight(1f)) {
             Text(
-                type.title,
-                color = TextHigh,
-                fontSize = 15.sp,
+                type.title, color = TextHigh, fontSize = 15.sp,
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                type.description,
-                color = TextSoft.copy(alpha = 0.9f),
-                fontSize = 12.sp,
-                lineHeight = 16.sp
+                type.description, color = TextSoft.copy(alpha = 0.9f),
+                fontSize = 12.sp, lineHeight = 16.sp
             )
         }
 
@@ -2311,6 +2111,7 @@ private fun RelationOptionCard(
 }
 
 @Composable
+@Suppress("unused")
 private fun RadioDot(selected: Boolean, accent: Color) {
     val ring by animateColorAsState(
         if (selected) accent else TextSoft.copy(alpha = 0.4f), label = "ring"

@@ -61,6 +61,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -103,6 +105,16 @@ private val Suggestions = listOf(
     "Explain something complicated in simple words",
 )
 
+/**
+ * True when [uri] can be handed to an external viewer app.
+ *
+ * Accepts `content://` (Photo Picker / SAF) and `file://` (saved images).
+ * `http(s)://` is deliberately excluded — the receiving app would need a
+ * network permission and the tap-to-open flow is meant for local attachments.
+ */
+private fun isOpenableImageUri(uri: String): Boolean =
+    uri.startsWith("content://") || uri.startsWith("file://")
+
 @Composable
 fun ChatPage(
     messages: List<UiMessage>,
@@ -113,7 +125,16 @@ fun ChatPage(
     onStop: (() -> Unit)? = null,
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
-    var attachedImage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // `remember` (not `rememberSaveable`): the URI string itself survives
+    // process death, but the transient `content://` grant that
+    // `PickVisualMedia` issues does NOT — the picker grants the permission
+    // for the activity's lifetime, not persistably (Photo Picker has no
+    // persistable-grant path). Restoring the string across process death
+    // would render a broken thumbnail and fail on send. `remember` correctly
+    // drops the attachment after process death while surviving rotation
+    // (config changes are recompositions, not restarts).
+    var attachedImage by remember { mutableStateOf<String?>(null) }
     val isBusy = busyStatus != null
     val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy
 
@@ -134,12 +155,25 @@ fun ChatPage(
 
     val lastMessageId = messages.lastOrNull()?.id
 
-    // Sticky auto-scroll: follow the conversation when the user is near the
-    // latest message, and ALWAYS when the newest message is their own send.
-    LaunchedEffect(lastMessageId, isBusy) {
+    // Length of the newest message's text. Changes on every streamed chunk,
+    // so the auto-scroll effect below re-fires while the assistant types.
+    // Without this, streaming text grows *upward* in reverse layout and the
+    // user only ever sees the first few lines.
+    val latestTextLength = messages.lastOrNull()?.text?.length ?: 0
+
+    // Sticky auto-scroll. Fires on:
+    //  - new message appended (lastMessageId)
+    //  - busy indicator toggled (isBusy)
+    //  - streamed text chunk (latestTextLength)
+    // Skips if the user has scrolled up past the two newest items, *unless*
+    // the newest message is the user's own send (they expect to land there).
+    LaunchedEffect(lastMessageId, isBusy, latestTextLength) {
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (listState.firstVisibleItemIndex <= 1 || last.isUser) {
-            listState.animateScrollToItem(0)
+            // scrollToItem (not animateScrollToItem): during streaming this
+            // fires per character; animating would jitter and fight input.
+            // When already at index 0, it's a no-op.
+            listState.scrollToItem(0)
         }
     }
 
@@ -179,32 +213,14 @@ fun ChatPage(
                     }
                 }
 
-                // One-tap jump back to the newest message.
                 if (showJumpToLatest) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    JumpToLatestPill(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(FieldSurface)
-                            .border(1.dp, CardStroke, RoundedCornerShape(20.dp))
-                            .clickable(role = Role.Button) {
-                                scope.launch { listState.animateScrollToItem(0) }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.ArrowDownward,
-                            contentDescription = null,
-                            tint = Aqua,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text("Latest", color = TextHigh, fontSize = CaptionSize)
-                    }
+                            .padding(bottom = 12.dp),
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } }
+                    )
                 }
-
             }
         }
 
@@ -241,7 +257,8 @@ fun ChatPage(
                     Text(
                         text = "Ask me anything?",
                         color = TextSoft,
-                        fontSize = BodySize
+                        fontSize = BodySize,
+                        lineHeight = BodyLineHeight,
                     )
                 },
                 shape = RoundedCornerShape(24.dp),
@@ -278,7 +295,35 @@ fun ChatPage(
                 )
             }
         }
+    }
+}
 
+@Composable
+private fun JumpToLatestPill(
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(FieldSurface)
+            .border(1.dp, CardStroke, RoundedCornerShape(20.dp))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "Jump to latest message",
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.ArrowDownward,
+            contentDescription = null, // text below names the action
+            tint = Aqua,
+            modifier = Modifier.size(14.dp)
+        )
+        Text("Latest", color = TextHigh, fontSize = CaptionSize)
     }
 }
 
@@ -301,6 +346,9 @@ private fun ComposerButton(
         filled -> OnAqua
         else -> Aqua
     }
+    // Bottom padding aligns the fixed-height button with the multi-line
+    // OutlinedTextField's text baseline (the field has ~4 dp of internal
+    // bottom padding). Removing it makes the buttons sit visually low.
     Box(modifier.padding(bottom = 4.dp)) {
         IconButton(
             onClick = onClick,
@@ -311,7 +359,7 @@ private fun ComposerButton(
                 .background(container)
         ) {
             Icon(
-                icon,
+                imageVector = icon,
                 contentDescription = description,
                 tint = tint,
                 modifier = Modifier.size(24.dp)
@@ -347,7 +395,8 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
         Box(Modifier.size(72.dp)) {
             AsyncImage(
                 model = uri.toUri(),
-                contentDescription = "Attached image",
+                // Decorative: the caption below already says "Photo attached".
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
@@ -359,11 +408,12 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
                     .align(Alignment.TopEnd)
                     .size(40.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = "Remove attachment",
-                        onClick = onRemove
-                    ),
+                    // Use semantics + clickable instead of onClickLabel alone:
+                    // onClickLabel *supplements* a name but doesn't provide
+                    // one on all TalkBack versions. `contentDescription`
+                    // guarantees a stable name.
+                    .semantics { contentDescription = "Remove attachment" }
+                    .clickable(role = Role.Button, onClick = onRemove),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -374,15 +424,19 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Outlined.Close,
-                        contentDescription = null,
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = null, // parent Box carries the name
                         tint = TextHigh,
                         modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
-        Text("Photo attached · ask anything about it", color = TextSoft, fontSize = SecondarySize)
+        Text(
+            text = "Photo attached · ask anything about it",
+            color = TextSoft,
+            fontSize = SecondarySize,
+        )
     }
 }
 
@@ -396,14 +450,14 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            Icons.Outlined.AutoAwesome,
+            imageVector = Icons.Outlined.AutoAwesome,
             contentDescription = null,
             tint = Aqua,
             modifier = Modifier.size(40.dp)
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            "What can I help you create?",
+            text = "What can I help you create?",
             color = TextHigh,
             fontSize = TitleSize,
             fontWeight = FontWeight.SemiBold,
@@ -411,7 +465,7 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Ask a question, generate an image, or attach a photo to talk about it.",
+            text = "Ask a question, generate an image, or attach a photo to talk about it.",
             color = TextSoft,
             fontSize = SecondarySize,
             lineHeight = 20.sp,
@@ -423,38 +477,47 @@ private fun EmptyChatState(onSuggestion: (String) -> Unit, modifier: Modifier = 
             modifier = Modifier.widthIn(max = 420.dp)
         ) {
             Suggestions.forEach { suggestion ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = MinTouchTarget)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(FieldSurface)
-                        .border(1.dp, CardStroke, RoundedCornerShape(16.dp))
-                        .clickable(role = Role.Button) { onSuggestion(suggestion) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.AutoAwesome,
-                        contentDescription = null,
-                        tint = Aqua,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        suggestion,
-                        color = TextHigh,
-                        fontSize = SecondarySize,
-                        lineHeight = 20.sp
-                    )
-                }
+                SuggestionRow(suggestion = suggestion, onClick = { onSuggestion(suggestion) })
             }
         }
     }
 }
 
 @Composable
+private fun SuggestionRow(suggestion: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = MinTouchTarget)
+            .clip(RoundedCornerShape(16.dp))
+            .background(FieldSurface)
+            .border(1.dp, CardStroke, RoundedCornerShape(16.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.AutoAwesome,
+            contentDescription = null,
+            tint = Aqua,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = suggestion,
+            color = TextHigh,
+            fontSize = SecondarySize,
+            lineHeight = 20.sp
+        )
+    }
+}
+
+@Composable
 private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
+    // Skip empty assistant placeholders (a streamed message with no content
+    // yet). User messages are guaranteed non-empty by `canSend`, so a
+    // user message reaching here with no content would be a bug upstream —
+    // don't hide it.
     if (!message.isUser && !message.isError && message.text.isBlank() && message.imageUri == null) return
 
     val isUser = message.isUser
@@ -485,7 +548,7 @@ private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
             if (message.text.isNotBlank()) {
                 SelectionContainer {
                     Text(
-                        message.text,
+                        text = message.text,
                         color = if (message.isError) ErrorText else TextHigh,
                         fontSize = BodySize,
                         lineHeight = BodyLineHeight
@@ -513,7 +576,7 @@ private fun MessageImage(
     hasText: Boolean,
     onOpenImage: (String) -> Unit,
 ) {
-    val canOpen = imageUri.startsWith("content://")
+    val canOpen = isOpenableImageUri(imageUri)
     if (hasText) Spacer(Modifier.height(10.dp))
 
     // minHeight keeps the bubble from collapsing to 0 while the image loads.
@@ -526,7 +589,15 @@ private fun MessageImage(
             .heightIn(min = 60.dp, max = 380.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FieldSurface)
-            .then(if (canOpen) Modifier.clickable { onOpenImage(imageUri) } else Modifier)
+            .then(
+                if (canOpen) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = "Open image",
+                        onClick = { onOpenImage(imageUri) },
+                    )
+                } else Modifier
+            )
     )
 
     val caption = when {
@@ -536,6 +607,11 @@ private fun MessageImage(
     }
     caption?.let {
         Spacer(Modifier.height(8.dp))
-        Text(it, color = TextSoft, fontSize = CaptionSize, lineHeight = 16.sp)
+        Text(
+            text = it,
+            color = TextSoft,
+            fontSize = CaptionSize,
+            lineHeight = 16.sp
+        )
     }
 }

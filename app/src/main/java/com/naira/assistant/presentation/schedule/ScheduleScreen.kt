@@ -1,9 +1,7 @@
 package com.naira.assistant.presentation.schedule
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -28,21 +25,25 @@ import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.core.database.reminder.RecurrenceType
 import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderPriority
@@ -54,6 +55,8 @@ import com.naira.assistant.core.theme.Lilac
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,42 +68,62 @@ private val Danger  = Color(0xFFFF6B6B)
 private val Warning = Color(0xFFFFC857)
 private val Success = Color(0xFF4ADE80)
 
+private const val TriggerDateFormat = "EEE, MMM d · h:mm a"
+
 /* ────────────────────────── Entry point ─────────────────────────── */
 
 @Composable
 fun ScheduleScreen(
-    context: Context = LocalContext.current,
-    onBack: () -> Unit = {}
+    modifier: Modifier = Modifier,
+    assistantName: String = "NAIRA",
+    onBack: () -> Unit = {},
 ) {
     val repo = remember { SupabaseReminderRepository.getInstance() }
-    LaunchedEffect(repo) { repo.refresh() }
-    val reminders by repo.observeAll().collectAsState()
+    val scope = rememberCoroutineScope()
+
+    // Lifecycle-aware: pauses while backgrounded, resumes when the screen
+    // comes back into the composition.
+    val reminders by repo.observeAll().collectAsStateWithLifecycle()
+
+    // Refresh on first mount AND every resume. Failures are non-fatal — the
+    // local DB is authoritative for rendering, remote is best-effort.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch {
+            try {
+                repo.refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // no-op
+            }
+        }
+    }
 
     Column(
-        Modifier
+        modifier
             .fillMaxSize()
             .background(Night)
             .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        // ── Top bar ──────────────────────────────────────────────────
         TopBar(onBack = onBack)
 
-        // ── Content ──────────────────────────────────────────────────
         if (reminders.isEmpty()) {
-            EmptyState()
+            EmptyState(assistantName = assistantName)
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-                    .navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    top = 4.dp,
+                    bottom = 16.dp,
+                ),
             ) {
-                item { Spacer(Modifier.height(4.dp)) }
                 items(reminders, key = { it.id }) { reminder ->
                     ReminderCard(reminder)
                 }
-                item { Spacer(Modifier.height(16.dp)) }
             }
         }
     }
@@ -113,29 +136,25 @@ private fun TopBar(onBack: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
+        // IconButton gives a 48dp Material touch target; the previous 44dp
+        // Box was below the platform minimum.
+        IconButton(onClick = onBack) {
             Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack,
+                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
                 tint = TextHigh,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(22.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
         Text(
             text = "Schedule",
             color = TextHigh,
             fontSize = 23.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -143,30 +162,30 @@ private fun TopBar(onBack: () -> Unit) {
 /* ────────────────────────── Empty state ─────────────────────────── */
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(assistantName: String) {
     Box(
         Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                Icons.Outlined.NotificationsNone,
+                imageVector = Icons.Outlined.NotificationsNone,
                 contentDescription = null,
                 tint = TextSoft.copy(alpha = 0.4f),
-                modifier = Modifier.size(64.dp)
+                modifier = Modifier.size(64.dp),
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                "No reminders yet",
+                text = "No reminders yet",
                 color = TextHigh,
                 fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Ask Thrisa to set a reminder for you",
+                text = "Ask $assistantName to set a reminder for you",
                 color = TextSoft,
-                fontSize = 14.sp
+                fontSize = 14.sp,
             )
         }
     }
@@ -177,9 +196,9 @@ private fun EmptyState() {
 @Composable
 private fun ReminderCard(item: ReminderItem) {
     val statusColor = when (item.status) {
-        ReminderStatus.ACTIVE   -> Aqua
-        ReminderStatus.SNOOZED  -> Warning
-        ReminderStatus.DONE     -> Success
+        ReminderStatus.ACTIVE    -> Aqua
+        ReminderStatus.SNOOZED   -> Warning
+        ReminderStatus.DONE      -> Success
         ReminderStatus.CANCELLED -> Danger
     }
     val priorityColor = when (item.priority) {
@@ -189,38 +208,78 @@ private fun ReminderCard(item: ReminderItem) {
         ReminderPriority.URGENT -> Danger
     }
 
+    // For SNOOZED reminders the *next* trigger is `snoozedUntilMs`, not
+    // `nextTriggerMs` — the latter is the original time that already fired.
+    // Showing the original time is what made snoozed reminders read "3:00 PM"
+    // at 5:00 PM, confusing users about when the reminder will actually fire.
+    val triggerMs = when {
+        item.status == ReminderStatus.SNOOZED && item.snoozedUntilMs > 0L -> item.snoozedUntilMs
+        else -> item.nextTriggerMs
+    }
+
+    val nowMs = remember(item.nextTriggerMs, triggerMs, item.status) {
+        System.currentTimeMillis()
+    }
+    val isOverdue = item.status == ReminderStatus.ACTIVE &&
+            triggerMs > 0L && triggerMs < nowMs
+    val timeLabel = remember(triggerMs, nowMs) { formatTrigger(triggerMs) }
+
+    // The status dot color doubles as the card's accent; overdue takes
+    // priority so the accent reads "this needs attention".
+    val timeColor = when {
+        isOverdue -> Danger
+        else -> Aqua
+    }
+
+    // Single accessibility node for the whole card so TalkBack doesn't read
+    // title, description, time, recurrence, priority, tags and status as
+    // seven separate announcements. The description is composed from the
+    // visible content so voice users hear the same information sighted
+    // users see.
+    val cardDescription = buildString {
+        append(item.title)
+        if (item.description.isNotBlank()) append(". ${item.description}")
+        append(". ")
+        if (isOverdue) append("Overdue: ") else append("Scheduled for ")
+        append(timeLabel)
+        if (item.recurrence != RecurrenceType.NONE) {
+            append(", repeats ${item.recurrence.id}")
+        }
+        append(", status ${item.status.id}")
+    }
+
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(Surface)
             .border(1.dp, CardStroke.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+            .semantics(mergeDescendants = true) { contentDescription = cardDescription }
             .padding(horizontal = 14.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.Top,
     ) {
-        // Status dot / icon
         Box(
             Modifier
                 .padding(top = 2.dp)
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(statusColor.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = if (item.status == ReminderStatus.DONE)
+                imageVector = if (item.status == ReminderStatus.DONE) {
                     Icons.Outlined.CheckCircle
-                else
-                    Icons.Outlined.Schedule,
-                contentDescription = null,
+                } else {
+                    Icons.Outlined.Schedule
+                },
+                contentDescription = null, // whole card carries the semantics
                 tint = statusColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(18.dp),
             )
         }
 
         Spacer(Modifier.width(12.dp))
 
-        // Content
         Column(Modifier.weight(1f)) {
             Text(
                 text = item.title,
@@ -228,7 +287,7 @@ private fun ReminderCard(item: ReminderItem) {
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
 
             if (item.description.isNotBlank()) {
@@ -238,53 +297,48 @@ private fun ReminderCard(item: ReminderItem) {
                     color = TextSoft,
                     fontSize = 13.sp,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
             Spacer(Modifier.height(8.dp))
 
-            // Time + recurrence row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Trigger time
                 Text(
-                    text = formatMs(item.nextTriggerMs),
-                    color = Aqua,
+                    text = timeLabel,
+                    color = timeColor,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Medium,
                 )
 
-                // Recurrence badge
                 if (item.recurrence != RecurrenceType.NONE) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Outlined.Repeat,
+                            imageVector = Icons.Outlined.Repeat,
                             contentDescription = null,
                             tint = Lilac,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(12.dp),
                         )
                         Spacer(Modifier.width(3.dp))
                         Text(
                             text = item.recurrence.id.replaceFirstChar { it.uppercaseChar() },
                             color = Lilac,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
                         )
                     }
                 }
 
-                // Priority badge (only non-NORMAL)
                 if (item.priority != ReminderPriority.NORMAL) {
                     StatusPill(
                         text = item.priority.id.replaceFirstChar { it.uppercaseChar() },
-                        color = priorityColor
+                        color = priorityColor,
                     )
                 }
             }
 
-            // Tags row
             if (item.tags.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -297,10 +351,9 @@ private fun ReminderCard(item: ReminderItem) {
 
         Spacer(Modifier.width(8.dp))
 
-        // Status pill (top-right)
         StatusPill(
             text = item.status.id.replaceFirstChar { it.uppercaseChar() },
-            color = statusColor
+            color = statusColor,
         )
     }
 }
@@ -313,21 +366,30 @@ private fun StatusPill(text: String, color: Color) {
         Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 7.dp, vertical = 2.dp)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
             text = text,
             color = color,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp
+            letterSpacing = 0.5.sp,
         )
     }
 }
 
 /* ────────────────────────── Helpers ─────────────────────────────── */
 
-private val dateFormat = SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault())
-
-private fun formatMs(ms: Long): String =
-    if (ms <= 0L) "—" else dateFormat.format(Date(ms))
+/**
+ * Formats a millisecond trigger time in the *current* default locale.
+ *
+ * Constructs a fresh `SimpleDateFormat` per call rather than sharing a
+ * module-level instance — `SimpleDateFormat` is mutable and not thread-safe,
+ * and a module-level instance would keep the locale captured at class-load
+ * time, so a device-language change wouldn't take effect until process
+ * restart. A single format call is ~microseconds; not worth caching.
+ */
+private fun formatTrigger(ms: Long): String {
+    if (ms <= 0L) return "—"
+    return SimpleDateFormat(TriggerDateFormat, Locale.getDefault()).format(Date(ms))
+}

@@ -97,7 +97,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
             abilities = listOf(ModelAbility.TOOL),
         )
         val tools = toolDefinitions.map { it.toAgentTool(executeTool) }
-        val provider = providerManager.getProviderByType<ProviderSetting>(setting)
+        val provider = providerManager.getProviderByType(setting)
         val request = AgentRequest(
             provider = provider,
             providerSetting = setting,

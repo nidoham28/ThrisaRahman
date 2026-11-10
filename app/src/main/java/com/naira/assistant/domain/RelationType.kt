@@ -6,6 +6,9 @@ package com.naira.assistant.domain
  * wife. Each level defines both the dynamic and the intensity ceiling;
  * there is no separate roleplay-mode toggle.
  */
+// `summary` is consumed by the relationship-picker UI; the "never used"
+// inspection only fires because no reference lives in this file.
+@Suppress("unused")
 enum class RelationType(
     val id: String,
     val title: String,
@@ -49,26 +52,73 @@ enum class RelationType(
     );
 
     companion object {
-        val DEFAULT = FRIEND
+        /** The relationship used when no value is persisted, or when an unknown id is supplied. */
+        val DEFAULT: RelationType = FRIEND
 
-        fun fromId(id: String?): RelationType {
-            if (id == null) return DEFAULT
-            return entries.firstOrNull {
-                it.id.equals(id, ignoreCase = true) ||
-                        it.name.equals(id, ignoreCase = true) ||
-                        (id.equals("strenger", ignoreCase = true) && it == STRANGER) ||
-                        (id.equals("best_friend", ignoreCase = true) && it == CLOSE_FRIEND) ||
-                        (id.equals("bestfriend", ignoreCase = true) && it == CLOSE_FRIEND) ||
-                        (id.equals("closefriend", ignoreCase = true) && it == CLOSE_FRIEND) ||
-                        // Legacy ids from the old two-setting system
-                        (id.equals("partner", ignoreCase = true) && it == GIRLFRIEND) ||
-                        (id.equals("spouse", ignoreCase = true) && it == WIFE) ||
-                        (id.equals("romantic", ignoreCase = true) && it == GIRLFRIEND) ||
-                        (id.equals("friendly", ignoreCase = true) && it == FRIEND) ||
-                        (id.equals("instance_18", ignoreCase = true) && it == WIFE) ||
-                        (id.equals("instance", ignoreCase = true) && it == WIFE) ||
-                        (id.equals("intense", ignoreCase = true) && it == WIFE)
-            } ?: DEFAULT
+        /**
+         * Precomputed case-insensitive lookup: lowercase key → entry.
+         *
+         * Contains primary [id]s, enum [name]s, and every legacy alias
+         * persisted by earlier builds. Built once at class-load; [fromId]
+         * is O(1).
+         *
+         * Note: inside [buildMap] the identifier `entries` binds to the
+         * *builder's* entry set, so we qualify `RelationType.entries`
+         * explicitly — otherwise `entry.id` / `entry.name` fail to resolve
+         * against `RelationType` and the build breaks.
+         */
+        @Suppress("SpellCheckingInspection") // legacy alias strings are intentional
+        private val LOOKUP: Map<String, RelationType> = buildMap {
+            RelationType.entries.forEach { entry ->
+                put(entry.id.lowercase(), entry)
+                put(entry.name.lowercase(), entry)
+            }
+
+            // ---- Legacy aliases ----
+            // Kept for backward compatibility with settings persisted by
+            // earlier builds. Safe to remove only after a migration pass
+            // that rewrites old values on read; deleting these without
+            // migration would silently downgrade affected users to DEFAULT.
+
+            put("strenger", STRANGER)       // typo from an old shipped build
+            put("friendly", FRIEND)
+            put("best_friend", CLOSE_FRIEND)
+            put("bestfriend", CLOSE_FRIEND)
+            put("closefriend", CLOSE_FRIEND)
+            put("partner", GIRLFRIEND)
+            put("romantic", GIRLFRIEND)
+            put("spouse", WIFE)
+            put("instance_18", WIFE)        // opaque legacy id
+            put("instance", WIFE)           // opaque legacy id
+            put("intense", WIFE)
         }
+
+        /**
+         * Resolves a persisted or user-supplied id to a [RelationType].
+         *
+         * Accepts every [id], every enum [name], and every legacy alias —
+         * case-insensitively, ignoring surrounding whitespace. Null, blank,
+         * or unknown input falls back to [DEFAULT].
+         *
+         * Because the fallback is silent, a caller that needs to distinguish
+         * "unknown id" from "explicitly set to default" should validate with
+         * [isValidId] before persisting, or log when [fromId] returns
+         * [DEFAULT] for a non-null, non-blank input.
+         */
+        fun fromId(id: String?): RelationType {
+            if (id.isNullOrBlank()) return DEFAULT
+            return LOOKUP[id.trim().lowercase()] ?: DEFAULT
+        }
+
+        /**
+         * True when [id] resolves to a known [RelationType] via [fromId].
+         *
+         * Use this before persisting an externally-sourced value (network
+         * payload, deep link, imported settings) to reject typos instead of
+         * silently writing them — otherwise [fromId] will keep swallowing
+         * the mistake on every subsequent load.
+         */
+        fun isValidId(id: String?): Boolean =
+            !id.isNullOrBlank() && LOOKUP.containsKey(id.trim().lowercase())
     }
 }

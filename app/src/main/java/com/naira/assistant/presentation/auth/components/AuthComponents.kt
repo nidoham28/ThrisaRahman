@@ -64,6 +64,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -81,14 +82,20 @@ internal val AuthFieldShape = RoundedCornerShape(16.dp)
 internal val AuthButtonShape = RoundedCornerShape(28.dp)
 
 private val WHITESPACE = Regex("\\s")
-private val EMAIL_REGEX = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\$")
+private val EMAIL_REGEX = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
 
 internal fun String.stripWhitespace(): String = replace(WHITESPACE, "")
 
-internal fun validateEmail(value: String): String? = when {
-    value.isBlank() -> "Email is required"
-    !EMAIL_REGEX.matches(value) -> "Enter a valid email"
-    else -> null
+internal fun validateEmail(value: String): String? {
+    // Trim before every check: pasted or autofilled values frequently carry
+    // leading/trailing spaces, and the regex is end-anchored. Without this,
+    // " user@example.com " is rejected as invalid.
+    val normalized = value.trim()
+    return when {
+        normalized.isEmpty() -> "Email is required"
+        !EMAIL_REGEX.matches(normalized) -> "Enter a valid email"
+        else -> null
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -106,8 +113,9 @@ private class FeedbackVisuals(
 }
 
 /**
- * Fire-and-forget: showSnackbar suspends until the snackbar is gone, so it runs in its own
- * coroutine and never delays the caller (e.g. resetting a loading flag).
+ * Fire-and-forget: showSnackbar suspends until the snackbar is gone, so it runs
+ * in its own coroutine and never delays the caller (e.g. resetting a loading
+ * flag).
  */
 internal fun CoroutineScope.showFeedback(
     host: SnackbarHostState,
@@ -139,15 +147,15 @@ private fun AuthSnackbarHost(state: SnackbarHostState) {
 // -----------------------------------------------------------------------------
 
 /**
- * Common shell for every auth page: scaffold, snackbar, IME padding, scrolling column,
- * and an optional top-left navigation button.
+ * Common shell for every auth page: scaffold, snackbar, IME padding, scrolling
+ * column, and an optional top-left navigation button.
  *
  * Responsive behaviour:
- *  - the scroll container spans the full width (so swiping works anywhere), while the
- *    content is capped at [maxContentWidth] and centered;
- *  - content is vertically centered only when it is shorter than the viewport and
- *    [centerVertically] is true — pass false for multi-step flows so the layout
- *    doesn't jump when the page height changes;
+ *  - the scroll container spans the full width (so swiping works anywhere),
+ *    while the content is capped at [maxContentWidth] and centered;
+ *  - content is vertically centered only when it is shorter than the viewport
+ *    and [centerVertically] is true — pass false for multi-step flows so the
+ *    layout doesn't jump when the page height changes;
  *  - paddings shrink on narrow widths and short (landscape) heights;
  *  - IME padding no longer double-counts the navigation-bar inset.
  */
@@ -220,7 +228,11 @@ internal fun AuthScaffold(
                         .align(Alignment.TopStart)
                         .padding(start = 8.dp, top = 8.dp),
                 ) {
-                    Icon(navigationIcon, contentDescription = navigationDescription, tint = c.onBackground)
+                    Icon(
+                        imageVector = navigationIcon,
+                        contentDescription = navigationDescription,
+                        tint = c.onBackground,
+                    )
                 }
             }
         }
@@ -240,23 +252,38 @@ internal fun AuthIllustration(modifier: Modifier = Modifier, height: Dp = 240.dp
     Spacer(Modifier.height(24.dp))
 }
 
-/** Title + subtitle, followed by the standard gap before the form. */
+/**
+ * Title + subtitle, followed by the standard gap before the form.
+ *
+ * Wrapped in a [Column] so a caller can position the header (e.g. add a
+ * `Modifier.align` from a parent `Column`/`Box`). Without this, the two
+ * [Text]s were siblings in the parent — positionable only by implicit
+ * parent alignment, which broke the moment someone wanted to override it.
+ */
 @Composable
-internal fun AuthHeader(title: String, subtitle: String) {
+internal fun AuthHeader(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
     val c = MaterialTheme.colorScheme
     val t = MaterialTheme.typography
-    Text(
-        title,
-        style = t.headlineMedium.copy(fontWeight = FontWeight.W800),
-        textAlign = TextAlign.Center,
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        subtitle,
-        style = t.bodyMedium.copy(color = c.onSurfaceVariant),
-        textAlign = TextAlign.Center,
-    )
-    Spacer(Modifier.height(32.dp))
+    Column(modifier = modifier) {
+        Text(
+            text = title,
+            style = t.headlineMedium.copy(fontWeight = FontWeight.W800),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = subtitle,
+            style = t.bodyMedium.copy(color = c.onSurfaceVariant),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(32.dp))
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -305,7 +332,17 @@ internal fun AuthPrimaryButton(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp),
+            .heightIn(min = 56.dp)
+            // mergeDescendants collapses the button + spinner into a single
+            // accessibility node; contentDescription preserves the button's
+            // label when the visible Text is swapped for the spinner;
+            // stateDescription announces "Loading" during the async phase.
+            // Without this, TalkBack reads "button, In progress, disabled"
+            // with no label at all.
+            .semantics(mergeDescendants = true) {
+                contentDescription = text
+                if (loading) stateDescription = "Loading"
+            },
     ) {
         if (loading) {
             CircularProgressIndicator(
@@ -314,7 +351,7 @@ internal fun AuthPrimaryButton(
                 color = c.onPrimary,
             )
         } else {
-            Text(text, fontSize = 17.sp, fontWeight = FontWeight.W800)
+            Text(text = text, fontSize = 17.sp, fontWeight = FontWeight.W800)
         }
     }
 }
@@ -342,20 +379,25 @@ internal fun AuthLink(
 ) {
     val c = MaterialTheme.colorScheme
     val t = MaterialTheme.typography
+    val isClickable = onClick != null && enabled
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(
-                enabled = onClick != null && enabled,
+                enabled = isClickable,
                 onClickLabel = text,
                 role = Role.Button,
             ) { onClick?.invoke() }
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         Text(
-            text,
+            text = text,
             style = (if (small) t.bodySmall else t.bodyMedium).copy(
-                color = c.primary,
+                // Dim when disabled so the visual matches the interaction
+                // state — otherwise the link looks tappable but does nothing,
+                // and users assume the app is broken.
+                color = if (isClickable) c.primary else c.onSurfaceVariant.copy(alpha = 0.5f),
                 fontWeight = if (small) FontWeight.W700 else FontWeight.W800,
             ),
         )
@@ -375,7 +417,7 @@ internal fun AuthFooter(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(prompt, style = MaterialTheme.typography.bodyMedium)
+        Text(text = prompt, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(6.dp))
         AuthLink(text = action, onClick = onClick, enabled = enabled)
     }
@@ -390,7 +432,7 @@ internal fun SocialDivider() {
     ) {
         HorizontalDivider(Modifier.weight(1f), color = c.outlineVariant)
         Text(
-            "or continue with",
+            text = "or continue with",
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
@@ -408,13 +450,15 @@ internal fun GoogleButton(onClick: () -> Unit, enabled: Boolean) {
         border = BorderStroke(1.dp, c.outlineVariant),
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            // heightIn (not height): grows with large font scales so the
+            // label + icon never clip. Matches AuthPrimaryButton.
+            .heightIn(min = 56.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             GoogleLogo(Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
             Text(
-                "Continue with Google",
+                text = "Continue with Google",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W700,
                 color = c.onSurface,

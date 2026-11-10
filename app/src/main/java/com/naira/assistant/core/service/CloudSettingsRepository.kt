@@ -1,6 +1,7 @@
 package com.naira.assistant.core.service
 
 import android.content.Context
+import android.util.Log
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.AccountSettingsStorage
 import com.naira.assistant.domain.AssistantLanguage
@@ -20,6 +21,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
+
+private const val TAG = "CloudSettings"
 
 internal data class CloudSettings(
     val language: AssistantLanguage,
@@ -58,10 +61,10 @@ internal data class CloudSettingsPatch(
 ) {
     val isEmpty: Boolean
         get() = language == null && speechEngine == null && theme == null && fontSize == null &&
-            storedHistory == null && storedMemories == null && voiceOutputEnabled == null &&
-            username == null && displayName == null && phone == null && gender == null &&
-            assistantName == null && assistantLanguage == null && relationship == null &&
-            assistantVoice == null
+                storedHistory == null && storedMemories == null && voiceOutputEnabled == null &&
+                username == null && displayName == null && phone == null && gender == null &&
+                assistantName == null && assistantLanguage == null && relationship == null &&
+                assistantVoice == null
 
     fun merge(override: CloudSettingsPatch): CloudSettingsPatch = CloudSettingsPatch(
         language = override.language ?: language,
@@ -100,6 +103,15 @@ internal interface CloudSettingsRemoteStore {
     suspend fun update(userId: String, patch: CloudSettingsPatch)
 }
 
+/**
+ * Distinguishes "the server-side rows for this account don't exist yet" from
+ * other sync failures. The backend is expected to seed one row in each of
+ * `user_settings`, `user_profiles`, and `user_assistant` on signup; if any is
+ * missing, we surface a clearer user message instead of the generic
+ * "Couldn't sync settings".
+ */
+private class CloudSettingsNotSetUpException(message: String) : Exception(message)
+
 internal class CloudSettingsRepository(
     private val local: CloudSettingsLocalStore,
     private val remote: CloudSettingsRemoteStore,
@@ -107,10 +119,40 @@ internal class CloudSettingsRepository(
 ) {
     private val syncMutex = Mutex()
 
+    /**
+     * Queues [patch] to be pushed to the cloud on the next [synchronize].
+     *
+     * **Silent no-op when signed out.** The caller is expected to have already
+     * persisted the change locally (via `AccountSettingsStorage` etc.), so
+     * local state stays correct — but the change will not reach the cloud
+     * until the user signs back in and `recordChange` + `synchronize` are
+     * called again. If you need to warn the user about unsynced changes at
+     * sign-out time, check [hasPendingChanges] first.
+     */
     fun recordChange(patch: CloudSettingsPatch) {
         currentUserId()?.let { userId -> local.markPending(userId, patch) }
     }
 
+    /** Whether the given account has unsynced local changes waiting. */
+    fun hasPendingChanges(): Boolean {
+        val userId = currentUserId() ?: return false
+        return !local.pendingPatch(userId).isEmpty
+    }
+
+    /**
+     * Synchronizes local pending changes with the cloud.
+     *
+     * ### Contract
+     * - If [CloudSettingsSyncResult.Synced] is returned, its `settings` reflect
+     *   server state **at the time of the second fetch**. If the user made
+     *   further changes mid-sync, those remain pending and are NOT reflected
+     *   in the returned `settings` — callers that want the freshest state
+     *   should re-read from local storage (which preserves pending changes)
+     *   rather than trust the returned snapshot blindly.
+     * - If `Failed`, the pending patch is **preserved** so the next call
+     *   retries the same changes.
+     * - Concurrency-safe: serialised via [syncMutex].
+     */
     suspend fun synchronize(): CloudSettingsSyncResult = syncMutex.withLock {
         val userId = currentUserId() ?: return@withLock CloudSettingsSyncResult.SignInRequired
 
@@ -125,18 +167,41 @@ internal class CloudSettingsRepository(
                 remote.fetch(userId)
                     ?: return@withLock CloudSettingsSyncResult.Failed(MISSING_SETTINGS_MESSAGE)
             }
-            if (!patch.matches(synced)) {
+
+            // Lenient verification. Strict equality produced false positives
+            // whenever the server normalised a string (trim/case) even though
+            // the write succeeded — causing every retry to look like a failure.
+            // We still check (to catch silent RLS rejections returning 0 rows),
+            // but with trim + case-insensitive comparison for strings.
+            if (!patch.isEmpty && !patch.matchesLeniently(synced)) {
+                Log.w(
+                    TAG,
+                    "Server didn't reflect patch after update — possible RLS rejection or normalisation. " +
+                            "patch=$patch synced=$synced",
+                )
                 return@withLock CloudSettingsSyncResult.Failed(SAVE_FAILED_MESSAGE)
             }
+
             local.applyRemote(userId, synced)
             local.clearPending(userId, patch)
             CloudSettingsSyncResult.Synced(synced)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CloudSettingsNotSetUpException) {
+            // Distinct from a generic sync failure: the user's backend rows
+            // for this account haven't been seeded yet.
+            Log.w(TAG, "Cloud settings not fully set up: ${e.message}")
+            CloudSettingsSyncResult.Failed(MISSING_SETTINGS_MESSAGE)
         } catch (e: Exception) {
+            // Log the raw exception (server messages, serialization errors,
+            // schema mismatches) for diagnostics. The user-facing message is
+            // intentionally generic.
+            Log.w(TAG, "Cloud settings sync failed", e)
             val message = when (e) {
-                is HttpRequestException -> "Can't reach the settings server. Changes aren't saved yet; retry when connected."
-                else -> "Couldn't sync settings. Changes aren't saved yet; retry."
+                is HttpRequestException ->
+                    "Can't reach the settings server. Changes aren't saved yet; retry when connected."
+                else ->
+                    "Couldn't sync settings. Changes aren't saved yet; retry."
             }
             CloudSettingsSyncResult.Failed(message)
         }
@@ -150,22 +215,34 @@ internal class CloudSettingsRepository(
     }
 }
 
-private fun CloudSettingsPatch.matches(settings: CloudSettings): Boolean =
+/**
+ * Lenient variant of [CloudSettingsPatch.matches].
+ *
+ * - **Enums / booleans**: strict equality — the server stores and round-trips
+ *   these intact, so a mismatch is a real failure (RLS rejection, wrong user,
+ *   schema bug) and warrants the [CloudSettingsRepository.SAVE_FAILED_MESSAGE]
+ *   path.
+ * - **Strings**: trim + case-insensitive comparison. A server-side trigger may
+ *   trim whitespace or normalise casing on insert/update; strict comparison
+ *   would flag these as failures even though the write succeeded, producing a
+ *   "couldn't save" toast on every retry while the data was actually saved.
+ */
+private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolean =
     (language == null || language == settings.language) &&
-        (speechEngine == null || speechEngine == settings.speechEngine) &&
-        (theme == null || theme == settings.theme) &&
-        (fontSize == null || fontSize == settings.fontSize) &&
-        (storedHistory == null || storedHistory == settings.storedHistory) &&
-        (storedMemories == null || storedMemories == settings.storedMemories) &&
-        (voiceOutputEnabled == null || voiceOutputEnabled == settings.voiceOutputEnabled) &&
-        (username == null || username == settings.username) &&
-        (displayName == null || displayName == settings.displayName) &&
-        (phone == null || phone == settings.phone) &&
-        (gender == null || gender == settings.gender) &&
-        (assistantName == null || assistantName == settings.assistantName) &&
-        (assistantLanguage == null || assistantLanguage == settings.assistantLanguage) &&
-        (relationship == null || relationship == settings.relationship) &&
-        (assistantVoice == null || assistantVoice == settings.assistantVoice)
+            (speechEngine == null || speechEngine == settings.speechEngine) &&
+            (theme == null || theme.trim().equals(settings.theme.trim(), ignoreCase = true)) &&
+            (fontSize == null || fontSize.trim().equals(settings.fontSize.trim(), ignoreCase = true)) &&
+            (storedHistory == null || storedHistory == settings.storedHistory) &&
+            (storedMemories == null || storedMemories == settings.storedMemories) &&
+            (voiceOutputEnabled == null || voiceOutputEnabled == settings.voiceOutputEnabled) &&
+            (username == null || username.trim().equals(settings.username.trim(), ignoreCase = true)) &&
+            (displayName == null || displayName.trim().equals(settings.displayName.trim(), ignoreCase = true)) &&
+            (phone == null || phone.trim().equals(settings.phone.trim(), ignoreCase = true)) &&
+            (gender == null || gender == settings.gender) &&
+            (assistantName == null || assistantName.trim().equals(settings.assistantName.trim(), ignoreCase = true)) &&
+            (assistantLanguage == null || assistantLanguage == settings.assistantLanguage) &&
+            (relationship == null || relationship == settings.relationship) &&
+            (assistantVoice == null || assistantVoice == settings.assistantVoice)
 
 internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettingsLocalStore {
     private val accountStorage = AccountSettingsStorage(context.applicationContext)
@@ -180,34 +257,55 @@ internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettings
 
     override fun markPending(userId: String, patch: CloudSettingsPatch) {
         synchronized(lock) {
-            pending[userId] = pendingPatch(userId).merge(patch)
+            // Direct map access avoids re-entering the lock via pendingPatch().
+            pending[userId] = (pending[userId] ?: CloudSettingsPatch()).merge(patch)
         }
     }
 
+    /**
+     * Applies [settings] to local storage, **except** for fields that are
+     * still pending sync — the user's not-yet-synced intent must not be
+     * overwritten by the server's older value.
+     *
+     * Holds [lock] for the whole method so a concurrent [markPending] on
+     * another thread can't interleave between the pending checks and the
+     * storage writes (previously: `markPending` could set a field after
+     * `applyRemote` read `pending`, then `applyRemote` would overwrite the
+     * just-queued user value with the server value).
+     */
     override fun applyRemote(userId: String, settings: CloudSettings) {
-        val pending = pendingPatch(userId)
-        if (pending.language == null) accountStorage.setLanguage(settings.language)
-        if (pending.speechEngine == null) speechStorage.setEngine(settings.speechEngine.name)
-        if (pending.theme == null) userSettingsStorage.setTheme(settings.theme)
-        if (pending.fontSize == null) userSettingsStorage.setFontSize(settings.fontSize)
-        if (pending.storedHistory == null) userSettingsStorage.setStoredHistory(settings.storedHistory)
-        if (pending.storedMemories == null) userSettingsStorage.setStoredMemories(settings.storedMemories)
-        if (pending.voiceOutputEnabled == null) {
-            userSettingsStorage.setVoiceOutputEnabled(settings.voiceOutputEnabled)
+        synchronized(lock) {
+            val patch = pending[userId] ?: CloudSettingsPatch()
+            if (patch.language == null) accountStorage.setLanguage(settings.language)
+            if (patch.speechEngine == null) speechStorage.setEngine(settings.speechEngine.name)
+            if (patch.theme == null) userSettingsStorage.setTheme(settings.theme)
+            if (patch.fontSize == null) userSettingsStorage.setFontSize(settings.fontSize)
+            if (patch.storedHistory == null) userSettingsStorage.setStoredHistory(settings.storedHistory)
+            if (patch.storedMemories == null) userSettingsStorage.setStoredMemories(settings.storedMemories)
+            if (patch.voiceOutputEnabled == null) {
+                userSettingsStorage.setVoiceOutputEnabled(settings.voiceOutputEnabled)
+            }
+            if (patch.username == null) accountStorage.setUserName(settings.username)
+            if (patch.displayName == null) accountStorage.setDisplayName(settings.displayName)
+            if (patch.phone == null) accountStorage.setPhoneNumber(settings.phone)
+            if (patch.gender == null) accountStorage.setGender(settings.gender)
+            if (patch.assistantName == null) assistantStorage.setName(settings.assistantName)
+            if (patch.assistantLanguage == null) assistantStorage.setLanguage(settings.assistantLanguage)
+            if (patch.relationship == null) assistantStorage.setRelationship(settings.relationship)
+            if (patch.assistantVoice == null) assistantStorage.setVoice(settings.assistantVoice)
         }
-        if (pending.username == null) accountStorage.setUserName(settings.username)
-        if (pending.displayName == null) accountStorage.setDisplayName(settings.displayName)
-        if (pending.phone == null) accountStorage.setPhoneNumber(settings.phone)
-        if (pending.gender == null) accountStorage.setGender(settings.gender)
-        if (pending.assistantName == null) assistantStorage.setName(settings.assistantName)
-        if (pending.assistantLanguage == null) assistantStorage.setLanguage(settings.assistantLanguage)
-        if (pending.relationship == null) assistantStorage.setRelationship(settings.relationship)
-        if (pending.assistantVoice == null) assistantStorage.setVoice(settings.assistantVoice)
     }
 
+    /**
+     * Removes the fields captured in [patch] from pending state.
+     *
+     * Fields **not** in [patch] are preserved — they are changes the user made
+     * mid-sync (after [CloudSettingsRepository.synchronize] took its snapshot)
+     * and must be retried on the next call.
+     */
     override fun clearPending(userId: String, patch: CloudSettingsPatch) {
         synchronized(lock) {
-            val current = pendingPatch(userId)
+            val current = pending[userId] ?: return@synchronized
             val remaining = current.copy(
                 language = current.language.takeUnless { it == patch.language },
                 speechEngine = current.speechEngine.takeUnless { it == patch.speechEngine },
@@ -233,6 +331,16 @@ internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettings
 internal class SupabaseCloudSettingsRemoteStore(
     private val client: SupabaseClient = Supabase.client,
 ) : CloudSettingsRemoteStore {
+
+    /**
+     * Fetches the full [CloudSettings] for [userId].
+     *
+     * - Returns `null` when the `user_settings` row is missing (i.e. the
+     *   account has no cloud settings yet).
+     * - Throws [CloudSettingsNotSetUpException] when `user_profiles` or
+     *   `user_assistant` rows are missing — the backend is expected to seed
+     *   all three on signup.
+     */
     override suspend fun fetch(userId: String): CloudSettings? {
         val settings = client.from("user_settings")
             .select(columns = Columns.list(
@@ -252,14 +360,18 @@ internal class SupabaseCloudSettingsRemoteStore(
                 filter { eq("uid", userId) }
             }
             .decodeList<RemoteAssistantRow>()
-        check(settings.size <= 1 && profile.size <= 1 && assistant.size <= 1) {
-            "A settings table returned multiple rows for one account"
+
+        if (settings.size > 1 || profile.size > 1 || assistant.size > 1) {
+            throw CloudSettingsNotSetUpException(
+                "A settings table returned multiple rows for one account",
+            )
         }
+
         val settingsRow = settings.singleOrNull() ?: return null
         val profileRow = profile.singleOrNull()
-            ?: error("The account profile isn't available.")
+            ?: throw CloudSettingsNotSetUpException("user_profiles row missing")
         val assistantRow = assistant.singleOrNull()
-            ?: error("The assistant profile isn't available.")
+            ?: throw CloudSettingsNotSetUpException("user_assistant row missing")
         return settingsRow.toCloudSettings(profileRow, assistantRow)
     }
 
@@ -320,8 +432,6 @@ internal class SupabaseCloudSettingsRemoteStore(
         assistantVoice = AssistantVoice.fromStorageValue(assistant.voiceType.uppercase()),
     )
 
-    private fun AssistantLanguage.toDatabaseValue(): String = language.id
-
     private fun SpeechEngine.toDatabaseValue(): String = when (this) {
         SpeechEngine.SYSTEM -> "system"
         SpeechEngine.ADVANCED -> "gemini"
@@ -338,14 +448,14 @@ internal class SupabaseCloudSettingsRemoteStore(
 
     private fun CloudSettingsPatch.hasSettingsFields() =
         language != null || speechEngine != null || theme != null || fontSize != null ||
-            storedHistory != null || storedMemories != null || voiceOutputEnabled != null
+                storedHistory != null || storedMemories != null || voiceOutputEnabled != null
 
     private fun CloudSettingsPatch.hasProfileFields() =
         username != null || displayName != null || phone != null || gender != null
 
     private fun CloudSettingsPatch.hasAssistantFields() =
         assistantName != null || assistantLanguage != null || relationship != null ||
-            assistantVoice != null
+                assistantVoice != null
 
     @Serializable
     @JsonIgnoreUnknownKeys

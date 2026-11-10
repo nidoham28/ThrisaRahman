@@ -54,6 +54,9 @@ import kotlinx.coroutines.launch
  * @param onBack                 Shows the top-left back arrow when non-null.
  * @param onRegistered           A session exists, the user is logged in.
  * @param onRequiresConfirmation Email confirmation is on, the user must confirm first.
+ *
+ * Callers should provide exactly one of [onRegistered] / [onRequiresConfirmation].
+ * If neither is provided, a fallback snackbar confirms success without navigating.
  */
 @Composable
 fun RegisterScreen(
@@ -65,15 +68,22 @@ fun RegisterScreen(
     onLogin: (() -> Unit)? = null,
 ) {
     var email by rememberSaveable { mutableStateOf("") }
-    // Passwords are deliberately NOT saveable: they would be written into the saved-state bundle.
+    // Passwords are deliberately NOT saveable: they would be written into the
+    // saved-state bundle. Trade-off: rotating the device clears the password
+    // field, and the user must retype. This is a conscious security/UX choice.
     var password by remember { mutableStateOf("") }
     var obscure by rememberSaveable { mutableStateOf(true) }
-    // Not saveable on purpose: a restored "loading = true" would lock the form forever.
+    // Not saveable: a restored "loading = true" would lock the form forever.
     var loading by remember { mutableStateOf(false) }
-    var submitAttempted by rememberSaveable { mutableStateOf(false) }
+    // Not saveable: pairs with `password` being non-saveable. If this survived
+    // a rotation but the password did not, the user would see "Password is
+    // required" for a field they never emptied. Resetting on rotation gives a
+    // clean slate — email preserved, password empty, no phantom errors.
+    var submitAttempted by remember { mutableStateOf(false) }
 
-    val emailError = if (submitAttempted) validateEmail(email.trim()) else null
-    // Same policy as the reset-password screen (previously this one only required 6 characters).
+    // `email` is already whitespace-free (stripWhitespace runs on every
+    // keystroke), so no `.trim()` here.
+    val emailError = if (submitAttempted) validateEmail(email) else null
     val passwordError = if (submitAttempted) authService.passwordError(password) else null
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -83,23 +93,42 @@ fun RegisterScreen(
 
     fun submit() {
         if (loading) return
-        focusManager.clearFocus()
-
         submitAttempted = true
-        if (validateEmail(email.trim()) != null || authService.passwordError(password) != null) return
 
+        // Validate BEFORE dismissing the keyboard — otherwise the user sees
+        // errors but has to re-tap the field to fix them.
+        val currentEmailError = validateEmail(email)
+        val currentPasswordError = authService.passwordError(password)
+        if (currentEmailError != null || currentPasswordError != null) {
+            return
+        }
+
+        // Validation passed → dismiss the keyboard and run the async call.
+        focusManager.clearFocus()
         loading = true
         scope.launch {
             try {
-                authService.register(email = email.trim(), password = password)
+                authService.register(email = email, password = password)
                     .onSuccess { result ->
                         when (result) {
-                            RegisterResult.SignedIn -> onRegistered?.invoke()
-                            RegisterResult.ConfirmationRequired -> onRequiresConfirmation?.invoke()
+                            RegisterResult.SignedIn ->
+                                onRegistered?.invoke() ?: scope.showFeedback(
+                                    snackbarHostState,
+                                    "Account created — you're signed in.",
+                                )
+                            RegisterResult.ConfirmationRequired ->
+                                onRequiresConfirmation?.invoke() ?: scope.showFeedback(
+                                    snackbarHostState,
+                                    "Check your inbox to confirm your account.",
+                                )
                         }
                     }
                     .onFailure {
-                        scope.showFeedback(snackbarHostState, authService.friendlyMessage(it), isError = true)
+                        scope.showFeedback(
+                            snackbarHostState,
+                            authService.friendlyMessage(it),
+                            isError = true,
+                        )
                     }
             } finally {
                 loading = false

@@ -1,5 +1,6 @@
 package com.naira.assistant.presentation.auth.pages
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -26,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +54,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.jan.supabase.auth.status.SessionStatus
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.core.service.SupabaseAuthService
 import com.naira.assistant.core.service.UpdateResult
 import com.naira.assistant.presentation.auth.components.AuthFieldShape
@@ -67,6 +67,8 @@ import com.naira.assistant.presentation.auth.components.authFieldColors
 import com.naira.assistant.presentation.auth.components.showFeedback
 import com.naira.assistant.presentation.auth.components.stripWhitespace
 import com.naira.assistant.presentation.auth.components.validateEmail
+import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
@@ -81,13 +83,12 @@ private enum class ResetStep { Request, Sent, Update }
  *  3. Update: set the new password (entered automatically once the
  *     recovery link signs the user in)
  *
- * @param redirectUrl Deep link the email points to, e.g. "aurafeed://auth-callback".
+ * @param redirectUrl Deep link the email points to, e.g. "naira://auth-callback".
  *   It must be in Supabase > Auth > URL Configuration > Redirect URLs and match
  *   the scheme/host you set in install(Auth).
  * @param onBack Leave the flow without finishing (pop the screen).
  * @param onCompleted Password changed (navigate to Login).
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ResetPasswordScreen(
     modifier: Modifier = Modifier,
@@ -106,7 +107,8 @@ fun ResetPasswordScreen(
     fun goTo(s: ResetStep) { stepOrdinal = s.ordinal }
 
     var email by rememberSaveable { mutableStateOf("") }
-    // Passwords are deliberately NOT saveable: they would be written into the saved-state bundle.
+    // Passwords are deliberately NOT saveable: they would be written into the
+    // saved-state bundle. Trade-off: rotation clears these, user must retype.
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var otp by rememberSaveable { mutableStateOf("") }
@@ -124,13 +126,18 @@ fun ResetPasswordScreen(
     val confirmFocus = remember { FocusRequester() }
     val otpFocus = remember { FocusRequester() }
 
-    // requestFocus() throws if the target isn't attached yet (e.g. the OTP field mid-animation).
+    // requestFocus() throws if the target isn't attached yet (e.g. the OTP
+    // field mid-animation). Swallow that specific exception — the caller is
+    // responsible for retrying at a safer time.
     fun FocusRequester.requestFocusSafely() {
-        try { requestFocus() } catch (_: IllegalStateException) { /* not on screen yet */ }
+        try { requestFocus() } catch (_: IllegalStateException) { /* not laid out yet */ }
     }
 
-    // The recovery link signs the user in -> jump to the Update page.
-    val sessionStatus by authService.sessionStatus.collectAsState()
+    // The recovery link signs the user in → jump straight to the Update page.
+    // Note: this also means an *already-authenticated* user opening this screen
+    // lands on Update immediately. Correct for "change password", incorrect for
+    // a from-scratch "forgot password". Document if the semantics change.
+    val sessionStatus by authService.sessionStatus.collectAsStateWithLifecycle()
     LaunchedEffect(sessionStatus) {
         if (sessionStatus is SessionStatus.Authenticated && step != ResetStep.Update) {
             goTo(ResetStep.Update)
@@ -144,28 +151,37 @@ fun ResetPasswordScreen(
         }
     }
 
+    // Wait for AnimatedVisibility's expand animation to settle before
+    // requesting focus — otherwise the field may be laid out at 0 height and
+    // requestFocus() silently fails (caught), leaving focus on the previous
+    // field and the user must tap manually.
     LaunchedEffect(needsOtp) {
-        if (needsOtp) otpFocus.requestFocusSafely()
+        if (needsOtp) {
+            delay(200.milliseconds)
+            otpFocus.requestFocusSafely()
+        }
     }
 
     fun showSnack(message: String, isError: Boolean = false) =
         scope.showFeedback(snackbarHostState, message, isError)
 
-    // ---- Page 1/2: request link ----------------------------------------------
+    // ---- Page 1/2: request link --------------------------------------------
 
     fun sendLink() {
         if (loading || (step == ResetStep.Sent && cooldown > 0)) return
+
+        // Validate BEFORE dismissing the keyboard — otherwise the user sees
+        // errors but must re-tap the field to fix them.
+        val currentError = validateEmail(email)
+        emailError = currentError
+        if (currentError != null) return
+
         focusManager.clearFocus()
         keyboard?.hide()
-
-        val trimmed = email.trim()
-        emailError = validateEmail(trimmed)
-        if (emailError != null) return
-
         loading = true
         scope.launch {
             try {
-                authService.forgotPassword(trimmed, redirectUrl)
+                authService.forgotPassword(email, redirectUrl)
                     .onSuccess {
                         goTo(ResetStep.Sent)
                         cooldown = 60
@@ -177,7 +193,7 @@ fun ResetPasswordScreen(
         }
     }
 
-    // ---- Page 3: update password ---------------------------------------------
+    // ---- Page 3: update password -------------------------------------------
 
     fun validateUpdate(): Boolean {
         passwordError = authService.passwordError(password)
@@ -188,10 +204,11 @@ fun ResetPasswordScreen(
 
     fun submitUpdate() {
         if (loading) return
-        focusManager.clearFocus()
-        keyboard?.hide()
         if (!validateUpdate()) return
 
+        // Validation passed → dismiss the keyboard and run the async call.
+        focusManager.clearFocus()
+        keyboard?.hide()
         loading = true
         scope.launch {
             try {
@@ -202,15 +219,38 @@ fun ResetPasswordScreen(
                     .onSuccess { result ->
                         when (result) {
                             UpdateResult.Updated -> {
-                                // Don't leave the recovery session active; user logs in with the new password.
-                                authService.logout()
+                                // Drop the recovery session — user logs in
+                                // with the new password. Logout failure must
+                                // NOT block success: the password is already
+                                // changed, and the session will expire on its
+                                // own. Swallowing here is correct, not lazy.
+                                try {
+                                    authService.logout()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    // no-op
+                                }
                                 onCompleted()
                             }
                             UpdateResult.ReauthenticationRequired -> {
                                 needsOtp = true
+                                // Show the OTP field only if the send succeeded —
+                                // otherwise the user is stuck on an OTP page with
+                                // no code on its way and no error to explain why.
                                 authService.reauthenticate()
-                                    .onSuccess { showSnack("For your security, enter the code we just emailed you.") }
-                                    .onFailure { showSnack(authService.friendlyMessage(it), isError = true) }
+                                    .onSuccess {
+                                        showSnack(
+                                            "For your security, enter the code we just emailed you."
+                                        )
+                                    }
+                                    .onFailure {
+                                        showSnack(
+                                            authService.friendlyMessage(it) +
+                                                    " Tap \"Resend code\" to try again.",
+                                            isError = true,
+                                        )
+                                    }
                             }
                         }
                     }
@@ -235,7 +275,7 @@ fun ResetPasswordScreen(
         }
     }
 
-    // ---- Back / cancel -------------------------------------------------------
+    // ---- Back / cancel -----------------------------------------------------
 
     fun goBack() {
         if (loading) return
@@ -245,12 +285,24 @@ fun ResetPasswordScreen(
             ResetStep.Update -> {
                 loading = true
                 scope.launch {
+                    // Logout is cleanup. If it throws, the session will expire
+                    // naturally — never block the user from exiting because of
+                    // it. The previous version rethrew, leaving the user
+                    // stranded on the Update step with no way out.
                     try {
-                        authService.logout() // drop the recovery session
+                        authService.logout()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // no-op
                     } finally {
                         loading = false
                     }
-                    password = ""; confirm = ""; otp = ""; needsOtp = false
+                    // Reset the flow so a later re-entry starts clean.
+                    password = ""
+                    confirm = ""
+                    otp = ""
+                    needsOtp = false
                     goTo(ResetStep.Request)
                     onBack()
                 }
@@ -258,7 +310,10 @@ fun ResetPasswordScreen(
         }
     }
 
-  //  BackHandler(enabled = true) { goBack() }
+    // Hardware back: route through `goBack()` so the Update-step cleanup
+    // (drop the recovery session, reset state) runs. Without this, back
+    // bypasses the flow and leaves a stale session active.
+    BackHandler(enabled = !loading) { goBack() }
 
     AuthScaffold(
         snackbarHostState = snackbarHostState,
@@ -313,7 +368,7 @@ fun ResetPasswordScreen(
             ResetStep.Sent -> {
                 AuthHeader(
                     title = "Check your email",
-                    subtitle = "We sent a reset link to\n${email.trim()}\n\n" +
+                    subtitle = "We sent a reset link to\n$email\n\n" +
                             "Open it on this device and you'll be brought back here to choose a new password.",
                 )
                 AuthPrimaryButton(
@@ -379,7 +434,9 @@ fun ResetPasswordScreen(
                     value = confirm,
                     onValueChange = {
                         confirm = it
-                        confirmError = if (it != password) "Passwords do not match" else null
+                        if (confirmError != null) {
+                            confirmError = if (it != password) "Passwords do not match" else null
+                        }
                     },
                     enabled = !loading,
                     singleLine = true,
@@ -413,8 +470,12 @@ fun ResetPasswordScreen(
                             value = otp,
                             onValueChange = { raw ->
                                 otp = raw.filter { it.isDigit() }.take(6)
-                                otpError = if (otp.length == 6) null
-                                else "Enter the 6-digit code from the email"
+                                // Clear the error on keystroke; it will be
+                                // re-evaluated by validateUpdate() on submit.
+                                // Without this, the field shows red as soon as
+                                // the user types their first digit of a correct
+                                // 6-digit code.
+                                if (otpError != null) otpError = null
                             },
                             enabled = !loading,
                             singleLine = true,
@@ -496,7 +557,7 @@ private fun StrengthMeter(password: String, modifier: Modifier = Modifier) {
             )
         }
         Text(
-            label,
+            text = label,
             style = MaterialTheme.typography.labelSmall.copy(color = animated),
             modifier = Modifier.padding(start = 6.dp),
         )
