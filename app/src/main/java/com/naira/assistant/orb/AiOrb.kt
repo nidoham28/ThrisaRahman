@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -69,22 +71,24 @@ data class OrbColors(
 /**
  * Animated AI-assistant orb in the fluid "liquid aurora" style: a glass sphere
  * with three soft gradient blobs orbiting inside it and mixing additively, over
- * sphere shading, rim depth, a slow sheen and a specular highlight — the same
- * visual language as the Gemini assistant orb, drawn entirely with common
- * Compose canvases (works on Android and Compose Multiplatform).
+ * sphere shading, rim depth, a slow sheen and a specular highlight.
  *
  * Performance notes:
  *  - All animation state is read inside the draw phase, so frames never
  *    recompose — only the draw layer re-issues.
- *  - No per-frame `Path` rebuilds: one reusable oval is used for the sphere
- *    clip, and every fluid shape is a GPU gradient instead of geometry.
- *  - Every animation frequency is an integer harmonic of the master clock, so
- *    the whole loop is perfectly seamless with no per-frame phase drift.
+ *  - One reusable [Path] is used for the sphere clip; every fluid shape is a
+ *    GPU gradient rather than accumulated geometry.
+ *  - The wobble harmonics (`sin(t*N)`) are integer multiples of the master
+ *    [phase] so they loop cleanly. The independent clocks (sheen, swirl,
+ *    ripple) loop at their own periods and are designed so their outputs
+ *    fade to zero (rotation wraps to 0°, alpha reaches 0) at the restart
+ *    point — no visible snap.
  *
  * @param state  Idle / Listening / Thinking / Speaking.
  * @param level  Optional live audio level 0f..1f (mic amplitude while Listening,
- *               TTS amplitude while Speaking). If null, a smooth simulated
- *               level is used so the orb still looks alive.
+ *               TTS amplitude while Speaking). Only affects the voiced states;
+ *               ignored when Idle/Thinking. If null, a smooth simulated level
+ *               is used so the orb still looks alive.
  */
 @Composable
 fun AiOrb(
@@ -94,9 +98,9 @@ fun AiOrb(
     level: Float? = null,
     colors: OrbColors = OrbColors(),
 ) {
-    // ---- Continuous clocks (all loop seamlessly) ----
+    // ---- Continuous clocks ----
     val clock = rememberInfiniteTransition(label = "orb")
-    // Master organic phase, 0..2π over ~9s. Blobs wobble on integer harmonics of it.
+    // Master organic phase, 0..2π over ~9s. Blob wobble uses integer harmonics.
     val phase = clock.animateFloat(
         initialValue = 0f,
         targetValue = (2 * PI).toFloat(),
@@ -143,25 +147,47 @@ fun AiOrb(
     val sizeModifier = if (size == Dp.Unspecified) Modifier else Modifier.size(size)
     val sphereClip = remember { Path() }
 
-    Canvas(modifier.then(sizeModifier)) {
+    Canvas(
+        modifier
+            .then(sizeModifier)
+            // Screen readers need the state. No liveRegion — the caller
+            // can wrap in one if it wants auto-announcement on change.
+            .semantics {
+                contentDescription = when (state) {
+                    OrbState.Idle -> "Assistant idle"
+                    OrbState.Listening -> "Assistant listening"
+                    OrbState.Thinking -> "Assistant thinking"
+                    OrbState.Speaking -> "Assistant speaking"
+                }
+            }
+    ) {
         val t = phase.value
         val lw = listenW.value
         val tw = thinkW.value
         val sw = speakW.value
         val core = coreColor.value
         val edge = edgeColor.value
-        val active = lw + sw // voice-driven energy
+
+        // Voice-driven energy, clamped once. Both weights are ≤ 1; the sum
+        // exceeds 1 only during rapid mode overlap.
+        val activeWeight = (lw + sw).coerceIn(0f, 1f)
 
         val r = this.size.minDimension / 2f
         val c = center
 
-        // Simulated amplitude (0..1, breathing two-octave wave) while no mic/TTS
-        // level is supplied; only voiced states light it up.
-        val simulated = (sin(t * 3f) * 0.6f + sin(t * 7f + 1f) * 0.4f) * 0.5f + 0.5f
-        val lv = if (level == null) simulated * active.coerceIn(0f, 1f) else smoothLevel.value
+        // Raw level: real when supplied, otherwise a simulated two-octave
+        // breathing wave so the orb looks alive without any audio source.
+        val rawLevel = if (level == null) {
+            (sin(t * 3f) * 0.6f + sin(t * 7f + 1f) * 0.4f) * 0.5f + 0.5f
+        } else {
+            smoothLevel.value
+        }
+        // Single gate: lv is the level already weighted by whether we're in
+        // a voiced state. Do NOT multiply by activeWeight again below.
+        val lv = rawLevel * activeWeight
 
         // Gentle breathing + voice-driven swell.
-        val breathe = 1f + 0.022f * sin(t) + lv * 0.05f * active.coerceIn(0f, 1f)
+        val breathe = 1f + 0.022f * sin(t) + lv * 0.05f
         val bodyR = r * 0.80f * breathe
 
         // 1) Atmosphere: soft halo that brightens with the voice.
@@ -185,7 +211,7 @@ fun AiOrb(
             )
         )
         clipPath(sphereClip) {
-            // Base shading: lit toward the top-left, deep at the rim → 3D ball.
+            // Base shading: lit toward the top-left, deep at the rim.
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(core.copy(alpha = 0.16f), edge.copy(alpha = 0.60f)),
@@ -200,18 +226,18 @@ fun AiOrb(
             //    mixed additively so their overlap glows like liquid plasma.
             val third = lerp(core, edge, 0.5f)
             val blobColors = listOf(core, edge, third)
-            val blobSpeeds = listOf(1, -2, 3)              // integer harmonics → seamless loop
-            val blobOrbits = listOf(0.30f, 0.44f, 0.22f)   // fraction of bodyR
-            val blobSizes = listOf(0.66f, 0.58f, 0.52f)    // fraction of bodyR
+            val blobSpeeds = listOf(1, -2, 3)
+            val blobOrbits = listOf(0.30f, 0.44f, 0.22f)
+            val blobSizes = listOf(0.66f, 0.58f, 0.52f)
             for (i in 0..2) {
                 val col = blobColors[i]
                 val angle = t * blobSpeeds[i] + i * 2.1f
                 val orbit = bodyR * blobOrbits[i] * (1f + 0.20f * sin(t * 2f + i * 1.9f))
                 val cx = c.x + cos(angle) * orbit
-                val cy = c.y + sin(angle) * orbit * 0.8f    // squashed orbit = organic drift
+                val cy = c.y + sin(angle) * orbit * 0.8f
                 val blobR = bodyR * blobSizes[i] *
                         (1f + 0.10f * sin(t * 2f + i)) *
-                        (1f + 0.22f * lv * active.coerceIn(0f, 1f))
+                        (1f + 0.22f * lv)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(col.copy(alpha = 0.80f), col.copy(alpha = 0f)),
@@ -226,12 +252,12 @@ fun AiOrb(
 
             // 4) Inner core light: gentle two-octave flicker, brighter when voiced.
             val coreGlow = 0.42f + 0.13f * sin(t * 2f) + 0.07f * sin(t * 5f) +
-                    0.22f * lv * active.coerceIn(0f, 1f) + tw * 0.10f
+                    0.22f * lv + tw * 0.10f
             val coreR = bodyR * 0.55f
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = (coreGlow).coerceIn(0f, 0.85f)),
+                        Color.White.copy(alpha = coreGlow.coerceIn(0f, 0.85f)),
                         lerp(core, Color.White, 0.55f).copy(alpha = 0.18f),
                         Color.Transparent,
                     ),
@@ -243,7 +269,7 @@ fun AiOrb(
                 blendMode = BlendMode.Plus,
             )
 
-            // 5) Thinking: fast energy swirl sweeping around the inside of the ball.
+            // 5) Thinking: fast energy swirl sweeping around the inside.
             if (tw > 0.01f) {
                 rotate(degrees = swirl.value, pivot = c) {
                     drawCircle(
@@ -278,7 +304,7 @@ fun AiOrb(
                 center = c,
             )
 
-            // 7) Sheen: a soft highlight band drifting around the surface.
+            // 7) Sheen: soft highlight band drifting around the surface.
             rotate(degrees = sheen.value, pivot = c) {
                 drawCircle(
                     brush = Brush.sweepGradient(
@@ -297,7 +323,7 @@ fun AiOrb(
             }
         }
 
-        // 8) Listening: soft sonar rings expanding outward from the sphere.
+        // 8) Listening: soft sonar rings expanding outward.
         if (lw > 0.01f) {
             repeat(2) { i ->
                 val p = (ripple.value + i / 2f) % 1f

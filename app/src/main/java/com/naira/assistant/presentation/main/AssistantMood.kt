@@ -5,138 +5,73 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/* ------------------------------------------------------------------ */
+/*  Model                                                              */
+/* ------------------------------------------------------------------ */
+
 internal data class AssistantResponse(
     val response: String,
     val mood: String?,
 )
 
+/* ------------------------------------------------------------------ */
+/*  Mood catalogue                                                     */
+/* ------------------------------------------------------------------ */
+
 internal val assistantMoods = listOf(
-    "Admiring",
-    "Afraid",
-    "Affectionate",
-    "Agitated",
-    "Amused",
-    "Angry",
-    "Annoyed",
-    "Anxious",
-    "Apologetic",
-    "Ashamed",
-    "AweStruck",
-    "Bashful",
-    "Bored",
-    "Brave",
-    "Calm",
-    "Caring",
-    "Cheerful",
-    "Cold",
-    "Confident",
-    "Confused",
-    "Concerned",
-    "Content",
-    "Curious",
-    "Crying",
-    "Delighted",
-    "Determined",
-    "Disappointed",
-    "Disgusted",
-    "Distracted",
-    "Drowsy",
-    "Embarrassed",
-    "Empathetic",
-    "Encouraging",
-    "Energetic",
-    "Envious",
-    "Excited",
-    "Exhausted",
-    "Fearful",
-    "Flirty",
-    "Focused",
-    "Fond",
-    "Frustrated",
-    "Furious",
-    "Giddy",
-    "Grateful",
-    "Guilty",
-    "Happy",
-    "Heartbroken",
-    "Homesick",
-    "Hopeful",
-    "Horrified",
-    "Hungry",
-    "Hurt",
-    "Inspired",
-    "Irritated",
-    "Jealous",
-    "Joyful",
-    "Kind",
-    "Lonely",
-    "Loved",
-    "Loving",
-    "Melancholy",
-    "Mischievous",
-    "Motivated",
-    "Nauseated",
-    "Naughty",
-    "Nervous",
-    "Neutral",
-    "Nostalgic",
-    "Optimistic",
-    "Overwhelmed",
-    "Pain",
-    "Peaceful",
-    "Playful",
-    "Pleased",
-    "Proud",
-    "Protective",
-    "Queasy",
-    "Relieved",
-    "Remorseful",
-    "Restless",
-    "Romantic",
-    "Sad",
-    "Scared",
-    "Secure",
-    "Sensitive",
-    "Shy",
-    "Sick",
-    "Sleepy",
-    "Sore",
-    "Stressed",
-    "Surprised",
-    "Tender",
-    "Tense",
-    "Thankful",
-    "Thoughtful",
-    "Tired",
-    "Uncomfortable",
-    "Unwell",
-    "Upset",
-    "Vulnerable",
-    "Warm",
-    "Wary",
-    "Wistful",
-    "Worried",
-    "Yearning",
+    "Admiring", "Afraid", "Affectionate", "Agitated", "Amused", "Angry",
+    "Annoyed", "Anxious", "Apologetic", "Ashamed", "AweStruck", "Bashful",
+    "Bored", "Brave", "Calm", "Caring", "Cheerful", "Cold", "Confident",
+    "Confused", "Concerned", "Content", "Curious", "Crying", "Delighted",
+    "Determined", "Disappointed", "Disgusted", "Distracted", "Drowsy",
+    "Embarrassed", "Empathetic", "Encouraging", "Energetic", "Envious",
+    "Excited", "Exhausted", "Fearful", "Flirty", "Focused", "Fond",
+    "Frustrated", "Furious", "Giddy", "Grateful", "Guilty", "Happy",
+    "Heartbroken", "Homesick", "Hopeful", "Horrified", "Hungry", "Hurt",
+    "Inspired", "Irritated", "Jealous", "Joyful", "Kind", "Lonely",
+    "Loved", "Loving", "Melancholy", "Mischievous", "Motivated",
+    "Nauseated", "Naughty", "Nervous", "Neutral", "Nostalgic",
+    "Optimistic", "Overwhelmed", "Pain", "Peaceful", "Playful", "Pleased",
+    "Proud", "Protective", "Queasy", "Relieved", "Remorseful", "Restless",
+    "Romantic", "Sad", "Scared", "Secure", "Sensitive", "Shy", "Sick",
+    "Sleepy", "Sore", "Stressed", "Surprised", "Tender", "Tense",
+    "Thankful", "Thoughtful", "Tired", "Uncomfortable", "Unwell", "Upset",
+    "Vulnerable", "Warm", "Wary", "Wistful", "Worried", "Yearning",
 )
 
-private val responseJson = Json
+/** Case-insensitive lookup → canonical mood. Built once; O(1) per call. */
+private val moodByLowercase: Map<String, String> =
+    assistantMoods.associateBy { it.lowercase() }
 
+/* ------------------------------------------------------------------ */
+/*  Decoding                                                           */
+/* ------------------------------------------------------------------ */
+
+private val responseJson = Json.Default
+
+/**
+ * Decodes a model emission.
+ *
+ * @param raw the raw model output — may be partial while streaming.
+ * @param isFinal `true` when this is the last emission of the turn.
+ * @return the parsed [AssistantResponse], or `null` if [isFinal] is `false`
+ *         and no response text could be recovered yet.
+ * @throws IllegalStateException if [isFinal] is `true` and the payload
+ *         cannot be decoded into a response.
+ */
+@Throws(IllegalStateException::class)
 internal fun decodeAssistantResponse(raw: String, isFinal: Boolean): AssistantResponse? {
-    val trimmedRaw = raw.trim()
-    val normalizedRaw = when {
-        trimmedRaw.startsWith("```json", ignoreCase = true) -> trimmedRaw.drop(7)
-        trimmedRaw.startsWith("```") -> trimmedRaw.drop(3)
-        else -> trimmedRaw
-    }.removeSuffix("```").trim()
+    val normalizedRaw = normalize(raw)
     val parsed = runCatching { responseJson.parseToJsonElement(normalizedRaw) }.getOrNull()
+
     if (parsed is JsonObject) {
         val response = parsed.stringValue("response")
-        val mood = parsed.stringValue("mood")
         if (response != null) {
-            val canonicalMood = mood?.let { outputMood ->
-                assistantMoods.firstOrNull { it.equals(outputMood.trim(), ignoreCase = true) }
-            }
-            return AssistantResponse(response, canonicalMood ?: "Neutral")
+            val mood = parsed.stringValue("mood")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { moodByLowercase[it.lowercase()] }
+            return AssistantResponse(response, mood ?: "Neutral")
         }
     }
 
@@ -148,121 +83,156 @@ internal fun decodeAssistantResponse(raw: String, isFinal: Boolean): AssistantRe
     return extractPartialResponse(raw)?.let { AssistantResponse(it, mood = null) }
 }
 
+/**
+ * Returns the most frequent mood in [moods], or `null` if empty.
+ *
+ * Tie-break: when two or more moods share the top count, the **most recent**
+ * (i.e. latest in [moods]) wins. This favours the freshest signal over
+ * "majority across the whole conversation".
+ */
 internal fun mostFrequentAssistantMood(moods: List<String>): String? {
     if (moods.isEmpty()) return null
     val counts = moods.groupingBy { it }.eachCount()
-    val highestCount = counts.values.maxOrNull() ?: return null
-    return moods.lastOrNull { counts[it] == highestCount }
+    val highest = counts.values.max()
+    return moods.last { counts.getValue(it) == highest }
 }
 
-internal fun assistantMoodCaption(mood: String?): String = when (mood) {
-    "Admiring" -> "Looking up warmly"
-    "Afraid" -> "Feeling afraid"
-    "Affectionate" -> "Feeling warmly close"
-    "Agitated" -> "Feeling unsettled"
-    "Amused" -> "Finding it funny"
-    "Angry" -> "Strong frustration"
-    "Annoyed" -> "A little irritated"
-    "Anxious" -> "A little worried"
-    "Apologetic" -> "Feeling sorry"
-    "Ashamed" -> "Feeling ashamed"
-    "AweStruck" -> "Filled with wonder"
-    "Bashful" -> "Feeling bashful"
-    "Bored" -> "Seeking something new"
-    "Brave" -> "Feeling courageous"
-    "Calm" -> "Peaceful and steady"
-    "Caring" -> "Showing gentle care"
-    "Cheerful" -> "Bright and cheerful"
-    "Cold" -> "Feeling chilly"
-    "Confident" -> "Feeling self-assured"
-    "Confused" -> "Trying to understand"
-    "Concerned" -> "Gently concerned"
-    "Content" -> "Quietly satisfied"
-    "Curious" -> "Wondering about it"
-    "Crying" -> "Feeling tearful"
-    "Delighted" -> "Pleasantly delighted"
-    "Determined" -> "Ready to persist"
-    "Disappointed" -> "Feeling let down"
-    "Disgusted" -> "Feeling repulsed"
-    "Distracted" -> "Mind elsewhere"
-    "Drowsy" -> "Feeling drowsy"
-    "Embarrassed" -> "Feeling sheepish"
-    "Empathetic" -> "Sharing the feeling"
-    "Encouraging" -> "Offering encouragement"
-    "Energetic" -> "Full of energy"
-    "Envious" -> "Feeling envious"
-    "Excited" -> "Full of excitement"
-    "Exhausted" -> "Completely worn out"
-    "Fearful" -> "Feeling fearful"
-    "Flirty" -> "Playfully flirtatious"
-    "Focused" -> "Paying close attention"
-    "Fond" -> "Feeling fond"
-    "Frustrated" -> "Feeling stuck"
-    "Furious" -> "Fiercely angry"
-    "Giddy" -> "Light and giddy"
-    "Grateful" -> "Feeling appreciative"
-    "Guilty" -> "Feeling guilty"
-    "Happy" -> "Bright and joyful"
-    "Heartbroken" -> "Deeply heartbroken"
-    "Homesick" -> "Missing home"
-    "Hopeful" -> "Looking ahead"
-    "Horrified" -> "Filled with horror"
-    "Hungry" -> "Feeling hungry"
-    "Hurt" -> "Feeling hurt"
-    "Inspired" -> "Feeling inspired"
-    "Irritated" -> "Feeling irritated"
-    "Jealous" -> "Feeling jealous"
-    "Joyful" -> "Full of joy"
-    "Kind" -> "Feeling kind"
-    "Lonely" -> "Wanting connection"
-    "Loved" -> "Feeling cared for"
-    "Loving" -> "Feeling loving"
-    "Melancholy" -> "Quietly melancholy"
-    "Mischievous" -> "Up to mischief"
-    "Motivated" -> "Ready to act"
-    "Nauseated" -> "Feeling nauseous"
-    "Naughty" -> "Feeling mischievous"
-    "Nervous" -> "A little nervous"
-    "Neutral" -> "Even keel"
-    "Nostalgic" -> "Fondly remembering"
-    "Optimistic" -> "Expecting good things"
-    "Overwhelmed" -> "Feeling overwhelmed"
-    "Pain" -> "In physical pain"
-    "Peaceful" -> "At ease"
-    "Playful" -> "Feeling playful"
-    "Pleased" -> "Quietly pleased"
-    "Proud" -> "Pleased with progress"
-    "Protective" -> "Wanting to protect"
-    "Queasy" -> "Feeling queasy"
-    "Relieved" -> "Feeling relieved"
-    "Remorseful" -> "Feeling remorseful"
-    "Restless" -> "Unable to settle"
-    "Romantic" -> "Feeling romantic"
-    "Sad" -> "Feeling blue"
-    "Scared" -> "Feeling scared"
-    "Secure" -> "Feeling safe"
-    "Sensitive" -> "Feeling sensitive"
-    "Shy" -> "A little bashful"
-    "Sick" -> "Feeling unwell"
-    "Sleepy" -> "Ready for sleep"
-    "Sore" -> "Feeling sore"
-    "Stressed" -> "Under some pressure"
-    "Surprised" -> "Caught by surprise"
-    "Tender" -> "Soft and caring"
-    "Tense" -> "Feeling tense"
-    "Thankful" -> "Feeling thankful"
-    "Thoughtful" -> "Thinking it through"
-    "Tired" -> "Feeling tired"
-    "Uncomfortable" -> "Feeling uncomfortable"
-    "Unwell" -> "Not feeling well"
-    "Upset" -> "Feeling upset"
-    "Vulnerable" -> "Feeling vulnerable"
-    "Warm" -> "Feeling warm"
-    "Wary" -> "Staying cautious"
-    "Wistful" -> "Quietly longing"
-    "Worried" -> "Feeling concerned"
-    "Yearning" -> "Longing for something"
-    else -> "No recent mood"
+/* ------------------------------------------------------------------ */
+/*  Mood captions                                                      */
+/* ------------------------------------------------------------------ */
+
+private val moodCaptions: Map<String, String> = mapOf(
+    "Admiring" to "Looking up warmly",
+    "Afraid" to "Feeling afraid",
+    "Affectionate" to "Feeling warmly close",
+    "Agitated" to "Feeling unsettled",
+    "Amused" to "Finding it funny",
+    "Angry" to "Strong frustration",
+    "Annoyed" to "A little irritated",
+    "Anxious" to "A little worried",
+    "Apologetic" to "Feeling sorry",
+    "Ashamed" to "Feeling ashamed",
+    "AweStruck" to "Filled with wonder",
+    "Bashful" to "Feeling bashful",
+    "Bored" to "Seeking something new",
+    "Brave" to "Feeling courageous",
+    "Calm" to "Peaceful and steady",
+    "Caring" to "Showing gentle care",
+    "Cheerful" to "Bright and cheerful",
+    "Cold" to "Feeling chilly",
+    "Confident" to "Feeling self-assured",
+    "Confused" to "Trying to understand",
+    "Concerned" to "Gently concerned",
+    "Content" to "Quietly satisfied",
+    "Curious" to "Wondering about it",
+    "Crying" to "Feeling tearful",
+    "Delighted" to "Pleasantly delighted",
+    "Determined" to "Ready to persist",
+    "Disappointed" to "Feeling let down",
+    "Disgusted" to "Feeling repulsed",
+    "Distracted" to "Mind elsewhere",
+    "Drowsy" to "Feeling drowsy",
+    "Embarrassed" to "Feeling sheepish",
+    "Empathetic" to "Sharing the feeling",
+    "Encouraging" to "Offering encouragement",
+    "Energetic" to "Full of energy",
+    "Envious" to "Feeling envious",
+    "Excited" to "Full of excitement",
+    "Exhausted" to "Completely worn out",
+    "Fearful" to "Feeling fearful",
+    "Flirty" to "Playfully flirtatious",
+    "Focused" to "Paying close attention",
+    "Fond" to "Feeling fond",
+    "Frustrated" to "Feeling stuck",
+    "Furious" to "Fiercely angry",
+    "Giddy" to "Light and giddy",
+    "Grateful" to "Feeling appreciative",
+    "Guilty" to "Feeling guilty",
+    "Happy" to "Bright and joyful",
+    "Heartbroken" to "Deeply heartbroken",
+    "Homesick" to "Missing home",
+    "Hopeful" to "Looking ahead",
+    "Horrified" to "Filled with horror",
+    "Hungry" to "Feeling hungry",
+    "Hurt" to "Feeling hurt",
+    "Inspired" to "Feeling inspired",
+    "Irritated" to "Feeling irritated",
+    "Jealous" to "Feeling jealous",
+    "Joyful" to "Full of joy",
+    "Kind" to "Feeling kind",
+    "Lonely" to "Wanting connection",
+    "Loved" to "Feeling cared for",
+    "Loving" to "Feeling loving",
+    "Melancholy" to "Quietly melancholy",
+    "Mischievous" to "Up to mischief",
+    "Motivated" to "Ready to act",
+    "Nauseated" to "Feeling nauseous",
+    "Naughty" to "Feeling mischievous",
+    "Nervous" to "A little nervous",
+    "Neutral" to "Even keel",
+    "Nostalgic" to "Fondly remembering",
+    "Optimistic" to "Expecting good things",
+    "Overwhelmed" to "Feeling overwhelmed",
+    "Pain" to "In physical pain",
+    "Peaceful" to "At ease",
+    "Playful" to "Feeling playful",
+    "Pleased" to "Quietly pleased",
+    "Proud" to "Pleased with progress",
+    "Protective" to "Wanting to protect",
+    "Queasy" to "Feeling queasy",
+    "Relieved" to "Feeling relieved",
+    "Remorseful" to "Feeling remorseful",
+    "Restless" to "Unable to settle",
+    "Romantic" to "Feeling romantic",
+    "Sad" to "Feeling blue",
+    "Scared" to "Feeling scared",
+    "Secure" to "Feeling safe",
+    "Sensitive" to "Feeling sensitive",
+    "Shy" to "A little bashful",
+    "Sick" to "Feeling unwell",
+    "Sleepy" to "Ready for sleep",
+    "Sore" to "Feeling sore",
+    "Stressed" to "Under some pressure",
+    "Surprised" to "Caught by surprise",
+    "Tender" to "Soft and caring",
+    "Tense" to "Feeling tense",
+    "Thankful" to "Feeling thankful",
+    "Thoughtful" to "Thinking it through",
+    "Tired" to "Feeling tired",
+    "Uncomfortable" to "Feeling uncomfortable",
+    "Unwell" to "Not feeling well",
+    "Upset" to "Feeling upset",
+    "Vulnerable" to "Feeling vulnerable",
+    "Warm" to "Feeling warm",
+    "Wary" to "Staying cautious",
+    "Wistful" to "Quietly longing",
+    "Worried" to "Feeling concerned",
+    "Yearning" to "Longing for something",
+)
+
+/**
+ * Human-readable caption for a mood label.
+ *
+ * `null` → "No recent mood". Unknown (non-canonical) strings →
+ * "Feeling something" so the UI never lies about an unrecognised mood.
+ */
+internal fun assistantMoodCaption(mood: String?): String =
+    when (mood) {
+        null -> "No recent mood"
+        else -> moodCaptions[mood] ?: "Feeling something"
+    }
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+private fun normalize(raw: String): String {
+    val trimmed = raw.trim()
+    return when {
+        trimmed.startsWith("```json", ignoreCase = true) -> trimmed.drop(7)
+        trimmed.startsWith("```") -> trimmed.drop(3)
+        else -> trimmed
+    }.removeSuffix("```").trim()
 }
 
 private fun JsonObject.stringValue(key: String): String? =
@@ -270,33 +240,39 @@ private fun JsonObject.stringValue(key: String): String? =
         ?.takeIf(JsonPrimitive::isString)
         ?.contentOrNull
 
+/**
+ * Recovers the value of the `"response"` field from a partially-streamed
+ * JSON payload (i.e. the closing quote or brace hasn't arrived yet).
+ *
+ * Handles the standard JSON escapes `\" \\ \/ \b \f \n \r \t \uXXXX`.
+ * Returns `null` if the `"response"` field hasn't started yet.
+ */
 private fun extractPartialResponse(raw: String): String? {
     val field = Regex("\"response\"\\s*:\\s*\"").find(raw) ?: return null
     val result = StringBuilder()
     var index = field.range.last + 1
+
     while (index < raw.length) {
         val char = raw[index++]
         when {
             char == '"' -> return result.toString()
             char != '\\' -> result.append(char)
             index >= raw.length -> return result.toString()
-            else -> {
-                when (val escaped = raw[index++]) {
-                    '"', '\\', '/' -> result.append(escaped)
-                    'b' -> result.append('\b')
-                    'f' -> result.append('\u000C')
-                    'n' -> result.append('\n')
-                    'r' -> result.append('\r')
-                    't' -> result.append('\t')
-                    'u' -> {
-                        if (index + 4 > raw.length) return result.toString()
-                        val codePoint = raw.substring(index, index + 4).toIntOrNull(16)
-                            ?: return result.toString()
-                        result.append(codePoint.toChar())
-                        index += 4
-                    }
-                    else -> return result.toString()
+            else -> when (val escaped = raw[index++]) {
+                '"', '\\', '/' -> result.append(escaped)
+                'b' -> result.append('\b')
+                'f' -> result.append('\u000C')
+                'n' -> result.append('\n')
+                'r' -> result.append('\r')
+                't' -> result.append('\t')
+                'u' -> {
+                    if (index + 4 > raw.length) return result.toString()
+                    val codePoint = raw.substring(index, index + 4).toIntOrNull(16)
+                        ?: return result.toString()
+                    result.append(codePoint.toChar())
+                    index += 4
                 }
+                else -> return result.toString()
             }
         }
     }
