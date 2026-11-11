@@ -30,17 +30,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -63,37 +61,36 @@ fun SplashScreen(
     modifier: Modifier = Modifier,
 ) {
     // The first check is intentionally silent: the mark "breathes" instead
-    // of showing a spinner. But *retry* while offline must show activity —
-    // otherwise the "Try again" button looks broken.
+    // of showing a spinner. Retry while offline dims it further.
     val isRetrying = isChecking && isOffline
 
-    val transition = rememberInfiniteTransition(label = "splash")
-    val pulse by transition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.03f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "logo-pulse",
-    )
-    val glow by transition.animateFloat(
-        initialValue = 0.7f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "logo-glow",
-    )
-
-    // Pulse whenever *any* check is in flight, including retries.
-    val logoScale = if (isChecking) pulse else 1f
-    val logoAlpha = when {
-        isRetrying -> glow * 0.7f   // retry: dimmer than silent check
-        isOffline -> 0.55f          // stable offline: card is focus
-        isChecking -> glow          // silent first check
-        else -> 1f
+    // Animate ONLY while a check is in flight. An always-on infinite
+    // transition burns frames (and battery) even when nothing moves.
+    val pulse: State<Float>?
+    val glow: State<Float>?
+    if (isChecking) {
+        val transition = rememberInfiniteTransition(label = "splash")
+        pulse = transition.animateFloat(
+            initialValue = 0.96f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1800),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "logo-pulse",
+        )
+        glow = transition.animateFloat(
+            initialValue = 0.7f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1800),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "logo-glow",
+        )
+    } else {
+        pulse = null
+        glow = null
     }
 
     Box(
@@ -121,12 +118,30 @@ fun SplashScreen(
                         )
                 )
                 Image(
-                    painter = painterResource(R.drawable.app_icon),
-                    contentDescription = null, // decorative — launcher already names the app
+                    painter = painterResource(R.drawable.app_icon_round),
+                    // TalkBack announcement for the otherwise silent check:
+                    // a live region whose description changes when checking
+                    // starts. (The old invisibleToUser() Text did the exact
+                    // opposite — it hid the words FROM accessibility.)
+                    contentDescription =
+                        if (isChecking && !isOffline) "Checking connection" else null,
                     modifier = Modifier
                         .size(210.dp)
-                        .scale(logoScale)
-                        .alpha(logoAlpha),
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        // Read animated values in the draw phase, not in
+                        // composition — only this layer redraws per frame,
+                        // the whole screen no longer recomposes at 60fps.
+                        .graphicsLayer {
+                            val s = pulse?.value ?: 1f
+                            scaleX = s
+                            scaleY = s
+                            alpha = when {
+                                isRetrying -> (glow?.value ?: 1f) * 0.7f
+                                isOffline -> 0.55f
+                                isChecking -> glow?.value ?: 1f
+                                else -> 1f
+                            }
+                        },
                 )
             }
 
@@ -137,20 +152,12 @@ fun SplashScreen(
             ) {
                 OfflineCard(
                     canContinueOffline = canContinueOffline,
+                    isRetrying = isRetrying,
                     onRetry = onRetry,
                     onContinueOffline = onContinueOffline,
                     modifier = Modifier.padding(top = 28.dp),
                 )
             }
-        }
-
-        // Screen-reader announcement for the otherwise silent check.
-        // Sighted users see the pulse; TalkBack users need the words.
-        if (isChecking && !isOffline) {
-            Text(
-                text = "Checking connection",
-                modifier = Modifier.semantics { invisibleToUser() },
-            )
         }
     }
 }
@@ -158,6 +165,7 @@ fun SplashScreen(
 @Composable
 private fun OfflineCard(
     canContinueOffline: Boolean,
+    isRetrying: Boolean,
     onRetry: () -> Unit,
     onContinueOffline: () -> Unit,
     modifier: Modifier = Modifier,
@@ -168,8 +176,6 @@ private fun OfflineCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            // Subtle fill so the card is visible against `Night`.
-            // The gradient border alone was nearly invisible.
             .background(Color.White.copy(alpha = 0.03f))
             .border(
                 width = 1.dp,
@@ -210,17 +216,24 @@ private fun OfflineCard(
         ) {
             Button(
                 onClick = onRetry,
+                // Block duplicate taps while a retry is already running.
+                enabled = !isRetrying,
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Aqua,
                     contentColor = Night,
+                    disabledContainerColor = Aqua.copy(alpha = 0.4f),
+                    disabledContentColor = Night.copy(alpha = 0.7f),
                 ),
-                // heightIn (not height) so large fontScale can grow the button.
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp),
             ) {
-                Text("Try again", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text(
+                    text = if (isRetrying) "Checking…" else "Try again",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
             }
 
             if (canContinueOffline) {
@@ -228,7 +241,6 @@ private fun OfflineCard(
                     onClick = onContinueOffline,
                     shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextHigh),
-                    // Default OutlinedButton border is invisible on `Night`.
                     border = BorderStroke(1.dp, TextSoft.copy(alpha = 0.35f)),
                     modifier = Modifier
                         .fillMaxWidth()

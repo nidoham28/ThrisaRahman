@@ -10,8 +10,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Media access: Android 13+ -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+        tools:ignore="PhotoAndVideoPolicy" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
+        tools:ignore="PhotoAndVideoPolicy" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- Android 14+ selected media access -->
@@ -25,7 +27,8 @@
 
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
+        android:maxSdkVersion="29"
+        tools:ignore="ScopedStorage" />
 
     <!-- Calendar -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
@@ -65,7 +68,7 @@
     <!-- Installed apps discovery -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+        tools:ignore="PackageVisibilityPolicy,QueryAllPackagesPermission" />
 
     <!-- Speech recognition service discovery -->
     <queries>
