@@ -143,12 +143,12 @@ internal fun assistantErrorText(t: Throwable, provider: AssistantProvider): Stri
  * user's message) travels to the service as separate arguments; nothing is
  * duplicated inside the prompt.
  *
- * Existing behaviour preserved:
+ * Existing behavior preserved:
  *  - the API key comes from the active provider's PIN-unlocked saved credentials,
  *  - every failure is caught and translated into a readable error bubble,
  *  - tool progress is surfaced through agent events into
  *    [busyStatus] so the UI can show what the assistant is doing right now,
- *  - in-flight requests can be cancelled with [cancelCurrent].
+ *  - in-flight requests can be canceled with [cancelCurrent].
  */
 class AssistantViewModel(
     context: Context,
@@ -198,8 +198,8 @@ class AssistantViewModel(
         val base = Instructions(
             InstructionsConfig(
                 assistantName = assistantSettingsStorage.getName(),
-                persona = character.instructions.orEmpty().ifBlank { defaultPersona },
-                sex = character.gender.orEmpty().ifBlank { "female" },
+                persona = character.instructions.ifBlank { defaultPersona },
+                sex = character.gender.ifBlank { "female" },
                 language = activeLanguage.code,
                 relationship = assistantSettingsStorage.getRelationship().id,
                 username = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
