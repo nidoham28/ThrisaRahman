@@ -311,12 +311,12 @@ object BuiltinToolExecutor {
                 // Never swallow coroutine cancellation — it must propagate so the
                 // caller's Job can finish promptly.
                 throw c
-            } catch (t: Throwable) {
+            } catch (e: Exception) {
                 buildJsonObject {
                     put(
                         "error",
                         "Tool '${call.name}' failed: " +
-                                (t.message ?: t::class.simpleName.orEmpty())
+                                (e.message ?: e::class.simpleName.orEmpty())
                     )
                 }
             }

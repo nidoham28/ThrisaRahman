@@ -4,8 +4,10 @@ import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import me.rerere.ai.agent.AgentEvent
 import me.rerere.ai.agent.AgentHooks
 import me.rerere.ai.agent.StepRequest
@@ -24,6 +26,7 @@ import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantVoice
@@ -60,6 +63,7 @@ data class AssistantToolResult(
 class AssistantApiService(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val httpClient = OkHttpClient.Builder()
+        .readTimeout(60, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             chain.proceed(normalizeOpenRouterAuthorization(chain.request()))
         }
@@ -213,21 +217,27 @@ internal fun ToolDefinition.toAgentTool(
         description = description,
         parameters = { InputSchema.Obj(properties = properties, required = required) },
         execute = { arguments ->
-            val result = executeTool(
-                FunctionCall(
-                    name = name,
-                    args = arguments as? JsonObject ?: JsonObject(emptyMap()),
-                ),
-            )
-            buildList {
-                add(UIMessagePart.Text(result.response.toString()))
-                result.image?.let { bytes ->
-                    add(
-                        UIMessagePart.Image(
-                            url = "data:${result.imageMimeType};base64," +
-                                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
-                        ),
-                    )
+            val objectArguments = arguments as? JsonObject
+            if (objectArguments == null) {
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("error", "Tool '$name' arguments must be a JSON object.")
+                        }.toString(),
+                    ),
+                )
+            } else {
+                val result = executeTool(FunctionCall(name = name, args = objectArguments))
+                buildList {
+                    add(UIMessagePart.Text(result.response.toString()))
+                    result.image?.let { bytes ->
+                        add(
+                            UIMessagePart.Image(
+                                url = "data:${result.imageMimeType};base64," +
+                                    android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
+                            ),
+                        )
+                    }
                 }
             }
         },

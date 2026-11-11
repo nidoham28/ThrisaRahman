@@ -86,7 +86,7 @@ class VoiceConversation(
                 stt.prepare()
                 converse()
             } catch (e: SpeechToText.SttException) {
-                if (gen == generation) reportError(sttMessage(e.code))
+                if (gen == generation) reportError(sttErrorMessage(e.code))
             } catch (e: Exception) {
                 if (gen == generation && e !is CancellationException) {
                     reportError(e.message ?: "Voice chat couldn't start.")
@@ -138,16 +138,21 @@ class VoiceConversation(
             val heard: String? = try {
                 listenOnce().also { retries = 0 }
             } catch (e: SpeechToText.SttException) {
-                when (e.code) {
-                    SpeechRecognizer.ERROR_NO_MATCH,
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> null
-                    SpeechRecognizer.ERROR_CLIENT,
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
-                        if (++retries > MAX_RETRIES) { reportError(sttMessage(e.code)); return }
+                when {
+                    e.code == SpeechRecognizer.ERROR_NO_MATCH ||
+                            e.code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> null
+                    isRetryableSttError(e.code) -> {
+                        if (++retries > MAX_RETRIES) {
+                            reportError(sttErrorMessage(e.code))
+                            return
+                        }
                         delay(500)
                         continue
                     }
-                    else -> { reportError(sttMessage(e.code)); return }
+                    else -> {
+                        reportError(sttErrorMessage(e.code))
+                        return
+                    }
                 }
             }
 
@@ -253,16 +258,6 @@ class VoiceConversation(
         .replace(WHITESPACE, " ")
         .trim()
 
-    private fun sttMessage(code: Int): String = when (code) {
-        SpeechRecognizer.ERROR_AUDIO -> "Couldn't record audio."
-        SpeechRecognizer.ERROR_NETWORK,
-        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a network connection."
-        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required."
-        SpeechRecognizer.ERROR_SERVER -> "Speech service error. Try again."
-        12, 13 -> "This language isn't supported for speech recognition on this device."
-        else -> "Speech recognition failed (code $code)."
-    }
-
     private companion object {
         const val MAX_SILENT_ROUNDS = 2
         const val MAX_RETRIES = 3
@@ -273,4 +268,28 @@ class VoiceConversation(
         val MD_SYMBOLS = Regex("[*_`#>~|]+")
         val WHITESPACE = Regex("\\s+")
     }
+}
+
+internal fun isRetryableSttError(code: Int): Boolean = when (code) {
+    SpeechRecognizer.ERROR_CLIENT,
+    SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+    SpeechRecognizer.ERROR_SERVER,
+    SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+    SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> true
+    else -> false
+}
+
+internal fun sttErrorMessage(code: Int): String = when (code) {
+    SpeechRecognizer.ERROR_AUDIO -> "Couldn't record audio."
+    SpeechRecognizer.ERROR_NETWORK,
+    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition needs a network connection."
+    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required."
+    SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+    SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+        "This language isn't available for speech recognition on this device."
+    SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+    SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> "Speech recognition is busy. Try again."
+    SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "The speech service disconnected. Try again."
+    SpeechRecognizer.ERROR_SERVER -> "Speech service error. Try again."
+    else -> "Speech recognition failed (code $code)."
 }

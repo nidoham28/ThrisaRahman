@@ -141,4 +141,28 @@ class AssistantApiServiceTest {
             (result.single() as UIMessagePart.Text).text,
         )
     }
+
+    @Test
+    fun `non-object tool arguments return an error without executing the tool`() = runBlocking {
+        var executed = false
+        val definition = ToolDefinition(
+            name = "lookup",
+            description = "Look up a value",
+            parameters = buildJsonObject {
+                put("type", "object")
+            },
+        )
+        val tool = definition.toAgentTool {
+            executed = true
+            AssistantToolResult(buildJsonObject { put("result", "found") })
+        }
+
+        val result = tool.execute(JsonPrimitive("invalid"))
+
+        assertFalse(executed)
+        assertEquals(
+            """{"error":"Tool 'lookup' arguments must be a JSON object."}""",
+            (result.single() as UIMessagePart.Text).text,
+        )
+    }
 }
