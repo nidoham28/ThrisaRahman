@@ -32,7 +32,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.service.CloudSettingsRepository
-import com.naira.assistant.core.service.InMemoryCloudSettingsLocalStore
+import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
 import com.naira.assistant.core.service.SupabaseAuthService
 import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
 import com.naira.assistant.core.sync.SupabaseReminderRepository
@@ -85,7 +85,7 @@ fun MainScreen(
     val reminderRepository = remember { SupabaseReminderRepository.getInstance() }
     val cloudSettingsRepository = remember(appContext, authService) {
         CloudSettingsRepository(
-            local = InMemoryCloudSettingsLocalStore(appContext),
+            local = SharedCloudSettingsLocalStore(appContext),
             remote = SupabaseCloudSettingsRemoteStore(),
             currentUserId = { authService.currentUser()?.id },
         )

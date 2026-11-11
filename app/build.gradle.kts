@@ -36,6 +36,12 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        // Repository/service code logs via android.util.Log; without this the
+        // android.jar stubs throw "not mocked" inside unit tests instead of
+        // logging, failing tests that exercise failure paths.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {

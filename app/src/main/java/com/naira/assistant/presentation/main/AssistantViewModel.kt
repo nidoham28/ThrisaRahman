@@ -18,7 +18,6 @@ import com.naira.assistant.domain.SensitiveContentSettingsStorage
 import com.naira.assistant.domain.AccountSettingsStorage
 import com.naira.assistant.domain.AssistantLanguage
 import com.naira.assistant.domain.AssistantSettingsStorage
-import com.naira.assistant.domain.UserSettingsStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,7 +46,54 @@ data class UiMessage(
     val isError: Boolean = false,
     val imageUri: String? = null,
     val imageSavedTo: String? = null,
+    val toolCalls: List<UiToolCall> = emptyList(),
 )
+
+/** One tool call performed during an assistant turn, for display in the chat bubble. */
+data class UiToolCall(
+    val id: String,
+    val name: String,
+    val input: String,
+    val isRunning: Boolean,
+    val isError: Boolean,
+    val result: String,
+)
+
+private val toolDisplayJson = Json { prettyPrint = true }
+
+/** Pretty-prints a JSON string; returns null when the text is not valid JSON. */
+private fun String.toPrettyJsonOrNull(): String? = runCatching {
+    toolDisplayJson.encodeToString(
+        kotlinx.serialization.json.JsonElement.serializer(),
+        Json.parseToJsonElement(this),
+    )
+}.getOrNull()
+
+/**
+ * Maps the AI module's tool parts into the flat display model shown in chat
+ * bubbles. Pure function (no Android deps) so it can be unit tested.
+ *
+ * While a call is still streaming, its input is partial JSON that fails to
+ * parse — the raw text is kept as-is in that case.
+ */
+internal fun List<AgentPart.Tool>.toUiToolCalls(): List<UiToolCall> = map { tool ->
+    val rawResult = tool.output.filterIsInstance<AgentPart.Text>()
+        .joinToString(separator = "\n") { it.text }
+        .trim()
+    val parsed = runCatching { Json.parseToJsonElement(rawResult.ifBlank { "{}" }).jsonObject }
+        .getOrNull()
+    UiToolCall(
+        id = tool.toolCallId,
+        name = tool.toolName,
+        input = tool.input.toPrettyJsonOrNull() ?: tool.input,
+        isRunning = !tool.isExecuted,
+        isError = parsed?.containsKey("error") == true,
+        result = when {
+            rawResult.isBlank() -> ""
+            else -> rawResult.toPrettyJsonOrNull() ?: rawResult
+        },
+    )
+}
 
 internal fun resolveAssistantModelId(
     provider: AssistantProvider,
@@ -75,9 +121,9 @@ internal fun assistantErrorText(t: Throwable, provider: AssistantProvider): Stri
         // OpenRouter returns these bodies for unparseable or unknown keys;
         // show what a correct key looks like instead of the raw API text.
         provider == AssistantProvider.OPENROUTER &&
-            OPENROUTER_KEY_REJECTED.any { message.contains(it, ignoreCase = true) } ->
+                OPENROUTER_KEY_REJECTED.any { message.contains(it, ignoreCase = true) } ->
             "OpenRouter rejected your API key. Save a valid key starting with " +
-                "sk-or- in Settings → AI Providers → Credentials.\n$message"
+                    "sk-or- in Settings → AI Providers → Credentials.\n$message"
         message.contains("401") || message.contains("403") ->
             "Authentication failed. Check your ${provider.displayName} API key.\n$message"
         message.contains("429") || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
@@ -117,7 +163,6 @@ class AssistantViewModel(
     private val modelHistory = mutableListOf<AgentMessage>()
     private val accountStorage = AccountSettingsStorage(appContext)
     private val assistantSettingsStorage = AssistantSettingsStorage(appContext)
-    private val userSettingsStorage = UserSettingsStorage()
     private var activeLanguage: AssistantLanguage = assistantSettingsStorage.getLanguage()
 
     /** Tool executor with access to the Android context (needed for device/battery info). */
@@ -148,17 +193,17 @@ class AssistantViewModel(
     init { refreshSettings() }
 
     private fun buildInstructions(): String {
+        val character = assistantSettingsStorage.getCharacter()
+        val defaultPersona = InstructionsConfig().persona
         val base = Instructions(
             InstructionsConfig(
                 assistantName = assistantSettingsStorage.getName(),
-                additionalInstructions = assistantSettingsStorage.getCharacter().let {
-                    "Character gender: ${it.gender}.\n${it.instructions}"
-                },
+                persona = character.instructions.orEmpty().ifBlank { defaultPersona },
+                sex = character.gender.orEmpty().ifBlank { "female" },
                 language = activeLanguage.code,
                 relationship = assistantSettingsStorage.getRelationship().id,
-                userName = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
+                username = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
                 userContext = "",
-                voiceMode = userSettingsStorage.getVoiceOutputEnabled(),
             )
         ).build()
         return """
@@ -205,19 +250,6 @@ class AssistantViewModel(
             asked whether you are human or AI, or whenever confusion about a real person would
             matter. Be caring without pressuring the user, claiming exclusive attachment, or
             encouraging dependence.
-
-            ${if (_reduceSensitiveContent.value) """
-                Reduce sensitive content is ON. Use Normal, general-audience conversation. Avoid
-                mature romantic or sexual themes and explicit detail. Keep potentially sensitive
-                subjects gentle and non-graphic, and redirect requests that cross these limits.
-            """.trimIndent() else """
-                Reduce sensitive content is OFF. Mature themes and consensual romantic roleplay
-                between clearly adult participants are allowed. This setting does not remove core
-                safety boundaries. Never sexualize minors or facilitate coercion, abuse,
-                exploitation, or harm. If age or consent is unclear, do not sexualize the scene;
-                clarify briefly or keep it nonsexual. Do not provide dangerous or illegal
-                instructions.
-            """.trimIndent()}
 
             ## Emotion Label and Response Format
             For every final answer, return exactly one valid JSON object with exactly two string
@@ -466,6 +498,7 @@ class AssistantViewModel(
                                 _busyStatus.value = "Running tool: ${tool.toolName}..."
                             }
                         }
+                        val toolCalls = assistantMessage.getTools().toUiToolCalls()
                         _messages.update { list ->
                             list.map {
                                 if (it.id == assistantId) it.copy(
@@ -473,6 +506,7 @@ class AssistantViewModel(
                                     else decodedResponse?.response.orEmpty(),
                                     imageUri = generatedImageUri ?: it.imageUri,
                                     imageSavedTo = generatedImageSavedTo ?: it.imageSavedTo,
+                                    toolCalls = toolCalls,
                                 ) else it
                             }
                         }
@@ -491,6 +525,7 @@ class AssistantViewModel(
                             assistantId, finishedAssistantResponse?.response.orEmpty(), isUser = false,
                             imageUri = generatedImageUri,
                             imageSavedTo = generatedImageSavedTo,
+                            toolCalls = finishedAssistantMessage?.getTools().orEmpty().toUiToolCalls(),
                         )
                     }
                 }

@@ -23,12 +23,23 @@ data class LanguageManager(
         val ENGLISH = LanguageManager(id = "Eng", label = "English")
         val BANGLA = LanguageManager(id = "Ban", label = "Bangla")
 
-        fun fromId(raw: String?): LanguageManager =
-            when (raw?.trim()?.take(3)) {
-                "Eng", "en" -> ENGLISH
-                "Ban", "bn" -> BANGLA
-                else -> error("Unsupported language ID: $raw")
+        /**
+         * Resolves a language id written by this app ("Eng"/"Ban"), a locale
+         * code ("en"/"bn") or a human name ("english"/"bangla") —
+         * case-insensitively, on the first 3 characters.
+         *
+         * Null, blank or unknown input falls back to [BANGLA] (the app
+         * default) instead of throwing: the settings sync runs this for every
+         * downloaded row, and one unsupported value must degrade that single
+         * setting, not abort the whole sync.
+         */
+        fun fromId(raw: String?): LanguageManager {
+            if (raw.isNullOrBlank()) return BANGLA
+            return when (raw.trim().lowercase().take(3)) {
+                "eng", "en" -> ENGLISH
+                else -> BANGLA
             }
+        }
     }
 }
 
@@ -45,7 +56,7 @@ enum class AssistantLanguage(val code: String, val language: LanguageManager) {
             entries.firstOrNull { it.code == raw } ?: BANGLA
 
         fun fromDatabaseId(raw: String?): AssistantLanguage =
-            entries.first { it.language == LanguageManager.fromId(raw) }
+            entries.firstOrNull { it.language == LanguageManager.fromId(raw) } ?: BANGLA
     }
 }
 

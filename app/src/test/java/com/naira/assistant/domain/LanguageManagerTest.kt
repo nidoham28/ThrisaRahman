@@ -24,8 +24,22 @@ class LanguageManagerTest {
         assertEquals("Ban", LanguageManager.fromId("Bangla").id)
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun `lowercase database IDs are rejected`() {
-        LanguageManager.fromId("eng")
+    @Test
+    fun `database language parsing is case insensitive`() {
+        assertEquals(LanguageManager.ENGLISH, LanguageManager.fromId("eng"))
+        assertEquals(LanguageManager.ENGLISH, LanguageManager.fromId("ENG"))
+        assertEquals(LanguageManager.BANGLA, LanguageManager.fromId("ban"))
+        assertEquals(LanguageManager.BANGLA, LanguageManager.fromId("bangla"))
+        assertEquals(AssistantLanguage.ENGLISH, AssistantLanguage.fromDatabaseId("english"))
+    }
+
+    @Test
+    fun `unknown or blank database IDs fall back to the default language instead of throwing`() {
+        // The settings sync parses every downloaded row through this; one
+        // unsupported value must degrade that setting, not abort the sync.
+        assertEquals(LanguageManager.BANGLA, LanguageManager.fromId("spanish"))
+        assertEquals(LanguageManager.BANGLA, LanguageManager.fromId(""))
+        assertEquals(LanguageManager.BANGLA, LanguageManager.fromId(null))
+        assertEquals(AssistantLanguage.BANGLA, AssistantLanguage.fromDatabaseId("unsupported"))
     }
 }

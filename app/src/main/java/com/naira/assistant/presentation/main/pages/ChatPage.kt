@@ -3,6 +3,7 @@ package com.naira.assistant.presentation.main.pages
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,7 +37,10 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -57,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -78,6 +83,7 @@ import com.naira.assistant.core.theme.OnAqua
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.presentation.main.UiMessage
+import com.naira.assistant.presentation.main.UiToolCall
 import kotlinx.coroutines.launch
 
 // Local surface colors
@@ -87,6 +93,8 @@ private val AssistantBubble = Color(0xFF0E1621)
 private val ErrorBubble = Color(0xFF2A1518)
 private val ErrorStroke = Color(0xFF5A2A2E)
 private val ErrorText = Color(0xFFFF9F9F)
+private val ToolChipSurface = Color(0xFF0B1219)
+private val ToolSuccess = Color(0xFF4ADE80)
 
 // Type scale
 private val TitleSize = 20.sp
@@ -160,14 +168,16 @@ fun ChatPage(
     // Without this, streaming text grows *upward* in reverse layout and the
     // user only ever sees the first few lines.
     val latestTextLength = messages.lastOrNull()?.text?.length ?: 0
+    val latestToolCount = messages.lastOrNull()?.toolCalls?.size ?: 0
 
     // Sticky auto-scroll. Fires on:
     //  - new message appended (lastMessageId)
     //  - busy indicator toggled (isBusy)
     //  - streamed text chunk (latestTextLength)
+    //  - tool call added on the newest message (latestToolCount)
     // Skips if the user has scrolled up past the two newest items, *unless*
     // the newest message is the user's own send (they expect to land there).
-    LaunchedEffect(lastMessageId, isBusy, latestTextLength) {
+    LaunchedEffect(lastMessageId, isBusy, latestTextLength, latestToolCount) {
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (listState.firstVisibleItemIndex <= 1 || last.isUser) {
             // scrollToItem (not animateScrollToItem): during streaming this
@@ -545,6 +555,16 @@ private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
                 .then(if (message.isError) Modifier.border(1.dp, ErrorStroke, shape) else Modifier)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            if (message.toolCalls.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    message.toolCalls.forEach { call ->
+                        ToolCallChip(call)
+                    }
+                }
+                if (message.text.isNotBlank() || message.imageUri != null) {
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
             if (message.text.isNotBlank()) {
                 SelectionContainer {
                     Text(
@@ -567,6 +587,106 @@ private fun MessageBubble(message: UiMessage, onOpenImage: (String) -> Unit) {
         }
     }
 }
+
+/**
+ * Compact, tappable summary of one tool call inside an assistant bubble:
+ * friendly tool name + live status, expanding to the raw arguments and result.
+ * Expansion state survives scroll disposal because list items are keyed by
+ * message id.
+ */
+@Composable
+private fun ToolCallChip(call: UiToolCall) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ToolChipSurface)
+            .border(1.dp, CardStroke, RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button) { expanded = !expanded }
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .animateContentSize()
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Build,
+                contentDescription = null, // the tool name text names the row
+                tint = Aqua,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = call.name.friendlyToolName(),
+                color = TextHigh,
+                fontSize = SecondarySize,
+                modifier = Modifier.weight(1f)
+            )
+            when {
+                call.isRunning -> CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    strokeWidth = 2.dp,
+                    color = Aqua,
+                    trackColor = CardStroke
+                )
+                call.isError -> Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Failed",
+                    tint = ErrorText,
+                    modifier = Modifier.size(14.dp)
+                )
+                else -> Icon(
+                    imageVector = Icons.Outlined.Check,
+                    contentDescription = "Done",
+                    tint = ToolSuccess,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            Icon(
+                imageVector = Icons.Outlined.ExpandMore,
+                contentDescription = null, // row is named by the tool name; state via expand
+                tint = TextSoft,
+                modifier = Modifier
+                    .size(14.dp)
+                    .rotate(if (expanded) 180f else 0f)
+            )
+        }
+        if (expanded) {
+            if (call.input.isNotBlank() && call.input != "{}") {
+                ToolCallDetail(label = "Arguments", value = call.input)
+            }
+            if (call.result.isNotBlank()) {
+                ToolCallDetail(
+                    label = if (call.isError) "Error" else "Result",
+                    value = call.result,
+                    isError = call.isError,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolCallDetail(label: String, value: String, isError: Boolean = false) {
+    Column(Modifier.padding(top = 8.dp)) {
+        Text(label, color = TextSoft, fontSize = CaptionSize)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = value,
+            color = if (isError) ErrorText else TextSoft,
+            fontSize = CaptionSize,
+            lineHeight = 16.sp
+        )
+    }
+}
+
+/** "set_timer" → "Set Timer"; graceful for unknown names. */
+private fun String.friendlyToolName(): String =
+    split('_')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { part -> part.replaceFirstChar { it.uppercase() } }
+        .ifBlank { "Tool" }
 
 @Composable
 private fun MessageImage(

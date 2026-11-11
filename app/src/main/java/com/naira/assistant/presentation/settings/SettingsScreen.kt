@@ -121,7 +121,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.naira.assistant.core.service.CloudSettingsPatch
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
-import com.naira.assistant.core.service.InMemoryCloudSettingsLocalStore
+import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
 import com.naira.assistant.core.service.SupabaseAuthService
 import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
@@ -375,7 +375,7 @@ fun SettingsScreen(
     }
     val cloudSettingsRepository = remember(context) {
         CloudSettingsRepository(
-            local = InMemoryCloudSettingsLocalStore(context.applicationContext),
+            local = SharedCloudSettingsLocalStore(context.applicationContext),
             remote = SupabaseCloudSettingsRemoteStore(),
             currentUserId = { authService.currentUser()?.id },
         )

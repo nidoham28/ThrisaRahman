@@ -1,7 +1,9 @@
 package com.naira.assistant.core.service
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
+import androidx.core.content.edit
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.AccountSettingsStorage
 import com.naira.assistant.domain.AssistantLanguage
@@ -21,6 +23,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
+import kotlinx.serialization.json.Json
 
 private const val TAG = "CloudSettings"
 
@@ -117,7 +120,18 @@ internal class CloudSettingsRepository(
     private val remote: CloudSettingsRemoteStore,
     private val currentUserId: () -> String?,
 ) {
-    private val syncMutex = Mutex()
+    // One process-wide lock, shared by every repository instance (MainScreen
+    // and SettingsScreen each construct their own). Two concurrent synchronize()
+    // calls against the same remote rows would interleave fetch/update/apply
+    // and race each other's pending state.
+    private companion object {
+        val syncMutex = Mutex()
+
+        const val MISSING_SETTINGS_MESSAGE =
+            "Cloud settings aren't set up for this account yet."
+        const val SAVE_FAILED_MESSAGE =
+            "The server didn't confirm your settings. Changes aren't saved yet; retry."
+    }
 
     /**
      * Queues [patch] to be pushed to the cloud on the next [synchronize].
@@ -206,13 +220,6 @@ internal class CloudSettingsRepository(
             CloudSettingsSyncResult.Failed(message)
         }
     }
-
-    private companion object {
-        const val MISSING_SETTINGS_MESSAGE =
-            "Cloud settings aren't set up for this account yet."
-        const val SAVE_FAILED_MESSAGE =
-            "The server didn't confirm your settings. Changes aren't saved yet; retry."
-    }
 }
 
 /**
@@ -244,21 +251,76 @@ private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolea
             (relationship == null || relationship == settings.relationship) &&
             (assistantVoice == null || assistantVoice == settings.assistantVoice)
 
-internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettingsLocalStore {
-    private val accountStorage = AccountSettingsStorage(context.applicationContext)
-    private val speechStorage = SpeechSettingsStorage(context.applicationContext)
-    private val assistantStorage = AssistantSettingsStorage(context.applicationContext)
-    private val userSettingsStorage = UserSettingsStorage()
+/**
+ * Process-wide store of pending (not yet confirmed by the server) settings
+ * patches, backing every [CloudSettingsRepository] instance in the app.
+ *
+ * ### Why shared
+ * MainScreen and SettingsScreen each construct their own repository. When the
+ * pending map lived per-instance, a change queued in Settings whose upload
+ * failed (offline, server hiccup) was invisible to MainScreen's next sync:
+ * that sync saw an empty patch, downloaded the stale server values and
+ * [applyRemote] silently reverted the user's change. Sharing one map makes
+ * "retry on the next sync" work no matter which screen runs it.
+ *
+ * ### Why persisted
+ * The patch carries the user's intent values, so mirroring it to
+ * SharedPreferences lets an interrupted sync (offline change, process death)
+ * upload on the next launch instead of being lost. Once the server confirms
+ * the patch (see [clearPending]), the persisted copy is removed.
+ */
+private object CloudPendingPatchStore {
+    private const val PREFS_NAME = "cloud_settings_pending"
+    private const val KEY_PREFIX = "pending_"
+
+    private val json = Json { ignoreUnknownKeys = true }
     private val pending = mutableMapOf<String, CloudSettingsPatch>()
     private val lock = Any()
 
-    override fun pendingPatch(userId: String): CloudSettingsPatch =
+    @Volatile
+    private var prefs: SharedPreferences? = null
+
+    // Storage wrappers are stateless in-memory singletons; context is only
+    // needed to satisfy their constructors.
+    private lateinit var accountStorage: AccountSettingsStorage
+    private lateinit var speechStorage: SpeechSettingsStorage
+    private lateinit var assistantStorage: AssistantSettingsStorage
+    private val userSettingsStorage = UserSettingsStorage()
+
+    /** Idempotent; the first call wins. Restores previously persisted patches. */
+    fun init(context: Context) {
+        val appContext = context.applicationContext
+        synchronized(lock) {
+            accountStorage = AccountSettingsStorage(appContext)
+            speechStorage = SpeechSettingsStorage(appContext)
+            assistantStorage = AssistantSettingsStorage(appContext)
+            if (prefs == null) {
+                val p = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                restorePersisted(p)
+                prefs = p
+            }
+        }
+    }
+
+    private fun restorePersisted(p: SharedPreferences) {
+        for ((key, value) in p.all) {
+            if (!key.startsWith(KEY_PREFIX) || value !is String) continue
+            val userId = key.removePrefix(KEY_PREFIX)
+            runCatching { json.decodeFromString<PendingPatchDto>(value).toPatch() }
+                .getOrNull()
+                ?.takeIf { !it.isEmpty }
+                ?.let { pending[userId] = it }
+        }
+    }
+
+    fun pendingPatch(userId: String): CloudSettingsPatch =
         synchronized(lock) { pending[userId] ?: CloudSettingsPatch() }
 
-    override fun markPending(userId: String, patch: CloudSettingsPatch) {
+    fun markPending(userId: String, patch: CloudSettingsPatch) {
         synchronized(lock) {
             // Direct map access avoids re-entering the lock via pendingPatch().
             pending[userId] = (pending[userId] ?: CloudSettingsPatch()).merge(patch)
+            persist(userId)
         }
     }
 
@@ -269,11 +331,9 @@ internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettings
      *
      * Holds [lock] for the whole method so a concurrent [markPending] on
      * another thread can't interleave between the pending checks and the
-     * storage writes (previously: `markPending` could set a field after
-     * `applyRemote` read `pending`, then `applyRemote` would overwrite the
-     * just-queued user value with the server value).
+     * storage writes.
      */
-    override fun applyRemote(userId: String, settings: CloudSettings) {
+    fun applyRemote(userId: String, settings: CloudSettings) {
         synchronized(lock) {
             val patch = pending[userId] ?: CloudSettingsPatch()
             if (patch.language == null) accountStorage.setLanguage(settings.language)
@@ -303,7 +363,7 @@ internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettings
      * mid-sync (after [CloudSettingsRepository.synchronize] took its snapshot)
      * and must be retried on the next call.
      */
-    override fun clearPending(userId: String, patch: CloudSettingsPatch) {
+    fun clearPending(userId: String, patch: CloudSettingsPatch) {
         synchronized(lock) {
             val current = pending[userId] ?: return@synchronized
             val remaining = current.copy(
@@ -324,8 +384,111 @@ internal class InMemoryCloudSettingsLocalStore(context: Context) : CloudSettings
                 assistantVoice = current.assistantVoice.takeUnless { it == patch.assistantVoice },
             )
             if (remaining.isEmpty) pending.remove(userId) else pending[userId] = remaining
+            persist(userId)
         }
     }
+
+    /** Best-effort mirror of [pending] to SharedPreferences. */
+    private fun persist(userId: String) {
+        val p = prefs ?: return
+        val patch = pending[userId]
+        p.edit {
+            if (patch == null || patch.isEmpty) {
+                remove(KEY_PREFIX + userId)
+            } else {
+                putString(KEY_PREFIX + userId, json.encodeToString(patch.toDto()))
+            }
+        }
+    }
+}
+
+/**
+ * Serialization shape of [CloudSettingsPatch] for persistence. Enums travel as
+ * their [enum name][Enum.name]; unknown names degrade to `null` (field
+ * dropped) rather than failing the restore.
+ */
+@Serializable
+private data class PendingPatchDto(
+    val language: String? = null,
+    val speechEngine: String? = null,
+    val theme: String? = null,
+    val fontSize: String? = null,
+    val storedHistory: Boolean? = null,
+    val storedMemories: Boolean? = null,
+    val voiceOutputEnabled: Boolean? = null,
+    val username: String? = null,
+    val displayName: String? = null,
+    val phone: String? = null,
+    val gender: String? = null,
+    val assistantName: String? = null,
+    val assistantLanguage: String? = null,
+    val relationship: String? = null,
+    val assistantVoice: String? = null,
+)
+
+private inline fun <reified E : Enum<E>> String?.toEnumOrNull(): E? =
+    this?.let { value -> enumValues<E>().firstOrNull { it.name == value } }
+
+private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
+    language = language.toEnumOrNull(),
+    speechEngine = speechEngine.toEnumOrNull(),
+    theme = theme,
+    fontSize = fontSize,
+    storedHistory = storedHistory,
+    storedMemories = storedMemories,
+    voiceOutputEnabled = voiceOutputEnabled,
+    username = username,
+    displayName = displayName,
+    phone = phone,
+    gender = gender.toEnumOrNull(),
+    assistantName = assistantName,
+    assistantLanguage = assistantLanguage.toEnumOrNull(),
+    relationship = relationship.toEnumOrNull(),
+    assistantVoice = assistantVoice.toEnumOrNull(),
+)
+
+private fun CloudSettingsPatch.toDto() = PendingPatchDto(
+    language = language?.name,
+    speechEngine = speechEngine?.name,
+    theme = theme,
+    fontSize = fontSize,
+    storedHistory = storedHistory,
+    storedMemories = storedMemories,
+    voiceOutputEnabled = voiceOutputEnabled,
+    username = username,
+    displayName = displayName,
+    phone = phone,
+    gender = gender?.name,
+    assistantName = assistantName,
+    assistantLanguage = assistantLanguage?.name,
+    relationship = relationship?.name,
+    assistantVoice = assistantVoice?.name,
+)
+
+/**
+ * [CloudSettingsLocalStore] backed by the process-wide [CloudPendingPatchStore].
+ *
+ * Previously named `InMemoryCloudSettingsLocalStore` and instantiated
+ * per-screen; each instance kept its own pending map, so a failed upload
+ * queued in one screen was invisible to the other (see
+ * [CloudPendingPatchStore] for the failure mode this caused).
+ */
+internal class SharedCloudSettingsLocalStore(context: Context) : CloudSettingsLocalStore {
+    init {
+        CloudPendingPatchStore.init(context)
+    }
+
+    override fun pendingPatch(userId: String): CloudSettingsPatch =
+        CloudPendingPatchStore.pendingPatch(userId)
+
+    override fun markPending(userId: String, patch: CloudSettingsPatch) =
+        CloudPendingPatchStore.markPending(userId, patch)
+
+    override fun applyRemote(userId: String, settings: CloudSettings) =
+        CloudPendingPatchStore.applyRemote(userId, settings)
+
+    override fun clearPending(userId: String, patch: CloudSettingsPatch) =
+        CloudPendingPatchStore.clearPending(userId, patch)
 }
 
 internal class SupabaseCloudSettingsRemoteStore(
@@ -340,6 +503,11 @@ internal class SupabaseCloudSettingsRemoteStore(
      * - Throws [CloudSettingsNotSetUpException] when `user_profiles` or
      *   `user_assistant` rows are missing — the backend is expected to seed
      *   all three on signup.
+     *
+     * Row fields are nullable with fallbacks on purpose: a NULL or unexpected
+     * value in one column must degrade that single setting to its default,
+     * not abort the whole sync. [fetch] runs before every upload, so a throw
+     * here used to break download *and* upload until the row was fixed.
      */
     override suspend fun fetch(userId: String): CloudSettings? {
         val settings = client.from("user_settings")
@@ -417,19 +585,19 @@ internal class SupabaseCloudSettingsRemoteStore(
     ) = CloudSettings(
         language = language.toAssistantLanguage(),
         speechEngine = speechEngine.toSpeechEngine(),
-        theme = theme,
-        fontSize = fontSize,
-        storedHistory = storedHistory,
-        storedMemories = storedMemories,
-        voiceOutputEnabled = voiceOutputEnabled,
+        theme = theme ?: "system",
+        fontSize = fontSize ?: "medium",
+        storedHistory = storedHistory ?: true,
+        storedMemories = storedMemories ?: true,
+        voiceOutputEnabled = voiceOutputEnabled ?: true,
         username = profile.username.orEmpty(),
         displayName = profile.displayName.orEmpty(),
         phone = profile.phone.orEmpty(),
         gender = Gender.fromId(profile.gender),
-        assistantName = assistant.name,
+        assistantName = assistant.name ?: "Assistant",
         assistantLanguage = assistant.language.toAssistantLanguage(),
         relationship = RelationType.fromId(assistant.relationship),
-        assistantVoice = AssistantVoice.fromStorageValue(assistant.voiceType.uppercase()),
+        assistantVoice = AssistantVoice.fromStorageValue(assistant.voiceType),
     )
 
     private fun SpeechEngine.toDatabaseValue(): String = when (this) {
@@ -437,13 +605,14 @@ internal class SupabaseCloudSettingsRemoteStore(
         SpeechEngine.ADVANCED -> "gemini"
     }
 
-    private fun String.toAssistantLanguage(): AssistantLanguage =
+    /** Lenient: NULL or unknown ids fall back to the default language instead of throwing. */
+    private fun String?.toAssistantLanguage(): AssistantLanguage =
         AssistantLanguage.fromDatabaseId(this)
 
-    private fun String.toSpeechEngine(): SpeechEngine = when (lowercase()) {
-        "system" -> SpeechEngine.SYSTEM
-        "gemini" -> SpeechEngine.ADVANCED
-        else -> error("The settings service returned an unsupported speech engine")
+    /** Lenient: unknown or NULL values fall back to the system engine instead of throwing. */
+    private fun String?.toSpeechEngine(): SpeechEngine = when (this?.trim()?.lowercase()) {
+        "gemini", "advanced" -> SpeechEngine.ADVANCED
+        else -> SpeechEngine.SYSTEM
     }
 
     private fun CloudSettingsPatch.hasSettingsFields() =
@@ -457,16 +626,17 @@ internal class SupabaseCloudSettingsRemoteStore(
         assistantName != null || assistantLanguage != null || relationship != null ||
                 assistantVoice != null
 
+    /** Nullable fields: a NULL column degrades to that setting's default in [toCloudSettings]. */
     @Serializable
     @JsonIgnoreUnknownKeys
     private data class RemoteSettingsRow(
-        @SerialName("language") val language: String,
-        @SerialName("speech_engine") val speechEngine: String,
-        @SerialName("theme") val theme: String,
-        @SerialName("font_size") val fontSize: String,
-        @SerialName("stored_history") val storedHistory: Boolean,
-        @SerialName("stored_memories") val storedMemories: Boolean,
-        @SerialName("voice_output_enabled") val voiceOutputEnabled: Boolean,
+        @SerialName("language") val language: String? = null,
+        @SerialName("speech_engine") val speechEngine: String? = null,
+        @SerialName("theme") val theme: String? = null,
+        @SerialName("font_size") val fontSize: String? = null,
+        @SerialName("stored_history") val storedHistory: Boolean? = null,
+        @SerialName("stored_memories") val storedMemories: Boolean? = null,
+        @SerialName("voice_output_enabled") val voiceOutputEnabled: Boolean? = null,
     )
 
     @Serializable
@@ -481,9 +651,9 @@ internal class SupabaseCloudSettingsRemoteStore(
     @Serializable
     @JsonIgnoreUnknownKeys
     private data class RemoteAssistantRow(
-        @SerialName("name") val name: String,
-        @SerialName("language") val language: String,
-        @SerialName("relationship") val relationship: String,
-        @SerialName("voice_type") val voiceType: String,
+        @SerialName("name") val name: String? = null,
+        @SerialName("language") val language: String? = null,
+        @SerialName("relationship") val relationship: String? = null,
+        @SerialName("voice_type") val voiceType: String? = null,
     )
 }

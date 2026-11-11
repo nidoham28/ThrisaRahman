@@ -10,8 +10,9 @@ enum class AssistantVoice(
     MALE("Male", "Puck");
 
     companion object {
+        /** Case-insensitive so cloud rows written in any casing resolve; unknown falls back to [FEMALE]. */
         fun fromStorageValue(value: String?): AssistantVoice =
-            entries.firstOrNull { it.name == value } ?: FEMALE
+            entries.firstOrNull { it.name.equals(value?.trim(), ignoreCase = true) } ?: FEMALE
     }
 }
 
