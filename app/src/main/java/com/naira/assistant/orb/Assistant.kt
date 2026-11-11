@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -24,7 +25,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -32,12 +32,12 @@ enum class OrbState { Idle, Listening, Thinking, Speaking }
 
 data class OrbPalette(val core: Color, val edge: Color)
 
-/** Crimson particle theme, like the reference. Override for your brand. */
+/** State-aware aqua, indigo, and rose palette tuned for the dark app surfaces. */
 data class OrbColors(
-    val idle: OrbPalette = OrbPalette(Color(0xFFFF5C8A), Color(0xFFE0114B)),
-    val listening: OrbPalette = OrbPalette(Color(0xFFFF8FB0), Color(0xFFF50057)),
-    val thinking: OrbPalette = OrbPalette(Color(0xFFE85C8A), Color(0xFF9C0F3F)),
-    val speaking: OrbPalette = OrbPalette(Color(0xFFFF7FA0), Color(0xFFFF2D55)),
+    val idle: OrbPalette = OrbPalette(Color(0xFF65DCCB), Color(0xFF167B88)),
+    val listening: OrbPalette = OrbPalette(Color(0xFF8DF0E4), Color(0xFF008A91)),
+    val thinking: OrbPalette = OrbPalette(Color(0xFFB8A7FF), Color(0xFF6450C8)),
+    val speaking: OrbPalette = OrbPalette(Color(0xFFFFA1C2), Color(0xFFD94A82)),
 ) {
     internal fun forState(state: OrbState) = when (state) {
         OrbState.Idle -> idle
@@ -50,8 +50,15 @@ data class OrbColors(
 private const val PARTICLE_COUNT = 1600
 private val SPARKLE_ANGLES = floatArrayOf(0.3f, 1.2f, 2.2f, 3.4f, 4.4f, 5.5f)
 private val SPARKLE_RADII = floatArrayOf(1.06f, 1.16f, 1.04f, 1.14f, 1.08f, 1.18f)
-private val FACE_WHITE = Color(0xFFFFF4F6)
-private val PUPIL_DARK = Color(0xFF4A0716)
+private val FACE_WHITE = Color(0xFFFFFBFF)
+private val FACE_OUTLINE = Color(0xFF18243B)
+private val PUPIL_DARK = Color(0xFF101A2D)
+private val MOUTH_DARK = Color(0xFF23172F)
+private val TONGUE = Color(0xFFFF718F)
+
+private val EYE_SIDES = intArrayOf(-1, 1)
+private val GAZE_X = floatArrayOf(0.030f, -0.024f, 0.012f, -0.034f, 0.026f, -0.010f)
+private val GAZE_Y = floatArrayOf(-0.010f, 0.016f, -0.020f, 0.006f, 0.014f, -0.004f)
 
 /** Fibonacci sphere: evenly spread unit points, built exactly once. */
 private fun buildParticles(): FloatArray {
@@ -68,26 +75,39 @@ private fun buildParticles(): FloatArray {
     return out
 }
 
-/** sin^20 positive lobe → a very narrow pulse, used for quick eye blinks. */
-private fun narrowPulse(x: Float): Float {
-    val s = sin(x).coerceAtLeast(0f)
-    val s2 = s * s; val s4 = s2 * s2; val s8 = s4 * s4
-    return s8 * s8 * s4
+private fun smooth01(x: Float): Float {
+    val k = x.coerceIn(0f, 1f)
+    return k * k * (3f - 2f * k)
+}
+
+/** Asymmetric blink: ~160ms close, ~340ms reopen; twice per 9s loop, seamless. */
+private fun lidOpen(t: Float, lag: Float): Float {
+    val b = (t / PI.toFloat() + lag) % 1f
+    return when {
+        b < 0.035f -> 1f - smooth01(b / 0.035f)
+        b < 0.11f -> smooth01((b - 0.035f) / 0.075f)
+        else -> 1f
+    }
 }
 
 /**
- * Particle-sphere assistant orb with an expressive face.
+ * Particle-sphere assistant orb with an expressive, anatomically-inspired face.
  *
  * Performance:
- *  - 1600 dots are batched into 4 native drawPoints calls using remembered
- *    FloatArray buffers + one reused Paint → zero per-frame allocation.
+ *  - 1600 dots batched into 4 native drawPoints calls; remembered buffers + Paint.
  *  - All animation values are read in the draw phase only; no recomposition.
- *  - Constant tables are hoisted; paths (clip, mouth, sparkle) are reused.
- *  - Wobble/shimmer use integer harmonics of the phase so loops never snap.
+ *  - Paths (clip, eye, lid, brow, mouth, sparkle) are reused; tables hoisted.
+ *  - Wobble/shimmer/gaze use integer harmonics of the phase so loops never snap.
  *
- * @param level live audio from 0f to 1f (mic while Listening, TTS while Speaking);
- *              null → simulated breathing so the orb still feels alive.
- * @param showFace toggle the eyes + smile overlay.
+ * Face realism:
+ *  - Blinks are lid-driven: the iris keeps its size and gets occluded by an
+ *    almond-shaped clip whose upper lid sweeps down (no vertical squash).
+ *  - Gaze uses saccades (fast jumps + fixations) instead of a sine drift.
+ *  - Mouth: closed = soft smile stroke; open = dark cavity + teeth + tongue.
+ *
+ * @param level optional live audio level from 0f to 1f; null uses procedural
+ *              motion for modes without an audio-level source.
+ * @param showFace toggle the eyes + mouth overlay.
  */
 @Composable
 fun AiOrb(
@@ -130,6 +150,9 @@ fun AiOrb(
     val counts = remember { IntArray(4) }
     val paint = remember { Paint().apply { isAntiAlias = true; strokeCap = Paint.Cap.ROUND } }
     val sphereClip = remember { Path() }
+    val eyePath = remember { Path() }
+    val lidPath = remember { Path() }
+    val browPath = remember { Path() }
     val mouthPath = remember { Path() }
     val starPath = remember {
         Path().apply {
@@ -164,7 +187,9 @@ fun AiOrb(
         val rawLevel = if (level == null) {
             (sin(t * 3f) * 0.6f + sin(t * 7f + 1f) * 0.4f) * 0.5f + 0.5f
         } else smoothLevel.value
-        val lv = rawLevel * activeWeight
+        val ambientWeight = (1f - activeWeight).coerceIn(0f, 1f)
+        val ambientActivity = rawLevel * ambientWeight * (0.10f + 0.12f * tw)
+        val lv = (rawLevel * activeWeight + ambientActivity).coerceIn(0f, 1f)
 
         val breathe = 1f + 0.022f * sin(t) + lv * 0.05f
         val bodyR = r * 0.80f * breathe
@@ -251,51 +276,117 @@ fun AiOrb(
             }
         }
 
-        // 7) Face
+        // 7) Face — lid-driven blink (no squash), fixed-size iris, saccadic gaze
         if (showFace) {
-            val blink = 1f - 0.94f * narrowPulse(t * 2f + 0.9f)
-            val lookX = sin(t) * 0.04f * bodyR + tw * 0.04f * bodyR
-            val lookY = sin(t * 2f) * 0.02f * bodyR - tw * 0.055f * bodyR + lw * 0.02f * bodyR
-            val rx = bodyR * 0.185f
-            val ry = bodyR * 0.225f * blink * (1f - 0.12f * sw * lv)
-            val irisR = bodyR * 0.105f
-            val irisRy = min(irisR, ry * 0.82f)
-            val pupilR = bodyR * 0.052f
-            val pupilRy = min(pupilR, ry * 0.45f)
-            val browColor = lerp(edge, Color.Black, 0.35f)
+            val browColor = FACE_OUTLINE
 
-            for (s in intArrayOf(-1, 1)) {
+            // Saccades: 6 fixations per 9s loop, ~150ms jumps, wrap-safe
+            val segLen = (PI / 3).toFloat()
+            val seg = (t / segLen).toInt().coerceAtMost(5)
+            val jump = smooth01((t - seg * segLen) / (segLen * 0.10f))
+            val prev = (seg + 5) % 6
+            val lookX = (GAZE_X[prev] + (GAZE_X[seg] - GAZE_X[prev]) * jump) * bodyR +
+                    sin(t * 13f) * bodyR * 0.002f + tw * bodyR * 0.035f
+            val lookY = (GAZE_Y[prev] + (GAZE_Y[seg] - GAZE_Y[prev]) * jump) * bodyR +
+                    cos(t * 11f) * bodyR * 0.002f - tw * bodyR * 0.05f + lw * bodyR * 0.018f
+
+            val w = bodyR * 0.20f     // eye half width
+            val hu = bodyR * 0.155f   // upper lid travel
+            val hl = bodyR * 0.095f   // lower lid stays put — real lids work this way
+
+            for (s in EYE_SIDES) {
                 val ex = c.x + s * bodyR * 0.33f
                 val ey = c.y - bodyR * 0.16f
-                drawOval(FACE_WHITE, Offset(ex - rx, ey - ry), Size(rx * 2f, ry * 2f))
-                val ix = ex + lookX; val iy = ey + lookY
-                drawOval(edge, Offset(ix - irisR, iy - irisRy), Size(irisR * 2f, irisRy * 2f))
-                drawOval(PUPIL_DARK, Offset(ix - pupilR, iy - pupilRy), Size(pupilR * 2f, pupilRy * 2f))
-                if (blink > 0.5f) {
+                val open = (
+                        lidOpen(t, if (s < 0) 0f else 0.006f) *
+                                (1f - 0.14f * sw * lv) *
+                                (1f - 0.10f * tw + 0.04f * lw)
+                        ).coerceIn(0f, 1f)
+                val upperCtrl = ey + 2f * (hl - (hu + hl) * open)
+
+                eyePath.reset()
+                eyePath.moveTo(ex - w, ey)
+                eyePath.quadraticTo(ex, upperCtrl, ex + w, ey)
+                eyePath.quadraticTo(ex, ey + 2f * hl, ex - w, ey)
+                eyePath.close()
+
+                clipPath(eyePath) {
+                    drawPath(eyePath, FACE_WHITE)
+                    val ix = ex + lookX
+                    val iy = ey + lookY + bodyR * 0.012f
+                    // Fixed-size iris — occluded by lids, never squashed
+                    drawCircle(edge, bodyR * 0.105f, Offset(ix, iy))
+                    drawCircle(lerp(edge, Color.Black, 0.35f), bodyR * 0.082f, Offset(ix, iy))
+                    drawCircle(PUPIL_DARK, bodyR * 0.050f, Offset(ix, iy))
+                    drawCircle(Color.White, bodyR * 0.020f, Offset(ix - bodyR * 0.030f, iy - bodyR * 0.034f))
                     drawCircle(
-                        Color.White, bodyR * 0.02f,
-                        Offset(ix - bodyR * 0.03f, iy - bodyR * 0.035f),
+                        Color.White.copy(alpha = 0.55f), bodyR * 0.010f,
+                        Offset(ix + bodyR * 0.026f, iy + bodyR * 0.028f),
                     )
                 }
-                // Mischievous angled brow
-                drawLine(
-                    browColor,
-                    Offset(c.x + s * bodyR * 0.50f, c.y - bodyR * (0.46f + 0.03f * tw)),
-                    Offset(c.x + s * bodyR * 0.16f, c.y - bodyR * 0.36f),
-                    strokeWidth = bodyR * 0.055f, cap = StrokeCap.Round,
+                // Lid line; at open=0 it lands on the lower lid → natural closed eye
+                lidPath.reset()
+                lidPath.moveTo(ex - w, ey)
+                lidPath.quadraticTo(ex, upperCtrl, ex + w, ey)
+                drawPath(lidPath, browColor, style = Stroke(bodyR * 0.022f, cap = StrokeCap.Round))
+
+                // Curved brow, right side slightly cocked; lifts with thought/voice
+                val lift = tw * 0.05f + lw * 0.018f + sw * lv * 0.02f
+                val asym = if (s > 0) 0.025f else 0f
+                browPath.reset()
+                browPath.moveTo(c.x + s * bodyR * 0.52f, c.y - bodyR * (0.44f + lift))
+                browPath.quadraticTo(
+                    c.x + s * bodyR * 0.36f, c.y - bodyR * (0.52f + lift + asym),
+                    c.x + s * bodyR * 0.17f, c.y - bodyR * (0.37f + lift + asym * 0.5f),
                 )
+                drawPath(browPath, browColor, style = Stroke(bodyR * 0.05f, cap = StrokeCap.Round))
             }
 
-            // Smile: crescent that opens with the voice level
-            val open = lv
-            val halfW = bodyR * 0.30f * (1f - 0.15f * lw)
-            val topY = c.y + bodyR * (0.20f + 0.01f * sin(t * 2f))
+            // Mouth: closed = soft smile stroke; open = dark cavity + teeth + tongue
+            val smile = (0.55f + 0.20f * lw + 0.15f * sw - 0.22f * tw)
+                    .coerceIn(0.25f, 0.95f)
+            val mouthEnergy = rawLevel * sw
+            val open = (mouthEnergy * (0.88f + 0.12f * sin(t * 30f))).coerceIn(0f, 1f)
+            val halfW = bodyR * (0.30f - 0.04f * open)
+            val my = c.y + bodyR * 0.22f
+            val cornerY = my - bodyR * 0.05f * smile
+            val upCtrl = my + bodyR * (0.10f * smile + 0.04f * open)
+            val loCtrl = my + bodyR * (0.14f * smile + 0.55f * open)
+
             mouthPath.reset()
-            mouthPath.moveTo(c.x - halfW, topY)
-            mouthPath.quadraticTo(c.x, topY + bodyR * (0.16f + 0.42f * open), c.x + halfW, topY)
-            mouthPath.quadraticTo(c.x, topY + bodyR * (0.05f + 0.10f * open), c.x - halfW, topY)
+            mouthPath.moveTo(c.x - halfW, cornerY)
+            mouthPath.quadraticTo(c.x, upCtrl, c.x + halfW, cornerY)
+            mouthPath.quadraticTo(c.x, loCtrl, c.x - halfW, cornerY)
             mouthPath.close()
-            drawPath(mouthPath, FACE_WHITE)
+
+            if (open < 0.06f) {
+                lidPath.reset()
+                lidPath.moveTo(c.x - halfW, cornerY)
+                lidPath.quadraticTo(c.x, upCtrl + bodyR * 0.02f, c.x + halfW, cornerY)
+                drawPath(
+                    lidPath, FACE_OUTLINE,
+                    style = Stroke(bodyR * 0.045f, cap = StrokeCap.Round),
+                )
+            } else {
+                drawPath(mouthPath, MOUTH_DARK)
+                clipPath(mouthPath) {
+                    drawRect(
+                        FACE_WHITE, Offset(c.x - halfW, cornerY),
+                        Size(halfW * 2f, bodyR * (0.10f + 0.04f * open)),
+                    )
+                    if (open > 0.35f) {
+                        drawOval(
+                            TONGUE,
+                            Offset(c.x - halfW * 0.6f, my + bodyR * (0.05f + 0.18f * open)),
+                            Size(halfW * 1.2f, bodyR * 0.22f),
+                        )
+                    }
+                }
+                drawPath(
+                    mouthPath, FACE_OUTLINE,
+                    style = Stroke(bodyR * 0.02f, cap = StrokeCap.Round),
+                )
+            }
         }
 
         // 8) Twinkling sparkles around the orb
