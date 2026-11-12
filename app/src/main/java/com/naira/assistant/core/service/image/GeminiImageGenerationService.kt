@@ -68,7 +68,7 @@ object GeminiImageGenerationService {
     ): GeneratedImage {
         val apiKey = API_KEYS(context.applicationContext).trim()
         require(apiKey.isNotBlank()) {
-            "Add a Gemini API key in Settings → AI Providers → Credentials first."
+            "Add a Gemini API key in Settings → Providers & API Keys → API Keys first."
         }
         require(prompt.isNotBlank()) { "Describe the image you want to create." }
 

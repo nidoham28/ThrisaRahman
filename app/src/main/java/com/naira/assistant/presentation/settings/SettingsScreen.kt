@@ -203,6 +203,17 @@ private sealed interface SettingsNode {
     ) : SettingsNode
 }
 
+private val rootCategoryOrder = listOf(
+    "appearance",
+    "account",
+    "assistant",
+    "ai",
+    "permissions",
+    "engine",
+    "data",
+    "about",
+)
+
 /* ------------------------------------------------------------------ */
 /*  Theme tokens                                                       */
 /* ------------------------------------------------------------------ */
@@ -1048,7 +1059,7 @@ private fun buildTree(
             )
         ),
         SettingsNode.Category(
-            id = "ai", title = "AI Providers", subtitle = "Connect model providers",
+            id = "ai", title = "Providers & API Keys", subtitle = "Manage providers and API keys",
             icon = Icons.Outlined.VpnKey,
             children = listOf(
                 SettingsNode.Item(
@@ -1069,7 +1080,7 @@ private fun buildTree(
                     onClick = { onEditField(EditField.OPENROUTER_MODEL) },
                 ),
                 SettingsNode.Category(
-                    id = "credentials", title = "Credentials", subtitle = "API keys per provider",
+                    id = "credentials", title = "API Keys", subtitle = "Provider and service credentials",
                     icon = Icons.Outlined.Key,
                     children = buildList {
                         AssistantProvider.entries.forEach { provider ->
@@ -1090,27 +1101,24 @@ private fun buildTree(
                                 )
                             )
                         }
+                        add(
+                            SettingsNode.Item(
+                                id = "cricapi-key",
+                                title = "CricAPI Key",
+                                subtitle = if (state.cricketApiKey.isBlank()) "Not configured" else "Configured",
+                                icon = Icons.Outlined.Key,
+                                onClick = onEditCricketApiKey,
+                                trailing = {
+                                    TrailingBadge(
+                                        if (state.cricketApiKey.isBlank()) "SET UP" else "SAVED",
+                                        if (state.cricketApiKey.isBlank()) Aqua else Success,
+                                    )
+                                },
+                            )
+                        )
                     }
                 ),
             )
-        ),
-        SettingsNode.Category(
-            id = "cricket", title = "Cricket", subtitle = "Live scores and match details",
-            icon = Icons.Outlined.Info,
-            children = listOf(
-                SettingsNode.Item(
-                    id = "cricapi-key", title = "CricAPI Key",
-                    subtitle = if (state.cricketApiKey.isBlank()) "Not configured" else "Configured",
-                    icon = Icons.Outlined.Key,
-                    onClick = onEditCricketApiKey,
-                    trailing = {
-                        TrailingBadge(
-                            if (state.cricketApiKey.isBlank()) "SET UP" else "SAVED",
-                            if (state.cricketApiKey.isBlank()) Aqua else Success,
-                        )
-                    },
-                ),
-            ),
         ),
         SettingsNode.Category(
             id = "appearance", title = "Appearance", subtitle = "Theme, text & language",
@@ -1299,7 +1307,11 @@ private fun buildTree(
                 )
             )
         )
-    )
+    ).sortedBy { category ->
+        rootCategoryOrder.indexOf(category.id).let { index ->
+            if (index < 0) rootCategoryOrder.size else index
+        }
+    }
 )
 
 private fun resolveCategory(

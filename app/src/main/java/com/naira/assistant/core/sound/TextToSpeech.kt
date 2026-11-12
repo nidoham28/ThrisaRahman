@@ -96,7 +96,7 @@ class TextToSpeech(
                 SpeechEngine.ADVANCED -> {
                     val apiKey = API_KEYS(appContext).trim()
                     check(apiKey.isNotEmpty()) {
-                        "Add a Gemini API key in Settings → AI Providers → Credentials to use Gemini TTS."
+                        "Add a Gemini API key in Settings → Providers & API Keys → API Keys to use Gemini TTS."
                     }
                     val pcm = takePrefetch(text, voice)
                         ?: generateGeminiSpeech(apiKey, text.trim(), voice)

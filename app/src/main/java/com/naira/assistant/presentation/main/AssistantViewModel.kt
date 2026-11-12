@@ -161,7 +161,7 @@ internal fun assistantErrorText(t: Throwable, provider: AssistantProvider): Stri
         provider == AssistantProvider.OPENROUTER &&
                 OPENROUTER_KEY_REJECTED.any { message.contains(it, ignoreCase = true) } ->
             "OpenRouter rejected your API key. Save a valid key starting with " +
-                    "sk-or- in Settings → AI Providers → Credentials.\n$message"
+                    "sk-or- in Settings → Providers & API Keys → API Keys.\n$message"
         message.contains("401") || message.contains("403") ->
             "Authentication failed. Check your ${provider.displayName} API key.\n$message"
         message.contains("429") || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
@@ -441,13 +441,14 @@ class AssistantViewModel(
                     val message = when {
                         accountUserId == null ->
                             "Sign in to use your saved ${provider.displayName} API key."
-                        else -> "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
+                        else ->
+                            "Add a ${provider.displayName} API key in Settings → Providers & API Keys → API Keys."
                     }
                     throw IllegalStateException(message)
                 }
                 if (modelId.isBlank()) {
                     throw IllegalStateException(
-                        "Set an OpenRouter model ID in Settings → AI Providers → OpenRouter Model."
+                        "Set an OpenRouter model ID in Settings → Providers & API Keys → OpenRouter model."
                     )
                 }
 

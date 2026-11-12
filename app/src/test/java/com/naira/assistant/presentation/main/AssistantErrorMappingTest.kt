@@ -14,7 +14,7 @@ class AssistantErrorMappingTest {
         )
 
         assertTrue(text.startsWith("OpenRouter rejected your API key."))
-        assertTrue(text.contains("Settings → AI Providers → Credentials"))
+        assertTrue(text.contains("Settings → Providers & API Keys → API Keys"))
     }
 
     @Test
