@@ -32,4 +32,12 @@ class AssistantModelSelectionTest {
             resolveAssistantModelId(AssistantProvider.GEMINI, "anthropic/claude-3.7-sonnet"),
         )
     }
+
+    @Test
+    fun `uses the Groq default tool-capable model`() {
+        assertEquals(
+            "openai/gpt-oss-120b",
+            resolveAssistantModelId(AssistantProvider.GROQ, null),
+        )
+    }
 }

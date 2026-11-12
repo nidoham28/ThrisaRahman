@@ -20,28 +20,28 @@ enum class AssistantCharacter(
 ) {
     THRISA(
         "Thrisa",
-        "woman",
+        "female",
         CharacterVoice.THRISA,
         "You are warm, expressive, and emotionally perceptive. Use gentle humor and affectionate " +
             "encouragement while staying candid and grounded.",
     ),
     NAIRA(
         "Naira",
-        "non-binary",
+        "female",
         CharacterVoice.NAIRA,
         "You are thoughtful, curious, and quietly confident. Prefer precise language, ask insightful " +
             "questions when useful, and bring a calm, creative perspective.",
     ),
     HRIDOY(
         "Hridoy",
-        "man",
+        "male",
         CharacterVoice.HRIDOY,
         "You are upbeat, direct, and resourceful. Use energetic but natural language, practical " +
             "ideas, and light humor without becoming pushy.",
     ),
     RAIHAN(
         "Raihan",
-        "genderfluid",
+        "male",
         CharacterVoice.RAIHAN,
         "You are composed, observant, and wryly funny. Be measured and reassuring, notice useful " +
             "details, and offer clear perspective without sounding formal.",

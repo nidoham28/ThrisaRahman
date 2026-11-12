@@ -298,6 +298,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         const val DEFAULT_MODEL_ID = "gemini-3.5-flash-lite"
         const val DEFAULT_MODEL_OPENROUTER = "openrouter/free"
         const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+        const val GROQ_BASE_URL = "https://api.groq.com/openai/v1"
         const val DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
         private const val MAX_AGENT_STEPS = 33
     }
@@ -352,6 +353,11 @@ internal fun createAssistantProviderSetting(
     AssistantProvider.OPENROUTER -> ProviderSetting.OpenAI(
         apiKey = sanitizeOpenRouterApiKey(apiKey),
         baseUrl = AssistantApiService.OPENROUTER_BASE_URL,
+        useResponseApi = false,
+    )
+    AssistantProvider.GROQ -> ProviderSetting.OpenAI(
+        apiKey = apiKey.trim(),
+        baseUrl = AssistantApiService.GROQ_BASE_URL,
         useResponseApi = false,
     )
 }

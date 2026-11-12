@@ -263,6 +263,9 @@ private class SettingsState(
     private var openRouterKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
     )
+    private var groqKey by mutableStateOf(
+        currentUserId()?.let { storage.getApiKey(AssistantProvider.GROQ.name, it) }.orEmpty()
+    )
     var cricketApiKey by mutableStateOf(
         currentUserId()?.let(storage::getCricApiKey).orEmpty()
     )
@@ -285,6 +288,7 @@ private class SettingsState(
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
+        AssistantProvider.GROQ -> groqKey
     }
 
     fun saveApiKey(provider: AssistantProvider, value: String) {
@@ -292,6 +296,7 @@ private class SettingsState(
         when (provider) {
             AssistantProvider.GEMINI -> geminiKey = cleaned
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
+            AssistantProvider.GROQ -> groqKey = cleaned
         }
         currentUserId()?.let { storage.saveApiKey(provider.name, it, cleaned) }
     }
@@ -472,6 +477,14 @@ fun SettingsScreen(
             Toast.makeText(context, e.message ?: "Couldn't save the provider key.", Toast.LENGTH_LONG).show()
             return
         }
+        if (provider == AssistantProvider.GROQ) {
+            Toast.makeText(
+                context,
+                "Groq API key changes are saved on this device only; cloud sync needs backend support.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
         coroutineScope.launch {
             val synced = try {
                 if (key.isBlank()) apiKeySync.delete(provider)
@@ -506,6 +519,14 @@ fun SettingsScreen(
 
     fun chooseActiveProvider(provider: AssistantProvider) {
         state.saveProvider(provider, userId)
+        if (provider == AssistantProvider.GROQ) {
+            Toast.makeText(
+                context,
+                "Groq selection is saved on this device; cross-device sync needs backend support.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
         cloudSettingsRepository.recordChange(CloudSettingsPatch(activeProvider = provider))
         synchronizeCloudSettings()
     }

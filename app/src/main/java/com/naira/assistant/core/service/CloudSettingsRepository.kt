@@ -228,6 +228,11 @@ internal class CloudSettingsRepository(
     }
 }
 
+internal fun shouldApplyRemoteProviderSelection(
+    localProvider: AssistantProvider,
+    pendingProvider: AssistantProvider?,
+): Boolean = pendingProvider == null && localProvider != AssistantProvider.GROQ
+
 /**
  * Lenient variant of [CloudSettingsPatch.matches].
  *
@@ -347,7 +352,11 @@ private object CloudPendingPatchStore {
             val patch = pending[userId] ?: CloudSettingsPatch()
             if (patch.language == null) accountStorage.setLanguage(settings.language)
             if (patch.speechEngine == null) speechStorage.setEngine(settings.speechEngine.name)
-            if (patch.activeProvider == null) {
+            if (shouldApplyRemoteProviderSelection(
+                    localProvider = apiKeyStorage.getSelectedProvider(userId),
+                    pendingProvider = patch.activeProvider,
+                )
+            ) {
                 apiKeyStorage.saveSelectedProvider(settings.activeProvider, userId)
             }
             if (patch.theme == null) userSettingsStorage.setTheme(settings.theme)

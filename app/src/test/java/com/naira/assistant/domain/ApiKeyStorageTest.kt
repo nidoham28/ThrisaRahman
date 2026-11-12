@@ -19,4 +19,12 @@ class ApiKeyStorageTest {
             resolveSelectedProvider(null, "openrouter"),
         )
     }
+
+    @Test
+    fun `restores Groq provider from saved selection`() {
+        assertEquals(
+            AssistantProvider.GROQ,
+            resolveSelectedProvider("groq", "openrouter"),
+        )
+    }
 }

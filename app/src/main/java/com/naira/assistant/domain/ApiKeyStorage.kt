@@ -11,7 +11,8 @@ enum class AssistantProvider(
     val defaultModelId: String,
 ) {
     GEMINI("Gemini", "AIza...", "gemini-3.5-flash-lite"),
-    OPENROUTER("OpenRouter", "sk-or-...", "openrouter/auto");
+    OPENROUTER("OpenRouter", "sk-or-...", "openrouter/auto"),
+    GROQ("Groq", "gsk_...", "openai/gpt-oss-120b");
 
     companion object {
         fun fromStorageValue(value: String?): AssistantProvider =

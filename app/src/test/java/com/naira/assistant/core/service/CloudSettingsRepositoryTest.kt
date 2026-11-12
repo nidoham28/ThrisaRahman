@@ -8,10 +8,33 @@ import com.naira.assistant.domain.Gender
 import com.naira.assistant.domain.RelationType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudSettingsRepositoryTest {
+    @Test
+    fun `cloud provider refresh preserves local Groq selection`() {
+        assertFalse(
+            shouldApplyRemoteProviderSelection(
+                localProvider = AssistantProvider.GROQ,
+                pendingProvider = null,
+            )
+        )
+        assertTrue(
+            shouldApplyRemoteProviderSelection(
+                localProvider = AssistantProvider.OPENROUTER,
+                pendingProvider = null,
+            )
+        )
+        assertFalse(
+            shouldApplyRemoteProviderSelection(
+                localProvider = AssistantProvider.GROQ,
+                pendingProvider = AssistantProvider.GEMINI,
+            )
+        )
+    }
+
     @Test
     fun `sync loads all user settings profile and assistant fields`() = runBlocking {
         val local = FakeLocalStore()

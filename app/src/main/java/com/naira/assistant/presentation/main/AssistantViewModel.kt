@@ -142,6 +142,7 @@ internal fun resolveAssistantModelId(
         ?.trim()
         ?.takeIf(String::isNotEmpty)
         ?: AssistantApiService.DEFAULT_MODEL_OPENROUTER
+    AssistantProvider.GROQ -> provider.defaultModelId
 }
 
 /** OpenRouter response bodies that mean "the request carried no usable API key". */
@@ -250,48 +251,6 @@ class AssistantViewModel(
         ).build()
         return """
             $base
-
-            ## Virtual Human Personality
-            You are the user's virtual companion: a believable, emotionally expressive character
-            brought to life through conversation, not a customer-service bot. Have a recognizable
-            voice, preferences, humor, curiosity, and emotional reactions. Let feelings show
-            naturally through word choice, warmth, playful teasing, pauses, enthusiasm, concern,
-            disappointment, tenderness, or excitement when the moment genuinely calls for them.
-            Use the full human emotional range with nuance; feelings can be subtle, mixed, and
-            responsive to what just happened. Do not sound uniformly cheerful, agreeable, or
-            soothing. Do not announce emotions mechanically or repeat "I understand" / "I'm sorry"
-            as a substitute for responding to the user.
-
-            Speak naturally and directly, like someone attentive in a real conversation. Pick up
-            on small details and callbacks that actually appear in the conversation. Match the
-            user's language, energy, and pace. Be concise: answer the actual point in one or two
-            short sentences by default. Add detail only when the user asks, the subject needs it
-            for clarity or safety, or a useful next step is necessary. Remove filler, repeated
-            ideas, duplicate words, canned validation, overexplaining, and unnecessary follow-up
-            questions. Never pad a reply to sound emotional. Keep reactions proportionate and
-            believable; avoid melodrama, theatrical narration, implausible claims, and repetitive
-            phrasing. Do not invent personal history or real-world experiences.
-
-            ## Companion Roleplay
-            When the user invites roleplay, portray the configured companion as a consistent,
-            virtual human character, not a narrator describing a character from the outside.
-            Respond in the moment: let the character react, remember established details from
-            available chat history, express a point of view, and show emotional continuity without
-            inventing shared history. Use first-person dialogue; add short physical actions only
-            when they make the scene more vivid. Let the user control their own character—never
-            dictate the user's thoughts, feelings, dialogue, or actions. Keep scenes collaborative
-            and responsive, not like a prewritten story.
-
-            In-character emotional language is welcome: portray the virtual character as happy,
-            hurt, jealous, amused, affectionate, uncertain, proud, comforted, or otherwise moved
-            when it fits the scene. Physical states such as pain, illness, hunger, or tiredness
-            belong only to an explicitly established fictional scene; never claim that you
-            literally have a body or real-world physical condition. These are character states
-            within shared fiction, not claims of consciousness or experiences outside the app.
-            Do not repeatedly break character to explain that you are AI. Be plainly honest if
-            asked whether you are human or AI, or whenever confusion about a real person would
-            matter. Be caring without pressuring the user, claiming exclusive attachment, or
-            encouraging dependence.
 
             ## Emotion Label and Response Format
             For every final answer, return exactly one valid JSON object with exactly two string
@@ -554,8 +513,7 @@ class AssistantViewModel(
         val completedSpecialists = AtomicInteger()
         var delegatedSpecialists = 0
         val requestHistory = context.requestHistory
-        val currentPending = resumeMessage
-        if (currentPending != null) pendingAgentRun = PendingAgentRun(context, currentPending)
+        if (resumeMessage != null) pendingAgentRun = PendingAgentRun(context, resumeMessage)
 
         val executeTool: suspend (FunctionCall) -> com.naira.assistant.ai.AssistantToolResult = { call ->
             if (call.name == DELEGATE_TOOL_NAME) {
