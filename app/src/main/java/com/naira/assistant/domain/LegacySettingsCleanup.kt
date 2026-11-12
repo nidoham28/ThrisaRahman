@@ -17,7 +17,7 @@ object LegacySettingsCleanup {
         }
 
         val apiPreferences = appContext.getSharedPreferences("api_key_prefs", Context.MODE_PRIVATE)
-        val obsoleteKeys = apiPreferences.all.keys.filterNot { it.startsWith("key_") }
+        val obsoleteKeys = apiPreferences.all.keys.filterNot(::isSupportedApiPreferenceKey)
         if (obsoleteKeys.isNotEmpty()) {
             apiPreferences.edit {
                 obsoleteKeys.forEach(::remove)
@@ -25,3 +25,10 @@ object LegacySettingsCleanup {
         }
     }
 }
+
+internal fun isSupportedApiPreferenceKey(key: String): Boolean =
+    key.startsWith("key_") ||
+        key == "selected_provider" ||
+        key.startsWith("selected_provider_") ||
+        key == "openrouter_model" ||
+        key.startsWith("openrouter_model_")

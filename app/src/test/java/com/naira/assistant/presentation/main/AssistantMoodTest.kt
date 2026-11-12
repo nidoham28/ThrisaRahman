@@ -32,6 +32,18 @@ class AssistantMoodTest {
     }
 
     @Test
+    fun `accepts plain text model output during and after streaming`() {
+        assertEquals(
+            AssistantResponse("Hello, friend!", null),
+            decodeAssistantResponse("Hello, friend!", isFinal = false),
+        )
+        assertEquals(
+            AssistantResponse("Hello, friend!", null),
+            decodeAssistantResponse("Hello, friend!", isFinal = true),
+        )
+    }
+
+    @Test
     fun `uses neutral when the mood is missing or unrecognized`() {
         listOf(
             """{"response":"Hi","mood":"NotARealMood"}""",

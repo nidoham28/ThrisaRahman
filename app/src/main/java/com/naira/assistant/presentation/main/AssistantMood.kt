@@ -55,9 +55,10 @@ private val responseJson = Json.Default
  * @param raw the raw model output — may be partial while streaming.
  * @param isFinal `true` when this is the last emission of the turn.
  * @return the parsed [AssistantResponse], or `null` if [isFinal] is `false`
- *         and no response text could be recovered yet.
+ *         and no response text could be recovered yet. Plain-text model output
+ *         is accepted as a response without a mood.
  * @throws IllegalStateException if [isFinal] is `true` and the payload
- *         cannot be decoded into a response.
+ *         is a structured payload without a string response.
  */
 @Throws(IllegalStateException::class)
 internal fun decodeAssistantResponse(raw: String, isFinal: Boolean): AssistantResponse? {
@@ -74,6 +75,15 @@ internal fun decodeAssistantResponse(raw: String, isFinal: Boolean): AssistantRe
             return AssistantResponse(response, mood ?: "Neutral")
         }
     }
+
+    val plainText = when (parsed) {
+        is JsonPrimitive -> parsed.takeIf(JsonPrimitive::isString)?.contentOrNull
+        null -> normalizedRaw.takeIf {
+            it.isNotBlank() && !it.startsWith("{")
+        }
+        else -> null
+    }
+    if (plainText != null) return AssistantResponse(plainText, mood = null)
 
     if (isFinal) {
         throw IllegalStateException(
