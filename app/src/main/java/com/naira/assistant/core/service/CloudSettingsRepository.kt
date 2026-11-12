@@ -6,7 +6,9 @@ import android.util.Log
 import androidx.core.content.edit
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.AccountSettingsStorage
+import com.naira.assistant.domain.ApiKeyStorage
 import com.naira.assistant.domain.AssistantLanguage
+import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantSettingsStorage
 import com.naira.assistant.domain.AssistantVoice
 import com.naira.assistant.domain.Gender
@@ -30,6 +32,7 @@ private const val TAG = "CloudSettings"
 internal data class CloudSettings(
     val language: AssistantLanguage,
     val speechEngine: SpeechEngine,
+    val activeProvider: AssistantProvider = AssistantProvider.GEMINI,
     val theme: String = "system",
     val fontSize: String = "medium",
     val storedHistory: Boolean = true,
@@ -48,6 +51,7 @@ internal data class CloudSettings(
 internal data class CloudSettingsPatch(
     val language: AssistantLanguage? = null,
     val speechEngine: SpeechEngine? = null,
+    val activeProvider: AssistantProvider? = null,
     val theme: String? = null,
     val fontSize: String? = null,
     val storedHistory: Boolean? = null,
@@ -65,6 +69,7 @@ internal data class CloudSettingsPatch(
     val isEmpty: Boolean
         get() = language == null && speechEngine == null && theme == null && fontSize == null &&
                 storedHistory == null && storedMemories == null && voiceOutputEnabled == null &&
+                activeProvider == null &&
                 username == null && displayName == null && phone == null && gender == null &&
                 assistantName == null && assistantLanguage == null && relationship == null &&
                 assistantVoice == null
@@ -72,6 +77,7 @@ internal data class CloudSettingsPatch(
     fun merge(override: CloudSettingsPatch): CloudSettingsPatch = CloudSettingsPatch(
         language = override.language ?: language,
         speechEngine = override.speechEngine ?: speechEngine,
+        activeProvider = override.activeProvider ?: activeProvider,
         theme = override.theme ?: theme,
         fontSize = override.fontSize ?: fontSize,
         storedHistory = override.storedHistory ?: storedHistory,
@@ -237,6 +243,7 @@ internal class CloudSettingsRepository(
 private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolean =
     (language == null || language == settings.language) &&
             (speechEngine == null || speechEngine == settings.speechEngine) &&
+            (activeProvider == null || activeProvider == settings.activeProvider) &&
             (theme == null || theme.trim().equals(settings.theme.trim(), ignoreCase = true)) &&
             (fontSize == null || fontSize.trim().equals(settings.fontSize.trim(), ignoreCase = true)) &&
             (storedHistory == null || storedHistory == settings.storedHistory) &&
@@ -283,6 +290,7 @@ private object CloudPendingPatchStore {
     // Storage wrappers are stateless in-memory singletons; context is only
     // needed to satisfy their constructors.
     private lateinit var accountStorage: AccountSettingsStorage
+    private lateinit var apiKeyStorage: ApiKeyStorage
     private lateinit var speechStorage: SpeechSettingsStorage
     private lateinit var assistantStorage: AssistantSettingsStorage
     private val userSettingsStorage = UserSettingsStorage()
@@ -292,6 +300,7 @@ private object CloudPendingPatchStore {
         val appContext = context.applicationContext
         synchronized(lock) {
             accountStorage = AccountSettingsStorage(appContext)
+            apiKeyStorage = ApiKeyStorage(appContext)
             speechStorage = SpeechSettingsStorage(appContext)
             assistantStorage = AssistantSettingsStorage(appContext)
             if (prefs == null) {
@@ -338,6 +347,9 @@ private object CloudPendingPatchStore {
             val patch = pending[userId] ?: CloudSettingsPatch()
             if (patch.language == null) accountStorage.setLanguage(settings.language)
             if (patch.speechEngine == null) speechStorage.setEngine(settings.speechEngine.name)
+            if (patch.activeProvider == null) {
+                apiKeyStorage.saveSelectedProvider(settings.activeProvider, userId)
+            }
             if (patch.theme == null) userSettingsStorage.setTheme(settings.theme)
             if (patch.fontSize == null) userSettingsStorage.setFontSize(settings.fontSize)
             if (patch.storedHistory == null) userSettingsStorage.setStoredHistory(settings.storedHistory)
@@ -369,6 +381,7 @@ private object CloudPendingPatchStore {
             val remaining = current.copy(
                 language = current.language.takeUnless { it == patch.language },
                 speechEngine = current.speechEngine.takeUnless { it == patch.speechEngine },
+                activeProvider = current.activeProvider.takeUnless { it == patch.activeProvider },
                 theme = current.theme.takeUnless { it == patch.theme },
                 fontSize = current.fontSize.takeUnless { it == patch.fontSize },
                 storedHistory = current.storedHistory.takeUnless { it == patch.storedHistory },
@@ -411,6 +424,7 @@ private object CloudPendingPatchStore {
 private data class PendingPatchDto(
     val language: String? = null,
     val speechEngine: String? = null,
+    val activeProvider: String? = null,
     val theme: String? = null,
     val fontSize: String? = null,
     val storedHistory: Boolean? = null,
@@ -432,6 +446,7 @@ private inline fun <reified E : Enum<E>> String?.toEnumOrNull(): E? =
 private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
     language = language.toEnumOrNull(),
     speechEngine = speechEngine.toEnumOrNull(),
+    activeProvider = activeProvider.toEnumOrNull(),
     theme = theme,
     fontSize = fontSize,
     storedHistory = storedHistory,
@@ -450,6 +465,7 @@ private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
 private fun CloudSettingsPatch.toDto() = PendingPatchDto(
     language = language?.name,
     speechEngine = speechEngine?.name,
+    activeProvider = activeProvider?.name,
     theme = theme,
     fontSize = fontSize,
     storedHistory = storedHistory,
@@ -512,7 +528,7 @@ internal class SupabaseCloudSettingsRemoteStore(
     override suspend fun fetch(userId: String): CloudSettings? {
         val settings = client.from("user_settings")
             .select(columns = Columns.list(
-                "uid", "speech_engine", "theme", "font_size", "language",
+                "uid", "speech_engine", "active_provider", "theme", "font_size", "language",
                 "stored_history", "stored_memories", "voice_output_enabled",
             )) {
                 filter { eq("uid", userId) }
@@ -548,6 +564,7 @@ internal class SupabaseCloudSettingsRemoteStore(
             client.from("user_settings").update({
                 patch.language?.let { set("language", it.language.id) }
                 patch.speechEngine?.let { set("speech_engine", it.toDatabaseValue()) }
+                patch.activeProvider?.let { set("active_provider", it.name.lowercase()) }
                 patch.theme?.let { set("theme", it) }
                 patch.fontSize?.let { set("font_size", it) }
                 patch.storedHistory?.let { set("stored_history", it) }
@@ -585,6 +602,7 @@ internal class SupabaseCloudSettingsRemoteStore(
     ) = CloudSettings(
         language = language.toAssistantLanguage(),
         speechEngine = speechEngine.toSpeechEngine(),
+        activeProvider = AssistantProvider.fromStorageValue(activeProvider),
         theme = theme ?: "system",
         fontSize = fontSize ?: "medium",
         storedHistory = storedHistory ?: true,
@@ -616,7 +634,8 @@ internal class SupabaseCloudSettingsRemoteStore(
     }
 
     private fun CloudSettingsPatch.hasSettingsFields() =
-        language != null || speechEngine != null || theme != null || fontSize != null ||
+        language != null || speechEngine != null || activeProvider != null ||
+                theme != null || fontSize != null ||
                 storedHistory != null || storedMemories != null || voiceOutputEnabled != null
 
     private fun CloudSettingsPatch.hasProfileFields() =
@@ -632,6 +651,7 @@ internal class SupabaseCloudSettingsRemoteStore(
     private data class RemoteSettingsRow(
         @SerialName("language") val language: String? = null,
         @SerialName("speech_engine") val speechEngine: String? = null,
+        @SerialName("active_provider") val activeProvider: String? = null,
         @SerialName("theme") val theme: String? = null,
         @SerialName("font_size") val fontSize: String? = null,
         @SerialName("stored_history") val storedHistory: Boolean? = null,

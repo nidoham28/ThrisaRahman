@@ -324,7 +324,12 @@ class AssistantViewModel(
 
     /** Reload the saved key after returning from provider settings. */
     fun refreshApiKey() {
-        val userId = authService.currentUser()?.id
+        val accountUserId = authService.currentUser()?.id
+        loadLocalProviderSettings(accountUserId)
+        pullCloudApiKeys()
+    }
+
+    private fun loadLocalProviderSettings(userId: String?) {
         activeProvider = apiKeyStorage.getSelectedProvider(userId)
         val configuredOpenRouterModelId =
             if (activeProvider == AssistantProvider.OPENROUTER) {
@@ -338,7 +343,6 @@ class AssistantViewModel(
             .orEmpty()
             .trim()
         activeApiKey = savedKey.takeIf { it.isNotEmpty() }
-        pullCloudApiKeys()
     }
 
     /**
@@ -418,6 +422,8 @@ class AssistantViewModel(
         if (message.isBlank() && imageUri == null) return
         if (_busyStatus.value != null || pendingAgentRun != null) return
 
+        val accountUserId = authService.currentUser()?.id
+        loadLocalProviderSettings(accountUserId)
         val userId = nextMessageId()
         _messages.update { it + UiMessage(userId, message, isUser = true, imageUri = imageUri) }
 
@@ -428,13 +434,13 @@ class AssistantViewModel(
         val requestGeneration = chatGeneration
         val provider = activeProvider
         val modelId = activeModelId
+        val apiKey = activeApiKey
         currentJob = viewModelScope.launch {
             try {
-                val apiKey = activeApiKey
                 if (apiKey.isNullOrBlank()) {
-                    val userId = authService.currentUser()?.id
                     val message = when {
-                        userId == null -> "Sign in to use your saved ${provider.displayName} API key."
+                        accountUserId == null ->
+                            "Sign in to use your saved ${provider.displayName} API key."
                         else -> "Add a ${provider.displayName} API key in Settings → AI Providers → Credentials."
                     }
                     throw IllegalStateException(message)

@@ -339,6 +339,9 @@ private class SettingsState(
     }
 
     fun refreshCloudBackedSettings() {
+        val userId = currentUserId()
+        selectedProvider = storage.getSelectedProvider(userId)
+        openRouterModelId = storage.getOpenRouterModelId(userId)
         assistantLanguage = assistantStorage.getLanguage()
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
@@ -492,6 +495,8 @@ fun SettingsScreen(
 
     fun chooseActiveProvider(provider: AssistantProvider) {
         state.saveProvider(provider, userId)
+        cloudSettingsRepository.recordChange(CloudSettingsPatch(activeProvider = provider))
+        synchronizeCloudSettings()
     }
 
     LaunchedEffect(userId) {
@@ -1055,6 +1060,13 @@ private fun buildTree(
                             onSelect = onSaveActiveProvider,
                         )
                     }
+                ),
+                SettingsNode.Item(
+                    id = "openrouter-model",
+                    title = "OpenRouter model",
+                    subtitle = state.openRouterModelId,
+                    icon = Icons.Outlined.AutoAwesome,
+                    onClick = { onEditField(EditField.OPENROUTER_MODEL) },
                 ),
                 SettingsNode.Category(
                     id = "credentials", title = "Credentials", subtitle = "API keys per provider",

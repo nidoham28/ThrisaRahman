@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.service.CloudSettingsRepository
+import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
 import com.naira.assistant.core.service.SupabaseAuthService
 import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
@@ -119,7 +120,8 @@ fun MainScreen(
     // settings are authoritative, remote is best-effort.
     LaunchedEffect(cloudSettingsRepository) {
         try {
-            cloudSettingsRepository.synchronize()
+            val result = cloudSettingsRepository.synchronize()
+            if (result is CloudSettingsSyncResult.Synced) viewModel.refreshSettings()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

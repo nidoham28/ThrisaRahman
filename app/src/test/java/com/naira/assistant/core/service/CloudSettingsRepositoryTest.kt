@@ -2,6 +2,7 @@ package com.naira.assistant.core.service
 
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.AssistantLanguage
+import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantVoice
 import com.naira.assistant.domain.Gender
 import com.naira.assistant.domain.RelationType
@@ -17,6 +18,7 @@ class CloudSettingsRepositoryTest {
         val expected = CloudSettings(
             language = AssistantLanguage.ENGLISH,
             speechEngine = SpeechEngine.ADVANCED,
+            activeProvider = AssistantProvider.OPENROUTER,
             theme = "dark",
             fontSize = "large",
             storedHistory = false,
@@ -48,6 +50,7 @@ class CloudSettingsRepositoryTest {
         val patch = CloudSettingsPatch(
             language = AssistantLanguage.ENGLISH,
             storedHistory = false,
+            activeProvider = AssistantProvider.OPENROUTER,
             username = "new-name",
             assistantName = "Mina",
             relationship = RelationType.CLOSE_FRIEND,
@@ -60,6 +63,7 @@ class CloudSettingsRepositoryTest {
 
         assertTrue(result is CloudSettingsSyncResult.Synced)
         assertEquals(patch, remote.lastPatch)
+        assertEquals(AssistantProvider.OPENROUTER, remote.settings?.activeProvider)
         assertEquals(AssistantLanguage.ENGLISH, remote.settings?.language)
         assertEquals(false, remote.settings?.storedHistory)
         assertEquals("new-name", remote.settings?.username)
@@ -171,6 +175,7 @@ class CloudSettingsRepositoryTest {
             settings = current.copy(
                 language = patch.language ?: current.language,
                 speechEngine = patch.speechEngine ?: current.speechEngine,
+                activeProvider = patch.activeProvider ?: current.activeProvider,
                 theme = patch.theme ?: current.theme,
                 fontSize = patch.fontSize ?: current.fontSize,
                 storedHistory = patch.storedHistory ?: current.storedHistory,

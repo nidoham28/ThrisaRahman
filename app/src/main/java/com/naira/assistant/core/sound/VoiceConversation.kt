@@ -2,6 +2,7 @@ package com.naira.assistant.core.sound
 
 import android.content.Context
 import android.speech.SpeechRecognizer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -214,7 +215,6 @@ class VoiceConversation(
                     val nextEnd = sentenceEnd(s.text, end)
                     if (nextEnd > end) tts.prefetch(cleanForSpeech(s.text.substring(end, nextEnd)))
                 }
-                _state.value = VoiceState.Speaking
                 if (!speak(chunk)) return false
                 if (interrupted) return true
             }
@@ -228,8 +228,19 @@ class VoiceConversation(
      */
     private suspend fun speak(text: String): Boolean = coroutineScope {
         var result: Result<Unit>? = null
-        val job = launch { result = tts.speak(text) }
+        val playbackStarted = CompletableDeferred<Unit>()
+        val job = launch {
+            result = tts.speak(text) {
+                playbackStarted.complete(Unit)
+            }
+        }
+        val speakingStatusJob = launch {
+            playbackStarted.await()
+            delay(SPEAKING_STATUS_DELAY_MILLIS)
+            if (job.isActive && !interrupted) _state.value = VoiceState.Speaking
+        }
         job.join()
+        speakingStatusJob.cancel()
         val r = result
         if (r != null && r.isFailure && !interrupted) {
             reportError("Couldn't play the reply: ${r.exceptionOrNull()?.message}")
@@ -262,6 +273,7 @@ class VoiceConversation(
         const val MAX_SILENT_ROUNDS = 2
         const val MAX_RETRIES = 3
         const val MIN_CHUNK = 24
+        const val SPEAKING_STATUS_DELAY_MILLIS = 250L
         const val SENTENCE_ENDS = ".!?।…"
         val CODE_FENCE = Regex("```[\\s\\S]*?```")
         val MD_LINK = Regex("\\[([^\\]]*)]\\([^)]*\\)")

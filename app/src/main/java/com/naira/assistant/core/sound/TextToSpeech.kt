@@ -75,7 +75,7 @@ class TextToSpeech(
     @Volatile private var closed = false
 
     /** Generates speech remotely with Gemini, then plays it through Android audio playback. */
-    suspend fun speak(text: String): Result<Unit> {
+    suspend fun speak(text: String, onPlaybackStarted: () -> Unit): Result<Unit> {
         var requestJob: Job? = null
         return try {
             require(text.isNotBlank()) { "Text cannot be blank" }
@@ -92,7 +92,7 @@ class TextToSpeech(
             val voice = speechSettings.getCharacter().voice
             when (runCatching { SpeechEngine.valueOf(speechSettings.getEngine()) }
                 .getOrDefault(SpeechEngine.SYSTEM)) {
-                SpeechEngine.SYSTEM -> speakOnDevice(text.trim(), voice)
+                SpeechEngine.SYSTEM -> speakOnDevice(text.trim(), voice, onPlaybackStarted)
                 SpeechEngine.ADVANCED -> {
                     val apiKey = API_KEYS(appContext).trim()
                     check(apiKey.isNotEmpty()) {
@@ -102,7 +102,7 @@ class TextToSpeech(
                         ?: generateGeminiSpeech(apiKey, text.trim(), voice)
                     coroutineContext.ensureActive()
                     check(!closed) { "TTS has already been closed" }
-                    playPcm(pcm)
+                    playPcm(pcm, onPlaybackStarted)
                 }
             }
             Result.success(Unit)
@@ -202,7 +202,11 @@ class TextToSpeech(
             }
         }
 
-    private suspend fun speakOnDevice(text: String, voice: CharacterVoice) {
+    private suspend fun speakOnDevice(
+        text: String,
+        voice: CharacterVoice,
+        onPlaybackStarted: () -> Unit,
+    ) {
         val (engine, ready) = systemEngineHandle()
         val initialised = ready.await().getOrNull()
         if (initialised == null) {
@@ -228,7 +232,9 @@ class TextToSpeech(
             }
             selectLocalVoice(initialised, voice)
             initialised.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String?) = Unit
+                override fun onStart(id: String?) {
+                    if (id == utteranceId) onPlaybackStarted()
+                }
                 override fun onDone(id: String?) {
                     if (id == utteranceId && continuation.isActive) {
                         continuation.resumeWith(Result.success(Unit))
@@ -344,7 +350,7 @@ class TextToSpeech(
         const val WRITE_CHUNK_BYTES = 8_192
     }
 
-    private suspend fun playPcm(pcm: ByteArray) {
+    private suspend fun playPcm(pcm: ByteArray, onPlaybackStarted: () -> Unit) {
         val playback = PcmPlayback(pcm)
         synchronized(playbackLock) {
             check(!closed) { "TTS has already been closed" }
@@ -352,7 +358,7 @@ class TextToSpeech(
         }
         try {
             playback.start()
-            playback.await()
+            playback.await(onPlaybackStarted)
         } catch (e: CancellationException) {
             synchronized(playbackLock) {
                 if (activePlayback === playback) stopPlaybackLocked()
@@ -408,9 +414,10 @@ class TextToSpeech(
             ).apply { play() } // starts at once; plays silence until the first write lands
         }
 
-        suspend fun await() = withContext(Dispatchers.IO) {
+        suspend fun await(onPlaybackStarted: () -> Unit) = withContext(Dispatchers.IO) {
             val t = track ?: error("Playback was not started.")
             var offset = 0
+            var notifiedPlaybackStarted = false
             while (offset < pcm.size) {
                 currentCoroutineContext().ensureActive()
                 val written = t.write(
@@ -419,7 +426,13 @@ class TextToSpeech(
                 when {
                     written < 0 -> error("Audio playback failed (code $written).")
                     written == 0 -> delay(10) // buffer full - let it drain a little
-                    else -> offset += written
+                    else -> {
+                        offset += written
+                        if (!notifiedPlaybackStarted) {
+                            onPlaybackStarted()
+                            notifiedPlaybackStarted = true
+                        }
+                    }
                 }
             }
             // stop() drains the already-written buffer before stopping; the head

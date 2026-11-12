@@ -19,6 +19,9 @@ enum class AssistantProvider(
     }
 }
 
+internal fun resolveSelectedProvider(accountValue: String?, deviceValue: String?): AssistantProvider =
+    AssistantProvider.fromStorageValue(accountValue ?: deviceValue)
+
 class ApiKeyStorage(context: Context) {
 
     private val prefs: SharedPreferences =
@@ -60,23 +63,31 @@ class ApiKeyStorage(context: Context) {
         }
     }
 
-    fun getSelectedProvider(userId: String? = null): AssistantProvider =
-        AssistantProvider.fromStorageValue(
-            prefs.getString(selectedProviderKey(userId), null)
-        )
+    fun getSelectedProvider(userId: String? = null): AssistantProvider {
+        val accountValue = userId?.let { prefs.getString(selectedProviderKey(it), null) }
+        val deviceValue = prefs.getString(SELECTED_PROVIDER_KEY, null)
+        return resolveSelectedProvider(accountValue, deviceValue)
+    }
 
     fun saveSelectedProvider(provider: AssistantProvider, userId: String? = null) {
-        val key = userId?.let(::selectedProviderKey) ?: SELECTED_PROVIDER_KEY
-        prefs.edit { putString(key, provider.name) }
+        prefs.edit {
+            putString(SELECTED_PROVIDER_KEY, provider.name)
+            userId?.let { putString(selectedProviderKey(it), provider.name) }
+        }
     }
 
     fun getOpenRouterModelId(userId: String? = null): String =
-        prefs.getString(openRouterModelKey(userId), null)
+        userId?.let { prefs.getString(openRouterModelKey(it), null) }
+            ?: prefs.getString(openRouterModelKey(null), null)
             ?: AssistantProvider.OPENROUTER.defaultModelId
 
     fun saveOpenRouterModelId(modelId: String, userId: String? = null) {
         require(modelId.isNotBlank()) { "OpenRouter model ID must not be blank" }
-        prefs.edit { putString(openRouterModelKey(userId), modelId.trim()) }
+        val cleaned = modelId.trim()
+        prefs.edit {
+            putString(openRouterModelKey(null), cleaned)
+            userId?.let { putString(openRouterModelKey(it), cleaned) }
+        }
     }
 
     private companion object {
