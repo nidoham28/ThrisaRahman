@@ -241,7 +241,7 @@ class AssistantViewModel(
         val base = Instructions(
             InstructionsConfig(
                 assistantName = assistantSettingsStorage.getName(),
-                persona = character.instructions.ifBlank { defaultPersona },
+                persona = character.persona.ifBlank { defaultPersona },
                 sex = character.gender.ifBlank { "female" },
                 language = activeLanguage.code,
                 relationship = assistantSettingsStorage.getRelationship().id,
@@ -528,7 +528,7 @@ class AssistantViewModel(
                             put(
                                 "error",
                                 "This assistant run has reached its limit of " +
-                                    "${AgentOrchestrator.MAX_SPECIALISTS_PER_RUN} specialist tasks.",
+                                        "${AgentOrchestrator.MAX_SPECIALISTS_PER_RUN} specialist tasks.",
                             )
                         }
                     )
@@ -554,7 +554,7 @@ class AssistantViewModel(
                                 }
                                 _busyStatus.value =
                                     "${progress.role.displayName} $verb " +
-                                        "($completed/${delegation.tasks.size})"
+                                            "($completed/${delegation.tasks.size})"
                             }
                         },
                     )
