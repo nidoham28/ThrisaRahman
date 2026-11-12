@@ -1,6 +1,7 @@
 package com.naira.assistant.presentation.main
 
 import me.rerere.ai.ui.UIMessagePart as AgentPart
+import me.rerere.ai.ui.ToolApprovalState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -107,5 +108,39 @@ class AssistantToolMappingTest {
         assertEquals(listOf("a", "b"), calls.map { it.id })
         assertTrue(calls[0].isRunning)
         assertFalse(calls[1].isRunning)
+    }
+
+    @Test
+    fun `pending tool approval is not presented as running`() {
+        val call = listOf(
+            AgentPart.Tool(
+                toolCallId = "approval-1",
+                toolName = "perform_screen_action",
+                input = """{"action":"tap"}""",
+                approvalState = ToolApprovalState.Pending,
+            ),
+        ).toUiToolCalls().single()
+
+        assertTrue(call.approvalPending)
+        assertFalse(call.isRunning)
+    }
+
+    @Test
+    fun `delegation call surfaces a failed specialist result`() {
+        val call = listOf(
+            AgentPart.Tool(
+                toolCallId = "delegate-1",
+                toolName = "delegate_to_specialists",
+                input = "{}",
+                output = listOf(
+                    AgentPart.Text(
+                        """{"specialists":[{"role":"Analyst","error":true,"result":"Specialist timed out."}]}"""
+                    )
+                ),
+            ),
+        ).toUiToolCalls().single()
+
+        assertTrue(call.isError)
+        assertTrue(call.result.contains("Specialist timed out."))
     }
 }

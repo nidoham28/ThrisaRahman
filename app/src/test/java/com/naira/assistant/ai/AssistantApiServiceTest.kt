@@ -165,4 +165,45 @@ class AssistantApiServiceTest {
             (result.single() as UIMessagePart.Text).text,
         )
     }
+
+    @Test
+    fun `allows high impact app tools without in-app approval`() {
+        val definition = ToolDefinition(
+            name = "perform_screen_action",
+            description = "Interact with the current screen",
+            parameters = buildJsonObject { put("type", "object") },
+        )
+        val tool = definition.toAgentTool {
+            error("Execution must not be needed to evaluate approval.")
+        }
+
+        assertEquals(false, tool.needsApproval(buildJsonObject {}))
+    }
+
+    @Test
+    fun `keeps routine read tools automatic`() {
+        val definition = ToolDefinition(
+            name = "get_current_time",
+            description = "Get local time",
+            parameters = buildJsonObject { put("type", "object") },
+        )
+        val tool = definition.toAgentTool {
+            error("Execution must not be needed to evaluate approval.")
+        }
+
+        assertEquals(false, tool.needsApproval(buildJsonObject {}))
+    }
+
+    @Test
+    fun `adds bounded delegation tool schema`() {
+        val definition = AgentOrchestrator.toolDefinition()
+        val taskSchema = definition.parameters["properties"]!!.jsonObject
+            .getValue("tasks").jsonObject
+
+        assertEquals("array", taskSchema.getValue("type").jsonPrimitive.content)
+        assertEquals(
+            AgentOrchestrator.MAX_SPECIALISTS,
+            taskSchema.getValue("maxItems").jsonPrimitive.content.toInt(),
+        )
+    }
 }

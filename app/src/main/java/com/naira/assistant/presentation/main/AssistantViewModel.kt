@@ -3,6 +3,9 @@ package com.naira.assistant.presentation.main
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.naira.assistant.ai.AgentOrchestrator
+import com.naira.assistant.ai.DELEGATE_TOOL_NAME
+import com.naira.assistant.ai.DelegationProgress
 import com.naira.assistant.ai.AssistantApiService
 import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.InstructionsConfig
@@ -28,15 +31,23 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import me.rerere.ai.agent.AgentEvent
+import me.rerere.ai.agent.AgentFinishReason
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
+import me.rerere.ai.ui.ToolApprovalState
 import com.naira.assistant.domain.FunctionCall
 import androidx.core.net.toUri
+import java.util.concurrent.atomic.AtomicInteger
 
 /** One bubble in the chat UI. Kept separate from the AI module's message model. */
 data class UiMessage(
@@ -57,6 +68,25 @@ data class UiToolCall(
     val isRunning: Boolean,
     val isError: Boolean,
     val result: String,
+    val approvalPending: Boolean = false,
+)
+
+private data class AgentRunContext(
+    val assistantId: Long,
+    val requestHistory: List<AgentMessage>,
+    val provider: AssistantProvider,
+    val modelId: String,
+    val apiKey: String,
+    val streaming: Boolean,
+    val requestGeneration: Long,
+    val attachedImage: InlineImage.Loaded?,
+    var generatedImageUri: String? = null,
+    var generatedImageSavedTo: String? = null,
+)
+
+private data class PendingAgentRun(
+    val context: AgentRunContext,
+    val assistantMessage: AgentMessage,
 )
 
 private val toolDisplayJson = Json { prettyPrint = true }
@@ -82,16 +112,24 @@ internal fun List<AgentPart.Tool>.toUiToolCalls(): List<UiToolCall> = map { tool
         .trim()
     val parsed = runCatching { Json.parseToJsonElement(rawResult.ifBlank { "{}" }).jsonObject }
         .getOrNull()
+    val specialistFailure = (parsed?.get("specialists") as? JsonArray)
+        ?.any { specialist ->
+            (specialist as? JsonObject)
+                ?.get("error")
+                ?.jsonPrimitive
+                ?.booleanOrNull == true
+        } == true
     UiToolCall(
         id = tool.toolCallId,
         name = tool.toolName,
         input = tool.input.toPrettyJsonOrNull() ?: tool.input,
-        isRunning = !tool.isExecuted,
-        isError = parsed?.containsKey("error") == true,
+        isRunning = !tool.isExecuted && tool.approvalState !is ToolApprovalState.Pending,
+        isError = parsed?.containsKey("error") == true || specialistFailure,
         result = when {
             rawResult.isBlank() -> ""
             else -> rawResult.toPrettyJsonOrNull() ?: rawResult
         },
+        approvalPending = tool.approvalState is ToolApprovalState.Pending,
     )
 }
 
@@ -175,6 +213,9 @@ class AssistantViewModel(
     private val _busyStatus = MutableStateFlow<String?>(null)
     val busyStatus: StateFlow<String?> = _busyStatus.asStateFlow()
 
+    private val _awaitingApproval = MutableStateFlow(false)
+    val awaitingApproval: StateFlow<Boolean> = _awaitingApproval.asStateFlow()
+
     private val sessionMoods = mutableListOf<String>()
     private val _currentSessionMood = MutableStateFlow<String?>(null)
     val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
@@ -184,6 +225,7 @@ class AssistantViewModel(
     )
 
     private var currentJob: Job? = null
+    private var pendingAgentRun: PendingAgentRun? = null
     private var nextId = 0L
     private var chatGeneration = 0L
     private var activeApiKey: String? = null
@@ -346,6 +388,8 @@ class AssistantViewModel(
     fun newChat() {
         chatGeneration++
         currentJob?.cancel()
+        pendingAgentRun = null
+        _awaitingApproval.value = false
         modelHistory.clear()
         sessionMoods.clear()
         _currentSessionMood.value = null
@@ -360,6 +404,8 @@ class AssistantViewModel(
     fun dispose() {
         assistantApi.close()
         activeApiKey = null
+        pendingAgentRun = null
+        _awaitingApproval.value = false
     }
 
     override fun onCleared() {
@@ -370,7 +416,7 @@ class AssistantViewModel(
 
     private fun runChat(message: String, streaming: Boolean, imageUri: String? = null) {
         if (message.isBlank() && imageUri == null) return
-        if (_busyStatus.value != null) return // one request at a time
+        if (_busyStatus.value != null || pendingAgentRun != null) return
 
         val userId = nextMessageId()
         _messages.update { it + UiMessage(userId, message, isUser = true, imageUri = imageUri) }
@@ -382,9 +428,6 @@ class AssistantViewModel(
         val requestGeneration = chatGeneration
         val provider = activeProvider
         val modelId = activeModelId
-        var generatedImageUri: String? = null
-        var generatedImageSavedTo: String? = null
-        var finishedAssistantResponse: AssistantResponse? = null
         currentJob = viewModelScope.launch {
             try {
                 val apiKey = activeApiKey
@@ -418,120 +461,23 @@ class AssistantViewModel(
                 }
                 val userTurn = AgentMessage(role = MessageRole.USER, parts = userParts)
                 val requestHistory = modelHistory.toList() + userTurn
-                var finishedAssistantMessage: AgentMessage? = null
-                val executeTool: suspend (FunctionCall) -> com.naira.assistant.ai.AssistantToolResult =
-                    { call ->
-                        when (call.name) {
-                            "generate_image" -> com.naira.assistant.ai.AssistantToolResult(
-                                response = ImageToolExecutor.executeGenerateImage(call, appContext, attachedImage),
-                            )
-                            "capture_screen" -> {
-                                val response = ScreenToolExecutor.executeCaptureScreen(call, appContext)
-                                com.naira.assistant.ai.AssistantToolResult(
-                                    response = response,
-                                    image = ScreenToolExecutor.consumeLastCapture(),
-                                )
-                            }
-                            "perform_screen_action" -> {
-                                val response = ScreenToolExecutor.executePerformScreenAction(call, appContext)
-                                com.naira.assistant.ai.AssistantToolResult(
-                                    response = response,
-                                    image = ScreenToolExecutor.consumeLastCapture(),
-                                )
-                            }
-                            else -> com.naira.assistant.ai.AssistantToolResult(toolExecutor(call))
-                        }
-                    }
-
-                assistantApi.streamChat(
-                    apiKey = apiKey,
-                    messages = requestHistory,
-                    systemPrompt = buildInstructions(),
-                    toolDefinitions = BuiltinToolExecutor.definitions,
-                    executeTool = executeTool,
-                    streaming = streaming,
-                    provider = provider,
-                    modelId = modelId,
-                ).collect { event ->
-                    val assistantMessage = when (event) {
-                        is AgentEvent.MessageUpdated -> event.message
-                        is AgentEvent.Finished -> event.message
-                        is AgentEvent.Retrying -> null
-                    }
-                    if (assistantMessage != null) {
-                        if (event is AgentEvent.Finished) finishedAssistantMessage = assistantMessage
-                        val decodedResponse = decodeAssistantResponse(
-                            raw = assistantMessage.toText(),
-                            isFinal = event is AgentEvent.Finished,
-                        )
-                        if (event is AgentEvent.Finished && requestGeneration == chatGeneration) {
-                            finishedAssistantResponse = decodedResponse
-                            decodedResponse?.mood?.let { mood ->
-                                sessionMoods += mood
-                                _currentSessionMood.value = mostFrequentAssistantMood(sessionMoods)
-                            }
-                        }
-                        if (streaming) {
-                            setText(assistantId, decodedResponse?.response.orEmpty())
-                        }
-                        assistantMessage.getTools().forEach { tool ->
-                            val output = tool.output.filterIsInstance<AgentPart.Text>()
-                                .firstOrNull()?.text.orEmpty()
-                            val response = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull()
-                            val toolError = response?.get("error")?.jsonPrimitive?.contentOrNull
-                            if (!toolError.isNullOrBlank() && requestGeneration == chatGeneration) {
-                                _busyStatus.value = "Tool ${tool.toolName} failed: $toolError"
-                            }
-                            val imageUri = response?.get("image_uri")?.jsonPrimitive?.contentOrNull
-                            if (imageUri != null) {
-                                if (tool.toolName == "generate_image") {
-                                    generatedImageUri = imageUri
-                                    generatedImageSavedTo = response["saved_to"]?.jsonPrimitive?.contentOrNull
-                                } else if (tool.toolName == "capture_screen" ||
-                                    tool.toolName == "perform_screen_action"
-                                ) {
-                                    generatedImageUri = imageUri
-                                    generatedImageSavedTo = null
-                                }
-                            }
-                            if (!tool.isExecuted && requestGeneration == chatGeneration) {
-                                _busyStatus.value = "Running tool: ${tool.toolName}..."
-                            }
-                        }
-                        val toolCalls = assistantMessage.getTools().toUiToolCalls()
-                        _messages.update { list ->
-                            list.map {
-                                if (it.id == assistantId) it.copy(
-                                    text = if (streaming) it.text
-                                    else decodedResponse?.response.orEmpty(),
-                                    imageUri = generatedImageUri ?: it.imageUri,
-                                    imageSavedTo = generatedImageSavedTo ?: it.imageSavedTo,
-                                    toolCalls = toolCalls,
-                                ) else it
-                            }
-                        }
-                        if (event is AgentEvent.Finished) _busyStatus.value = null
-                    }
-                }
-
-                finishedAssistantMessage?.let { finished ->
-                    modelHistory.clear()
-                    modelHistory += requestHistory
-                    modelHistory += finished
-                }
-                if (!streaming) {
-                    _messages.update {
-                        it + UiMessage(
-                            assistantId, finishedAssistantResponse?.response.orEmpty(), isUser = false,
-                            imageUri = generatedImageUri,
-                            imageSavedTo = generatedImageSavedTo,
-                            toolCalls = finishedAssistantMessage?.getTools().orEmpty().toUiToolCalls(),
-                        )
-                    }
-                }
-            } catch (_: CancellationException) {
+                collectAgentRun(
+                    AgentRunContext(
+                        assistantId = assistantId,
+                        requestHistory = requestHistory,
+                        provider = provider,
+                        modelId = modelId,
+                        apiKey = apiKey,
+                        streaming = streaming,
+                        requestGeneration = requestGeneration,
+                        attachedImage = attachedImage,
+                    )
+                )
+            } catch (e: CancellationException) {
                 if (streaming) markCancelled(assistantId)
-            } catch (t: Throwable) {
+                restoreInterruptedApproval(assistantId)
+                throw e
+            } catch (t: Exception) {
                 if (requestGeneration == chatGeneration) showError(assistantId, streaming, t, provider)
             } finally {
                 if (requestGeneration == chatGeneration) {
@@ -540,6 +486,292 @@ class AssistantViewModel(
                 }
             }
         }
+    }
+
+    fun resolveToolApproval(assistantId: Long, toolCallId: String, approved: Boolean) {
+        if (_busyStatus.value != null) return
+        val pending = pendingAgentRun ?: return
+        if (pending.context.assistantId != assistantId) return
+
+        var changed = false
+        val updated = pending.assistantMessage.copy(
+            parts = pending.assistantMessage.parts.map { part ->
+                if (part is AgentPart.Tool &&
+                    part.toolCallId == toolCallId &&
+                    part.approvalState is ToolApprovalState.Pending
+                ) {
+                    changed = true
+                    part.copy(
+                        approvalState = if (approved) {
+                            ToolApprovalState.Approved
+                        } else {
+                            ToolApprovalState.Denied("Denied by user")
+                        }
+                    )
+                } else {
+                    part
+                }
+            }
+        )
+        if (!changed) return
+
+        pendingAgentRun = pending.copy(assistantMessage = updated)
+        _awaitingApproval.value = false
+        renderAgentMessage(pending.context, updated, isFinal = false)
+        _busyStatus.value = if (approved) "Resuming approved action..." else "Applying your decision..."
+        currentJob = viewModelScope.launch {
+            try {
+                collectAgentRun(pending.context, updated)
+            } catch (e: CancellationException) {
+                markCancelled(assistantId)
+                restoreInterruptedApproval(assistantId)
+                throw e
+            } catch (t: Exception) {
+                restoreInterruptedApproval(assistantId)
+                showError(assistantId, pending.context.streaming, t, pending.context.provider)
+            } finally {
+                if (pending.context.requestGeneration == chatGeneration) {
+                    _busyStatus.value = null
+                    currentJob = null
+                }
+            }
+        }
+    }
+
+    private suspend fun collectAgentRun(
+        context: AgentRunContext,
+        resumeMessage: AgentMessage? = null,
+    ) {
+        var finishedMessage: AgentMessage? = null
+        var finishedReason: AgentFinishReason? = null
+        val completedSpecialists = AtomicInteger()
+        var delegatedSpecialists = 0
+        val requestHistory = context.requestHistory
+        val currentPending = resumeMessage
+        if (currentPending != null) pendingAgentRun = PendingAgentRun(context, currentPending)
+
+        val executeTool: suspend (FunctionCall) -> com.naira.assistant.ai.AssistantToolResult = { call ->
+            if (call.name == DELEGATE_TOOL_NAME) {
+                val delegation = AgentOrchestrator.parseRequest(call.args)
+                if (!AgentOrchestrator.canReserveSpecialists(
+                        alreadyUsed = delegatedSpecialists,
+                        requested = delegation.tasks.size,
+                    )
+                ) {
+                    com.naira.assistant.ai.AssistantToolResult(
+                        buildJsonObject {
+                            put(
+                                "error",
+                                "This assistant run has reached its limit of " +
+                                    "${AgentOrchestrator.MAX_SPECIALISTS_PER_RUN} specialist tasks.",
+                            )
+                        }
+                    )
+                } else {
+                    delegatedSpecialists += delegation.tasks.size
+                    val result = assistantApi.runSpecialists(
+                        apiKey = context.apiKey,
+                        messages = requestHistory,
+                        tasks = delegation,
+                        provider = context.provider,
+                        modelId = context.modelId,
+                        onProgress = { progress: DelegationProgress ->
+                            if (context.requestGeneration == chatGeneration) {
+                                val completed = if (progress.completed) {
+                                    completedSpecialists.incrementAndGet()
+                                } else {
+                                    completedSpecialists.get()
+                                }
+                                val verb = when {
+                                    !progress.completed -> "working"
+                                    progress.error -> "failed"
+                                    else -> "finished"
+                                }
+                                _busyStatus.value =
+                                    "${progress.role.displayName} $verb " +
+                                        "($completed/${delegation.tasks.size})"
+                            }
+                        },
+                    )
+                    com.naira.assistant.ai.AssistantToolResult(result)
+                }
+            } else {
+                when (call.name) {
+                    "generate_image" -> com.naira.assistant.ai.AssistantToolResult(
+                        response = ImageToolExecutor.executeGenerateImage(
+                            call,
+                            appContext,
+                            context.attachedImage,
+                        ),
+                    )
+                    "capture_screen" -> {
+                        val response = ScreenToolExecutor.executeCaptureScreen(call, appContext)
+                        com.naira.assistant.ai.AssistantToolResult(
+                            response = response,
+                            image = ScreenToolExecutor.consumeLastCapture(),
+                        )
+                    }
+                    "perform_screen_action" -> {
+                        val response = ScreenToolExecutor.executePerformScreenAction(call, appContext)
+                        com.naira.assistant.ai.AssistantToolResult(
+                            response = response,
+                            image = ScreenToolExecutor.consumeLastCapture(),
+                        )
+                    }
+                    else -> com.naira.assistant.ai.AssistantToolResult(toolExecutor(call))
+                }
+            }
+        }
+
+        assistantApi.streamChat(
+            apiKey = context.apiKey,
+            messages = requestHistory + listOfNotNull(resumeMessage),
+            systemPrompt = buildInstructions(),
+            toolDefinitions = BuiltinToolExecutor.definitions,
+            executeTool = executeTool,
+            streaming = context.streaming,
+            provider = context.provider,
+            modelId = context.modelId,
+        ).collect { event ->
+            val assistantMessage = when (event) {
+                is AgentEvent.MessageUpdated -> event.message
+                is AgentEvent.Finished -> event.message
+                is AgentEvent.Retrying -> null
+            } ?: return@collect
+
+            if (event is AgentEvent.Finished) {
+                finishedMessage = assistantMessage
+                finishedReason = event.reason
+            }
+            val decoded = decodeAssistantResponse(
+                raw = assistantMessage.toText(),
+                isFinal = event is AgentEvent.Finished,
+            )
+            if (event is AgentEvent.Finished &&
+                event.reason == AgentFinishReason.Completed &&
+                context.requestGeneration == chatGeneration
+            ) {
+                decoded?.mood?.let { mood ->
+                    sessionMoods += mood
+                    _currentSessionMood.value = mostFrequentAssistantMood(sessionMoods)
+                }
+            }
+
+            assistantMessage.getTools().forEach { tool ->
+                val output = tool.output.filterIsInstance<AgentPart.Text>()
+                    .firstOrNull()?.text.orEmpty()
+                val response = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull()
+                val toolError = response?.get("error")?.jsonPrimitive?.contentOrNull
+                if (!toolError.isNullOrBlank() && context.requestGeneration == chatGeneration) {
+                    _busyStatus.value = "Tool ${tool.toolName} failed: $toolError"
+                }
+                val imageUri = response?.get("image_uri")?.jsonPrimitive?.contentOrNull
+                if (imageUri != null) {
+                    if (tool.toolName == "generate_image") {
+                        context.generatedImageUri = imageUri
+                        context.generatedImageSavedTo = response["saved_to"]?.jsonPrimitive?.contentOrNull
+                    } else if (tool.toolName == "capture_screen" ||
+                        tool.toolName == "perform_screen_action"
+                    ) {
+                        context.generatedImageUri = imageUri
+                        context.generatedImageSavedTo = null
+                    }
+                }
+                if (!tool.isExecuted &&
+                    tool.approvalState !is ToolApprovalState.Pending &&
+                    context.requestGeneration == chatGeneration
+                ) {
+                    _busyStatus.value = "Running tool: ${tool.toolName}..."
+                }
+            }
+
+            if (context.requestGeneration == chatGeneration) {
+                renderAgentMessage(context, assistantMessage, event is AgentEvent.Finished)
+                if (pendingAgentRun?.context?.assistantId == context.assistantId) {
+                    pendingAgentRun = PendingAgentRun(context, assistantMessage)
+                }
+            }
+        }
+
+        val finalMessage = finishedMessage ?: return
+        if (context.requestGeneration != chatGeneration) return
+        if (finishedReason is AgentFinishReason.AwaitingApproval) {
+            pendingAgentRun = PendingAgentRun(context, finalMessage)
+            _awaitingApproval.value = true
+        } else {
+            pendingAgentRun = null
+            _awaitingApproval.value = false
+            modelHistory.clear()
+            modelHistory += context.requestHistory
+            modelHistory += finalMessage
+        }
+    }
+
+    private fun renderAgentMessage(
+        context: AgentRunContext,
+        message: AgentMessage,
+        isFinal: Boolean,
+    ) {
+        val decoded = decodeAssistantResponse(message.toText(), isFinal)
+        _messages.update { current ->
+            var found = false
+            val updated = current.map { item ->
+                if (item.id != context.assistantId) {
+                    item
+                } else {
+                    found = true
+                    item.copy(
+                        text = decoded?.response ?: item.text,
+                        imageUri = context.generatedImageUri ?: item.imageUri,
+                        imageSavedTo = context.generatedImageSavedTo ?: item.imageSavedTo,
+                        toolCalls = message.getTools().toUiToolCalls(),
+                    )
+                }
+            }
+            if (found) updated else updated + UiMessage(
+                id = context.assistantId,
+                text = decoded?.response.orEmpty(),
+                isUser = false,
+                imageUri = context.generatedImageUri,
+                imageSavedTo = context.generatedImageSavedTo,
+                toolCalls = message.getTools().toUiToolCalls(),
+            )
+        }
+    }
+
+    private fun restoreInterruptedApproval(assistantId: Long) {
+        val pending = pendingAgentRun ?: return
+        if (pending.context.assistantId != assistantId) return
+        val restored = pending.assistantMessage.copy(
+            parts = pending.assistantMessage.parts.map { part ->
+                if (part is AgentPart.Tool &&
+                    !part.isExecuted &&
+                    part.approvalState == ToolApprovalState.Approved
+                ) {
+                    part.copy(
+                        approvalState = ToolApprovalState.Pending,
+                        startedAt = null,
+                        finishedAt = null,
+                    )
+                } else {
+                    part
+                }
+            }
+        )
+        pendingAgentRun = PendingAgentRun(pending.context, restored)
+        val stillAwaitingApproval = restored.getTools().any {
+            it.approvalState is ToolApprovalState.Pending
+        }
+        if (stillAwaitingApproval) {
+            _awaitingApproval.value = true
+        } else {
+            _awaitingApproval.value = false
+            modelHistory.clear()
+            modelHistory += pending.context.requestHistory
+            modelHistory += restored
+            pendingAgentRun = null
+        }
+        renderAgentMessage(pending.context, restored, isFinal = false)
     }
 
     private fun showError(
@@ -574,15 +806,6 @@ class AssistantViewModel(
                 else it.copy(text = if (it.text.isBlank()) "(cancelled)" else it.text + " (cancelled)")
             }
         }
-    }
-
-    private fun appendTo(id: Long, chunk: String) {
-        if (chunk.isEmpty()) return
-        _messages.update { list -> list.map { if (it.id == id) it.copy(text = it.text + chunk) else it } }
-    }
-
-    private fun setText(id: Long, text: String) {
-        _messages.update { list -> list.map { if (it.id == id) it.copy(text = text) else it } }
     }
 
     private fun nextMessageId(): Long = nextId++
