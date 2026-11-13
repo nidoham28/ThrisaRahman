@@ -3,6 +3,7 @@ package com.naira.assistant
 import android.app.Application
 import android.util.Log
 import com.naira.assistant.domain.LegacySettingsCleanup
+import com.naira.service.util.NewPipeExtractorInstance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,7 @@ class ThrisaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         cleanUpLegacySettings()
+        NewPipeExtractorInstance.init()
     }
 
     /**

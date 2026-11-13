@@ -1,4 +1,4 @@
-0.0.1-jonaki        0.0.26-dhruvtara     0.0.51-bhadro        0.0.76-champa
+0.0.1-jonaki [x]        0.0.26-dhruvtara     0.0.51-bhadro        0.0.76-champa
 0.0.2-shiuli        0.0.27-shuktara      0.0.52-ashwin        0.0.77-rajanigandha
 0.0.3-meghdoot      0.0.28-purnima       0.0.53-kartik        0.0.78-kathgolap
 0.0.4-brishti       0.0.29-amaboshya     0.0.54-agrahayon     0.0.79-polash

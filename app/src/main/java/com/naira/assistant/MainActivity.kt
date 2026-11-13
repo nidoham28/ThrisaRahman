@@ -6,8 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import com.naira.assistant.core.navigation.ThrisaNavScaffold
 import com.naira.assistant.core.theme.ThrisaTheme
 
 class MainActivity : ComponentActivity() {
@@ -34,9 +36,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ThrisaTheme {
-                // Insets are now handled *inside* App (Scaffold, per-screen
-                // imePadding, etc.). The root just fills the window.
-                App(modifier = Modifier.fillMaxSize())
+                ThrisaTheme(darkTheme = isSystemInDarkTheme()) {
+                    ThrisaNavScaffold(
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }

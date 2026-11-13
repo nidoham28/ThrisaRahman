@@ -13,6 +13,7 @@ composeBom = "2026.09.00"
 
 # ai / common modules
 navigationCompose = "2.10.2"
+newpipeextractor = "v0.27.1"
 okhttp = "5.5.1"
 serializationJson = "1.12.0"
 kotlinxCoroutines = "1.11.0"
@@ -26,6 +27,8 @@ media3 = "1.11.1"
 
 # search module
 jsoup = "1.24.1"
+appcompat = "1.6.1"
+material = "1.10.0"
 
 [libraries]
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
@@ -51,6 +54,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 
 # ai / common modules
 ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktorClientAndroid" }
+newpipeextractor = { module = "com.github.teamnewpipe:NewPipeExtractor", version.ref = "newpipeextractor" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
@@ -72,6 +76,8 @@ androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "medi
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 realtime-kt = { module = "io.github.jan-tennert.supabase:realtime-kt" }
 storage-kt = { module = "io.github.jan-tennert.supabase:storage-kt" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

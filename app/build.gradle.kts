@@ -29,8 +29,8 @@ android {
         applicationId = "com.naira.assistant"
         minSdk = 26
         targetSdk = 37
-        versionCode = 101
-        versionName = "0.0.1-jonaki "
+        versionCode = 102
+        versionName = "0.0.2-shiuli"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -83,6 +83,9 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":speech"))
     implementation(project(":terminal"))
+    implementation(project(":service"))
+
+    implementation(libs.newpipeextractor)
 
     implementation(platform(libs.bom))
     implementation(libs.auth.kt)
