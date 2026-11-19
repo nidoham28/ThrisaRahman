@@ -1,6 +1,3 @@
-NOTICE: AI only update app  module. other module completely locked. AI use read and call functions inside app module.
-
-
 # ai 模块
 
 ## Provider 身份验证
