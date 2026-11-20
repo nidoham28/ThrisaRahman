@@ -78,12 +78,16 @@ class AssistantSettingsStorage(context: Context) {
     fun getRelationship(): RelationType = readEnum(KEY_RELATIONSHIP, RelationType.STRANGER)
     fun setRelationship(value: RelationType) = writeEnum(KEY_RELATIONSHIP, value)
 
-    fun getVoice(): AssistantVoice = readEnum(KEY_VOICE, AssistantVoice.FEMALE)
-    fun setVoice(value: AssistantVoice) = writeEnum(KEY_VOICE, value)
-
     fun getThinkingMode(): AssistantThinkingMode =
         readEnum(KEY_THINKING_MODE, AssistantThinkingMode.AUTO)
     fun setThinkingMode(value: AssistantThinkingMode) = writeEnum(KEY_THINKING_MODE, value)
+
+    fun getSensitiveToolAccessEnabled(): Boolean =
+        prefs.getBoolean(KEY_SENSITIVE_TOOL_ACCESS, false)
+
+    fun setSensitiveToolAccessEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_SENSITIVE_TOOL_ACCESS, enabled) }
+    }
 
     private inline fun <reified T : Enum<T>> readEnum(key: String, default: T): T {
         val raw = prefs.getString(key, null) ?: return default
@@ -99,8 +103,8 @@ class AssistantSettingsStorage(context: Context) {
         const val KEY_NAME = "name"
         const val KEY_LANGUAGE = "language"
         const val KEY_RELATIONSHIP = "relationship"
-        const val KEY_VOICE = "voice"
         const val KEY_THINKING_MODE = "thinking_mode"
+        const val KEY_SENSITIVE_TOOL_ACCESS = "sensitive_tool_access"
         const val DEFAULT_NAME = "Assistant"
     }
 }

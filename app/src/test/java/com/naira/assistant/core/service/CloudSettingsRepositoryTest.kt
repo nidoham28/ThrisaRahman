@@ -3,38 +3,16 @@ package com.naira.assistant.core.service
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.AssistantVoice
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.RelationType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudSettingsRepositoryTest {
-    @Test
-    fun `cloud provider refresh preserves local Groq selection`() {
-        assertFalse(
-            shouldApplyRemoteProviderSelection(
-                localProvider = AssistantProvider.GROQ,
-                pendingProvider = null,
-            )
-        )
-        assertTrue(
-            shouldApplyRemoteProviderSelection(
-                localProvider = AssistantProvider.OPENROUTER,
-                pendingProvider = null,
-            )
-        )
-        assertFalse(
-            shouldApplyRemoteProviderSelection(
-                localProvider = AssistantProvider.GROQ,
-                pendingProvider = AssistantProvider.GEMINI,
-            )
-        )
-    }
-
     @Test
     fun `sync loads all user settings profile and assistant fields`() = runBlocking {
         val local = FakeLocalStore()
@@ -48,13 +26,14 @@ class CloudSettingsRepositoryTest {
             storedMemories = false,
             voiceOutputEnabled = false,
             username = "rahim",
-            displayName = "Rahim",
             phone = "+8801",
             gender = Gender.MALE,
             assistantName = "Mina",
             assistantLanguage = AssistantLanguage.BANGLA,
             relationship = RelationType.FRIEND,
             assistantVoice = AssistantVoice.MALE,
+            assistantThinkingMode = AssistantThinkingMode.OFF,
+            openRouterModelId = "openrouter/sonoma-sky-alpha",
         )
         val remote = FakeRemoteStore(expected)
         val repository = CloudSettingsRepository(local, remote) { USER_ID }
@@ -78,6 +57,8 @@ class CloudSettingsRepositoryTest {
             assistantName = "Mina",
             relationship = RelationType.CLOSE_FRIEND,
             assistantVoice = AssistantVoice.MALE,
+            assistantThinkingMode = AssistantThinkingMode.OFF,
+            openRouterModelId = "openrouter/sonoma-sky-alpha",
         )
         local.markPending(USER_ID, patch)
         val repository = CloudSettingsRepository(local, remote) { USER_ID }
@@ -93,6 +74,8 @@ class CloudSettingsRepositoryTest {
         assertEquals("Mina", remote.settings?.assistantName)
         assertEquals(RelationType.CLOSE_FRIEND, remote.settings?.relationship)
         assertEquals(AssistantVoice.MALE, remote.settings?.assistantVoice)
+        assertEquals(AssistantThinkingMode.OFF, remote.settings?.assistantThinkingMode)
+        assertEquals("openrouter/sonoma-sky-alpha", remote.settings?.openRouterModelId)
         assertTrue(local.pendingPatch(USER_ID).isEmpty)
     }
 
@@ -138,12 +121,14 @@ class CloudSettingsRepositoryTest {
     }
 
     @Test
-    fun `missing settings row is reported without inserting client data`() = runBlocking {
+    fun `missing settings row is initialized with defaults`() = runBlocking {
         val local = FakeLocalStore()
         val remote = FakeRemoteStore(settings = null)
         val repository = CloudSettingsRepository(local, remote) { USER_ID }
 
-        assertTrue(repository.synchronize() is CloudSettingsSyncResult.Failed)
+        assertTrue(repository.synchronize() is CloudSettingsSyncResult.Synced)
+        assertEquals(AssistantLanguage.BANGLA, remote.settings?.language)
+        assertEquals(SpeechEngine.SYSTEM, remote.settings?.speechEngine)
         assertEquals(null, remote.lastPatch)
     }
 
@@ -190,6 +175,11 @@ class CloudSettingsRepositoryTest {
             return settings
         }
 
+        override suspend fun createIfAbsent(userId: String, defaults: CloudSettings): CloudSettings? {
+            if (settings == null) settings = defaults
+            return settings
+        }
+
         override suspend fun update(userId: String, patch: CloudSettingsPatch) {
             if (failUpdates) error("offline")
             lastPatch = patch
@@ -205,13 +195,14 @@ class CloudSettingsRepositoryTest {
                 storedMemories = patch.storedMemories ?: current.storedMemories,
                 voiceOutputEnabled = patch.voiceOutputEnabled ?: current.voiceOutputEnabled,
                 username = patch.username ?: current.username,
-                displayName = patch.displayName ?: current.displayName,
                 phone = patch.phone ?: current.phone,
                 gender = patch.gender ?: current.gender,
                 assistantName = patch.assistantName ?: current.assistantName,
                 assistantLanguage = patch.assistantLanguage ?: current.assistantLanguage,
                 relationship = patch.relationship ?: current.relationship,
                 assistantVoice = patch.assistantVoice ?: current.assistantVoice,
+                assistantThinkingMode = patch.assistantThinkingMode ?: current.assistantThinkingMode,
+                openRouterModelId = patch.openRouterModelId ?: current.openRouterModelId,
             )
         }
     }

@@ -12,5 +12,4 @@ data class ToolDefinition(
     val name: String,
     val description: String,
     val parameters: JsonObject,
-    val requiresApproval: Boolean = false,
 )

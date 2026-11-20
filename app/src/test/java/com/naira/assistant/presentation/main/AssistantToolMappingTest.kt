@@ -1,7 +1,6 @@
 package com.naira.assistant.presentation.main
 
 import me.rerere.ai.ui.UIMessagePart as AgentPart
-import me.rerere.ai.ui.ToolApprovalState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -111,18 +110,16 @@ class AssistantToolMappingTest {
     }
 
     @Test
-    fun `pending tool approval is not presented as running`() {
+    fun `tool calls are presented as running until execution finishes`() {
         val call = listOf(
             AgentPart.Tool(
                 toolCallId = "approval-1",
                 toolName = "perform_screen_action",
                 input = """{"action":"tap"}""",
-                approvalState = ToolApprovalState.Pending,
             ),
         ).toUiToolCalls().single()
 
-        assertTrue(call.approvalPending)
-        assertFalse(call.isRunning)
+        assertTrue(call.isRunning)
     }
 
     @Test

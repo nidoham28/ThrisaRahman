@@ -15,6 +15,7 @@ import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.tools.executor.BuiltinToolExecutor
+import com.naira.assistant.core.tools.ToolRegistry
 import com.naira.assistant.core.tools.executor.ImageToolExecutor
 import com.naira.assistant.core.tools.executor.ScreenToolExecutor
 import com.naira.assistant.domain.settings.ApiKeyStorage
@@ -47,7 +48,6 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
-import me.rerere.ai.ui.ToolApprovalState
 import com.naira.assistant.domain.FunctionCall
 import androidx.core.net.toUri
 import java.util.concurrent.atomic.AtomicInteger
@@ -71,7 +71,6 @@ data class UiToolCall(
     val isRunning: Boolean,
     val isError: Boolean,
     val result: String,
-    val approvalPending: Boolean = false,
 )
 
 private data class AgentRunContext(
@@ -86,11 +85,6 @@ private data class AgentRunContext(
     val attachedImage: InlineImage.Loaded?,
     var generatedImageUri: String? = null,
     var generatedImageSavedTo: String? = null,
-)
-
-private data class PendingAgentRun(
-    val context: AgentRunContext,
-    val assistantMessage: AgentMessage,
 )
 
 private val toolDisplayJson = Json { prettyPrint = true }
@@ -127,13 +121,12 @@ internal fun List<AgentPart.Tool>.toUiToolCalls(): List<UiToolCall> = map { tool
         id = tool.toolCallId,
         name = tool.toolName,
         input = tool.input.toPrettyJsonOrNull() ?: tool.input,
-        isRunning = !tool.isExecuted && tool.approvalState !is ToolApprovalState.Pending,
+        isRunning = !tool.isExecuted,
         isError = parsed?.containsKey("error") == true || specialistFailure,
         result = when {
             rawResult.isBlank() -> ""
             else -> rawResult.toPrettyJsonOrNull() ?: rawResult
         },
-        approvalPending = tool.approvalState is ToolApprovalState.Pending,
     )
 }
 
@@ -217,10 +210,6 @@ class AssistantViewModel(
     /** Null = idle; non-null = a one-line "what is happening right now" status. */
     private val _busyStatus = MutableStateFlow<String?>(null)
     val busyStatus: StateFlow<String?> = _busyStatus.asStateFlow()
-
-    private val _awaitingApproval = MutableStateFlow(false)
-    val awaitingApproval: StateFlow<Boolean> = _awaitingApproval.asStateFlow()
-
     private val sessionMoods = mutableListOf<String>()
     private val _currentSessionMood = MutableStateFlow<String?>(null)
     val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
@@ -230,7 +219,6 @@ class AssistantViewModel(
     )
 
     private var currentJob: Job? = null
-    private var pendingAgentRun: PendingAgentRun? = null
     private var nextId = 0L
     private var chatGeneration = 0L
     private var activeApiKey: String? = null
@@ -249,7 +237,7 @@ class AssistantViewModel(
                 sex = character.gender.ifBlank { "female" },
                 language = activeLanguage.code,
                 relationship = assistantSettingsStorage.getRelationship().id,
-                username = accountStorage.getDisplayName().ifBlank { accountStorage.getUserName() },
+                username = accountStorage.getUserName(),
                 userContext = "",
             )
         ).build()
@@ -366,8 +354,6 @@ class AssistantViewModel(
     fun newChat() {
         chatGeneration++
         currentJob?.cancel()
-        pendingAgentRun = null
-        _awaitingApproval.value = false
         modelHistory.clear()
         sessionMoods.clear()
         _currentSessionMood.value = null
@@ -379,8 +365,6 @@ class AssistantViewModel(
     fun dispose() {
         assistantApi.close()
         activeApiKey = null
-        pendingAgentRun = null
-        _awaitingApproval.value = false
     }
 
     override fun onCleared() {
@@ -391,7 +375,7 @@ class AssistantViewModel(
 
     private fun runChat(message: String, streaming: Boolean, imageUri: String? = null) {
         if (message.isBlank() && imageUri == null) return
-        if (_busyStatus.value != null || pendingAgentRun != null) return
+        if (_busyStatus.value != null) return
 
         val userId = nextMessageId()
         _messages.update { it + UiMessage(userId, message, isUser = true, imageUri = imageUri) }
@@ -455,7 +439,6 @@ class AssistantViewModel(
                 )
             } catch (e: CancellationException) {
                 if (streaming) markCancelled(assistantId)
-                restoreInterruptedApproval(assistantId)
                 throw e
             } catch (t: Exception) {
                 if (requestGeneration == chatGeneration) showError(assistantId, streaming, t, provider)
@@ -468,69 +451,22 @@ class AssistantViewModel(
         }
     }
 
-    fun resolveToolApproval(assistantId: Long, toolCallId: String, approved: Boolean) {
-        if (_busyStatus.value != null) return
-        val pending = pendingAgentRun ?: return
-        if (pending.context.assistantId != assistantId) return
-
-        var changed = false
-        val updated = pending.assistantMessage.copy(
-            parts = pending.assistantMessage.parts.map { part ->
-                if (part is AgentPart.Tool &&
-                    part.toolCallId == toolCallId &&
-                    part.approvalState is ToolApprovalState.Pending
-                ) {
-                    changed = true
-                    part.copy(
-                        approvalState = if (approved) {
-                            ToolApprovalState.Approved
-                        } else {
-                            ToolApprovalState.Denied("Denied by user")
-                        }
-                    )
-                } else {
-                    part
-                }
-            }
-        )
-        if (!changed) return
-
-        pendingAgentRun = pending.copy(assistantMessage = updated)
-        _busyStatus.value = if (approved) "Resuming approved action..." else "Applying your decision..."
-        _awaitingApproval.value = false
-        renderAgentMessage(pending.context, updated, isFinal = false)
-        currentJob = viewModelScope.launch {
-            try {
-                collectAgentRun(pending.context, updated)
-            } catch (e: CancellationException) {
-                markCancelled(assistantId)
-                restoreInterruptedApproval(assistantId)
-                throw e
-            } catch (t: Exception) {
-                restoreInterruptedApproval(assistantId)
-                showError(assistantId, pending.context.streaming, t, pending.context.provider)
-            } finally {
-                if (pending.context.requestGeneration == chatGeneration) {
-                    _busyStatus.value = null
-                    currentJob = null
-                }
-            }
-        }
-    }
-
-    private suspend fun collectAgentRun(
-        context: AgentRunContext,
-        resumeMessage: AgentMessage? = null,
-    ) {
+    private suspend fun collectAgentRun(context: AgentRunContext) {
         var finishedMessage: AgentMessage? = null
-        var finishedReason: AgentFinishReason? = null
         val completedSpecialists = AtomicInteger()
         var delegatedSpecialists = 0
         val requestHistory = context.requestHistory
-        if (resumeMessage != null) pendingAgentRun = PendingAgentRun(context, resumeMessage)
 
         val executeTool: suspend (FunctionCall) -> com.naira.assistant.ai.AssistantToolResult = { call ->
-            if (call.name == DELEGATE_TOOL_NAME) {
+            if (call.name in ToolRegistry.settingsPermissionRequiredNames &&
+                !assistantSettingsStorage.getSensitiveToolAccessEnabled()
+            ) {
+                com.naira.assistant.ai.AssistantToolResult(
+                    buildJsonObject {
+                        put("error", "This action is blocked. Enable Sensitive assistant actions in Settings → Permissions to allow it.")
+                    },
+                )
+            } else if (call.name == DELEGATE_TOOL_NAME) {
                 val delegation = AgentOrchestrator.parseRequest(call.args)
                 if (!AgentOrchestrator.canReserveSpecialists(
                         alreadyUsed = delegatedSpecialists,
@@ -605,7 +541,7 @@ class AssistantViewModel(
 
         assistantApi.streamChat(
             apiKey = context.apiKey,
-            messages = requestHistory + listOfNotNull(resumeMessage),
+            messages = requestHistory,
             systemPrompt = buildInstructions(),
             toolDefinitions = BuiltinToolExecutor.definitions,
             executeTool = executeTool,
@@ -622,7 +558,6 @@ class AssistantViewModel(
 
             if (event is AgentEvent.Finished) {
                 finishedMessage = assistantMessage
-                finishedReason = event.reason
             }
             val decoded = decodeAssistantResponse(
                 raw = assistantMessage.toText(),
@@ -658,34 +593,21 @@ class AssistantViewModel(
                         context.generatedImageSavedTo = null
                     }
                 }
-                if (!tool.isExecuted &&
-                    tool.approvalState !is ToolApprovalState.Pending &&
-                    context.requestGeneration == chatGeneration
-                ) {
+                if (!tool.isExecuted && context.requestGeneration == chatGeneration) {
                     _busyStatus.value = "Running tool: ${tool.toolName}..."
                 }
             }
 
             if (context.requestGeneration == chatGeneration) {
                 renderAgentMessage(context, assistantMessage, event is AgentEvent.Finished)
-                if (pendingAgentRun?.context?.assistantId == context.assistantId) {
-                    pendingAgentRun = PendingAgentRun(context, assistantMessage)
-                }
             }
         }
 
         val finalMessage = finishedMessage ?: return
         if (context.requestGeneration != chatGeneration) return
-        if (finishedReason is AgentFinishReason.AwaitingApproval) {
-            pendingAgentRun = PendingAgentRun(context, finalMessage)
-            _awaitingApproval.value = true
-        } else {
-            pendingAgentRun = null
-            _awaitingApproval.value = false
-            modelHistory.clear()
-            modelHistory += context.requestHistory
-            modelHistory += finalMessage
-        }
+        modelHistory.clear()
+        modelHistory += context.requestHistory
+        modelHistory += finalMessage
     }
 
     private fun renderAgentMessage(
@@ -718,41 +640,6 @@ class AssistantViewModel(
                 toolCalls = message.getTools().toUiToolCalls(),
             )
         }
-    }
-
-    private fun restoreInterruptedApproval(assistantId: Long) {
-        val pending = pendingAgentRun ?: return
-        if (pending.context.assistantId != assistantId) return
-        val restored = pending.assistantMessage.copy(
-            parts = pending.assistantMessage.parts.map { part ->
-                if (part is AgentPart.Tool &&
-                    !part.isExecuted &&
-                    part.approvalState == ToolApprovalState.Approved
-                ) {
-                    part.copy(
-                        approvalState = ToolApprovalState.Pending,
-                        startedAt = null,
-                        finishedAt = null,
-                    )
-                } else {
-                    part
-                }
-            }
-        )
-        pendingAgentRun = PendingAgentRun(pending.context, restored)
-        val stillAwaitingApproval = restored.getTools().any {
-            it.approvalState is ToolApprovalState.Pending
-        }
-        if (stillAwaitingApproval) {
-            _awaitingApproval.value = true
-        } else {
-            _awaitingApproval.value = false
-            modelHistory.clear()
-            modelHistory += pending.context.requestHistory
-            modelHistory += restored
-            pendingAgentRun = null
-        }
-        renderAgentMessage(pending.context, restored, isFinal = false)
     }
 
     private fun showError(

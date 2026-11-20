@@ -254,7 +254,7 @@ class FirebaseMemoryRepository private constructor(
     }
 
     private fun memoriesRef(uid: String): DatabaseReference =
-        database.reference.child("users").child(uid).child("memories")
+        FirebasePaths.memories(database, uid)
 
     private fun DataSnapshot.toMemoryItems(): List<MemoryItem> =
         children.mapNotNull { it.toMemoryItem() }.sortedByDescending(MemoryItem::updatedAt).take(1000)

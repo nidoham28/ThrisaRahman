@@ -27,12 +27,6 @@ class SpeechSettingsStorage(context: Context) {
         SpeechSettingsStorage.engine = engine
     }
 
-    fun getVoice(): AssistantVoice = assistantSettingsStorage.getVoice()
-
-    fun setVoice(voice: AssistantVoice) {
-        assistantSettingsStorage.setVoice(voice)
-    }
-
     fun getCharacter(): AssistantCharacter = assistantSettingsStorage.getCharacter()
 
     private companion object {

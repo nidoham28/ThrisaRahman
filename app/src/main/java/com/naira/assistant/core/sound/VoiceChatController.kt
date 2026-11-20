@@ -22,9 +22,6 @@ interface VoiceChatController {
     /** Null = idle; non-null = a one-line "what is happening right now" status. */
     val busyStatus: StateFlow<String?>
 
-    /** True while an assistant tool is awaiting the user's approval in the chat UI. */
-    val awaitingApproval: StateFlow<Boolean>
-
     /** Sends a user utterance through the chat; the reply streams into [replies]. */
     fun send(text: String)
 

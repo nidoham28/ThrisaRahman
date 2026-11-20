@@ -87,12 +87,11 @@ internal fun checkPermissions(context: Context): PermissionStatus {
     ) == PackageManager.PERMISSION_GRANTED
 
     val mediaPermissions = mediaReadPermissions()
+    // Selected-visual-media access is partial access, so it must not count
+    // toward the full-library permission check. It is only added to the list
+    // on Android 14 and later by mediaReadPermissions().
     val fullMediaPermissions = mediaPermissions.filterNot {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
-        } else {
-            TODO("VERSION.SDK_INT < UPSIDE_DOWN_CAKE")
-        }
+        it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
     }
     val grantedMediaCount = fullMediaPermissions.count {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED

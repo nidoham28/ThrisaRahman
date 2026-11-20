@@ -131,7 +131,6 @@ fun MainScreen(
     val voice = rememberVoiceSession()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
-    val awaitingApproval by viewModel.awaitingApproval.collectAsStateWithLifecycle()
     val currentSessionMood by viewModel.currentSessionMood.collectAsStateWithLifecycle()
 
     // --- Reminders ----------------------------------------------------------
@@ -205,10 +204,8 @@ fun MainScreen(
                     Tab.CHAT -> ChatPage(
                         messages = messages,
                         busyStatus = chatBusyStatus,
-                        awaitingApproval = awaitingApproval,
                         onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
                         onOpenImage = { imageUri -> openImage(context, imageUri) },
-                        onResolveTool = viewModel::resolveToolApproval,
                         onStop = viewModel::cancelCurrent,
                     )
                     Tab.MEMORIES -> MemoriesPage()
@@ -246,7 +243,7 @@ private fun defaultAssistantViewModel(context: Context): AssistantViewModel {
 }
 
 private fun loadDisplayName(storage: AccountSettingsStorage): String =
-    storage.getDisplayName().ifBlank { storage.getUserName() }.ifBlank { "User" }
+    storage.getUserName().ifBlank { "User" }
 
 private fun loadVoiceLanguage(storage: AssistantSettingsStorage): String =
     storage.getLanguage().sttLanguageTag()

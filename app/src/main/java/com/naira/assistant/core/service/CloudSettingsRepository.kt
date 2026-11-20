@@ -10,25 +10,31 @@ import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
-import com.naira.assistant.domain.settings.AssistantVoice
+import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.RelationType
 import com.naira.assistant.domain.settings.SpeechSettingsStorage
 import com.naira.assistant.domain.settings.UserSettingsStorage
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.MutableData
+import com.google.firebase.database.Transaction
+import com.naira.assistant.core.sync.FirebasePaths
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private const val TAG = "CloudSettings"
 
 internal data class CloudSettings(
-    val language: AssistantLanguage,
     val speechEngine: SpeechEngine,
     val activeProvider: AssistantProvider = AssistantProvider.GEMINI,
     val theme: String = "system",
@@ -37,17 +43,16 @@ internal data class CloudSettings(
     val storedMemories: Boolean = true,
     val voiceOutputEnabled: Boolean = true,
     val username: String = "",
-    val displayName: String = "",
     val phone: String = "",
     val gender: Gender = Gender.PREFER_NOT_TO_SAY,
     val assistantName: String = "Assistant",
     val assistantLanguage: AssistantLanguage = AssistantLanguage.BANGLA,
     val relationship: RelationType = RelationType.DEFAULT,
-    val assistantVoice: AssistantVoice = AssistantVoice.FEMALE,
+    val assistantThinkingMode: AssistantThinkingMode = AssistantThinkingMode.AUTO,
+    val openRouterModelId: String = AssistantProvider.OPENROUTER.defaultModelId,
 )
 
 internal data class CloudSettingsPatch(
-    val language: AssistantLanguage? = null,
     val speechEngine: SpeechEngine? = null,
     val activeProvider: AssistantProvider? = null,
     val theme: String? = null,
@@ -56,24 +61,23 @@ internal data class CloudSettingsPatch(
     val storedMemories: Boolean? = null,
     val voiceOutputEnabled: Boolean? = null,
     val username: String? = null,
-    val displayName: String? = null,
     val phone: String? = null,
     val gender: Gender? = null,
     val assistantName: String? = null,
     val assistantLanguage: AssistantLanguage? = null,
     val relationship: RelationType? = null,
-    val assistantVoice: AssistantVoice? = null,
+    val assistantThinkingMode: AssistantThinkingMode? = null,
+    val openRouterModelId: String? = null,
 ) {
     val isEmpty: Boolean
-        get() = language == null && speechEngine == null && theme == null && fontSize == null &&
+        get() = speechEngine == null && theme == null && fontSize == null &&
                 storedHistory == null && storedMemories == null && voiceOutputEnabled == null &&
                 activeProvider == null &&
-                username == null && displayName == null && phone == null && gender == null &&
+                username == null && phone == null && gender == null &&
                 assistantName == null && assistantLanguage == null && relationship == null &&
-                assistantVoice == null
+                assistantThinkingMode == null && openRouterModelId == null
 
     fun merge(override: CloudSettingsPatch): CloudSettingsPatch = CloudSettingsPatch(
-        language = override.language ?: language,
         speechEngine = override.speechEngine ?: speechEngine,
         activeProvider = override.activeProvider ?: activeProvider,
         theme = override.theme ?: theme,
@@ -82,13 +86,13 @@ internal data class CloudSettingsPatch(
         storedMemories = override.storedMemories ?: storedMemories,
         voiceOutputEnabled = override.voiceOutputEnabled ?: voiceOutputEnabled,
         username = override.username ?: username,
-        displayName = override.displayName ?: displayName,
         phone = override.phone ?: phone,
         gender = override.gender ?: gender,
         assistantName = override.assistantName ?: assistantName,
         assistantLanguage = override.assistantLanguage ?: assistantLanguage,
         relationship = override.relationship ?: relationship,
-        assistantVoice = override.assistantVoice ?: assistantVoice,
+        assistantThinkingMode = override.assistantThinkingMode ?: assistantThinkingMode,
+        openRouterModelId = override.openRouterModelId ?: openRouterModelId,
     )
 }
 
@@ -107,17 +111,9 @@ internal interface CloudSettingsLocalStore {
 
 internal interface CloudSettingsRemoteStore {
     suspend fun fetch(userId: String): CloudSettings?
+    suspend fun createIfAbsent(userId: String, defaults: CloudSettings): CloudSettings?
     suspend fun update(userId: String, patch: CloudSettingsPatch)
 }
-
-/**
- * Distinguishes "the server-side rows for this account don't exist yet" from
- * other sync failures. The backend is expected to seed one row in each of
- * `user_settings`, `user_profiles`, and `user_assistant` on signup; if any is
- * missing, we surface a clearer user message instead of the generic
- * "Couldn't sync settings".
- */
-private class CloudSettingsNotSetUpException(message: String) : Exception(message)
 
 internal class CloudSettingsRepository(
     private val local: CloudSettingsLocalStore,
@@ -176,6 +172,7 @@ internal class CloudSettingsRepository(
 
         try {
             val current = remote.fetch(userId)
+                ?: remote.createIfAbsent(userId, defaultCloudSettings())
                 ?: return@withLock CloudSettingsSyncResult.Failed(MISSING_SETTINGS_MESSAGE)
             val patch = local.pendingPatch(userId)
 
@@ -205,11 +202,6 @@ internal class CloudSettingsRepository(
             CloudSettingsSyncResult.Synced(synced)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: CloudSettingsNotSetUpException) {
-            // Distinct from a generic sync failure: the user's backend rows
-            // for this account haven't been seeded yet.
-            Log.w(TAG, "Cloud settings not fully set up: ${e.message}")
-            CloudSettingsSyncResult.Failed(MISSING_SETTINGS_MESSAGE)
         } catch (e: Exception) {
             // Log the raw exception (server messages, serialization errors,
             // schema mismatches) for diagnostics. The user-facing message is
@@ -227,10 +219,9 @@ internal class CloudSettingsRepository(
     }
 }
 
-internal fun shouldApplyRemoteProviderSelection(
-    localProvider: AssistantProvider,
-    pendingProvider: AssistantProvider?,
-): Boolean = pendingProvider == null && localProvider != AssistantProvider.GROQ
+private fun defaultCloudSettings(): CloudSettings = CloudSettings(
+    speechEngine = SpeechEngine.SYSTEM,
+)
 
 /**
  * Lenient variant of [CloudSettingsPatch.matches].
@@ -245,8 +236,7 @@ internal fun shouldApplyRemoteProviderSelection(
  *   "couldn't save" toast on every retry while the data was actually saved.
  */
 private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolean =
-    (language == null || language == settings.language) &&
-            (speechEngine == null || speechEngine == settings.speechEngine) &&
+    (speechEngine == null || speechEngine == settings.speechEngine) &&
             (activeProvider == null || activeProvider == settings.activeProvider) &&
             (theme == null || theme.trim().equals(settings.theme.trim(), ignoreCase = true)) &&
             (fontSize == null || fontSize.trim().equals(settings.fontSize.trim(), ignoreCase = true)) &&
@@ -254,13 +244,16 @@ private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolea
             (storedMemories == null || storedMemories == settings.storedMemories) &&
             (voiceOutputEnabled == null || voiceOutputEnabled == settings.voiceOutputEnabled) &&
             (username == null || username.trim().equals(settings.username.trim(), ignoreCase = true)) &&
-            (displayName == null || displayName.trim().equals(settings.displayName.trim(), ignoreCase = true)) &&
             (phone == null || phone.trim().equals(settings.phone.trim(), ignoreCase = true)) &&
             (gender == null || gender == settings.gender) &&
             (assistantName == null || assistantName.trim().equals(settings.assistantName.trim(), ignoreCase = true)) &&
             (assistantLanguage == null || assistantLanguage == settings.assistantLanguage) &&
             (relationship == null || relationship == settings.relationship) &&
-            (assistantVoice == null || assistantVoice == settings.assistantVoice)
+            (assistantThinkingMode == null || assistantThinkingMode == settings.assistantThinkingMode) &&
+            (openRouterModelId == null || openRouterModelId.trim().equals(
+                settings.openRouterModelId.trim(),
+                ignoreCase = true,
+            ))
 
 /**
  * Process-wide store of pending (not yet confirmed by the server) settings
@@ -349,13 +342,8 @@ private object CloudPendingPatchStore {
     fun applyRemote(userId: String, settings: CloudSettings) {
         synchronized(lock) {
             val patch = pending[userId] ?: CloudSettingsPatch()
-            if (patch.language == null) accountStorage.setLanguage(settings.language)
             if (patch.speechEngine == null) speechStorage.setEngine(settings.speechEngine.name)
-            if (shouldApplyRemoteProviderSelection(
-                    localProvider = apiKeyStorage.getSelectedProvider(userId),
-                    pendingProvider = patch.activeProvider,
-                )
-            ) {
+            if (patch.activeProvider == null) {
                 apiKeyStorage.saveSelectedProvider(settings.activeProvider, userId)
             }
             if (patch.theme == null) userSettingsStorage.setTheme(settings.theme)
@@ -366,13 +354,17 @@ private object CloudPendingPatchStore {
                 userSettingsStorage.setVoiceOutputEnabled(settings.voiceOutputEnabled)
             }
             if (patch.username == null) accountStorage.setUserName(settings.username)
-            if (patch.displayName == null) accountStorage.setDisplayName(settings.displayName)
             if (patch.phone == null) accountStorage.setPhoneNumber(settings.phone)
             if (patch.gender == null) accountStorage.setGender(settings.gender)
             if (patch.assistantName == null) assistantStorage.setName(settings.assistantName)
             if (patch.assistantLanguage == null) assistantStorage.setLanguage(settings.assistantLanguage)
             if (patch.relationship == null) assistantStorage.setRelationship(settings.relationship)
-            if (patch.assistantVoice == null) assistantStorage.setVoice(settings.assistantVoice)
+            if (patch.assistantThinkingMode == null) {
+                assistantStorage.setThinkingMode(settings.assistantThinkingMode)
+            }
+            if (patch.openRouterModelId == null) {
+                apiKeyStorage.saveOpenRouterModelId(settings.openRouterModelId, userId)
+            }
         }
     }
 
@@ -387,7 +379,6 @@ private object CloudPendingPatchStore {
         synchronized(lock) {
             val current = pending[userId] ?: return@synchronized
             val remaining = current.copy(
-                language = current.language.takeUnless { it == patch.language },
                 speechEngine = current.speechEngine.takeUnless { it == patch.speechEngine },
                 activeProvider = current.activeProvider.takeUnless { it == patch.activeProvider },
                 theme = current.theme.takeUnless { it == patch.theme },
@@ -396,13 +387,17 @@ private object CloudPendingPatchStore {
                 storedMemories = current.storedMemories.takeUnless { it == patch.storedMemories },
                 voiceOutputEnabled = current.voiceOutputEnabled.takeUnless { it == patch.voiceOutputEnabled },
                 username = current.username.takeUnless { it == patch.username },
-                displayName = current.displayName.takeUnless { it == patch.displayName },
                 phone = current.phone.takeUnless { it == patch.phone },
                 gender = current.gender.takeUnless { it == patch.gender },
                 assistantName = current.assistantName.takeUnless { it == patch.assistantName },
                 assistantLanguage = current.assistantLanguage.takeUnless { it == patch.assistantLanguage },
                 relationship = current.relationship.takeUnless { it == patch.relationship },
-                assistantVoice = current.assistantVoice.takeUnless { it == patch.assistantVoice },
+                assistantThinkingMode = current.assistantThinkingMode.takeUnless {
+                    it == patch.assistantThinkingMode
+                },
+                openRouterModelId = current.openRouterModelId.takeUnless {
+                    it == patch.openRouterModelId
+                },
             )
             if (remaining.isEmpty) pending.remove(userId) else pending[userId] = remaining
             persist(userId)
@@ -430,7 +425,6 @@ private object CloudPendingPatchStore {
  */
 @Serializable
 private data class PendingPatchDto(
-    val language: String? = null,
     val speechEngine: String? = null,
     val activeProvider: String? = null,
     val theme: String? = null,
@@ -439,20 +433,19 @@ private data class PendingPatchDto(
     val storedMemories: Boolean? = null,
     val voiceOutputEnabled: Boolean? = null,
     val username: String? = null,
-    val displayName: String? = null,
     val phone: String? = null,
     val gender: String? = null,
     val assistantName: String? = null,
     val assistantLanguage: String? = null,
     val relationship: String? = null,
-    val assistantVoice: String? = null,
+    val assistantThinkingMode: String? = null,
+    val openRouterModelId: String? = null,
 )
 
 private inline fun <reified E : Enum<E>> String?.toEnumOrNull(): E? =
     this?.let { value -> enumValues<E>().firstOrNull { it.name == value } }
 
 private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
-    language = language.toEnumOrNull(),
     speechEngine = speechEngine.toEnumOrNull(),
     activeProvider = activeProvider.toEnumOrNull(),
     theme = theme,
@@ -461,17 +454,16 @@ private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
     storedMemories = storedMemories,
     voiceOutputEnabled = voiceOutputEnabled,
     username = username,
-    displayName = displayName,
     phone = phone,
     gender = gender.toEnumOrNull(),
     assistantName = assistantName,
     assistantLanguage = assistantLanguage.toEnumOrNull(),
     relationship = relationship.toEnumOrNull(),
-    assistantVoice = assistantVoice.toEnumOrNull(),
+    assistantThinkingMode = assistantThinkingMode.toEnumOrNull(),
+    openRouterModelId = openRouterModelId,
 )
 
 private fun CloudSettingsPatch.toDto() = PendingPatchDto(
-    language = language?.name,
     speechEngine = speechEngine?.name,
     activeProvider = activeProvider?.name,
     theme = theme,
@@ -480,13 +472,13 @@ private fun CloudSettingsPatch.toDto() = PendingPatchDto(
     storedMemories = storedMemories,
     voiceOutputEnabled = voiceOutputEnabled,
     username = username,
-    displayName = displayName,
     phone = phone,
     gender = gender?.name,
     assistantName = assistantName,
     assistantLanguage = assistantLanguage?.name,
     relationship = relationship?.name,
-    assistantVoice = assistantVoice?.name,
+    assistantThinkingMode = assistantThinkingMode?.name,
+    openRouterModelId = openRouterModelId,
 )
 
 /**
@@ -522,12 +514,94 @@ internal class FirebaseCloudSettingsRemoteStore(
 ) : CloudSettingsRemoteStore {
 
     override suspend fun fetch(userId: String): CloudSettings? {
-        val snapshot = database.getReference("users").child(userId)
+        val settings = FirebasePaths.cloudSettings(database, userId).get().await()
+        val account = FirebasePaths.user(database, userId).get().await()
+        val assistant = FirebasePaths.assistants(database, userId).get().await()
+        val oldSettings = FirebasePaths.user(database, userId)
             .child("settings").child("cloud").get().await()
-        if (!snapshot.exists()) return null
-        val data = snapshot.value as? Map<*, *> ?: return null
+        if (!settings.exists() && !account.exists() && !assistant.exists() && !oldSettings.exists()) return null
+
+        // Prefer the category-specific locations. Values still present in the
+        // old combined settings node remain readable during the transition.
+        val currentSettingsValues = settings.value as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val legacy = (oldSettings.value as? Map<*, *>)?.let { old ->
+            mutableMapOf<Any?, Any?>().apply {
+                putAll(old)
+                putAll(currentSettingsValues)
+            }
+        } ?: currentSettingsValues
+        val accountValues = account.value as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val assistantValues = assistant.value as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val merged = legacy.toMutableMap()
+        merged.putAll(accountValues.filterKeys { it in setOf("username", "phone", "gender") })
+        merged["assistantName"] = assistantValues["name"] ?: merged["assistantName"]
+        merged["assistantLanguage"] = assistantValues["language"] ?: merged["assistantLanguage"]
+        merged["relationship"] = assistantValues["relationship"] ?: merged["relationship"]
+        merged["assistantThinkingMode"] = assistantValues["thinkingMode"] ?: merged["assistantThinkingMode"]
+
+        // Move old account and assistant fields out of user_settings atomically.
+        val migration = mutableMapOf<String, Any?>()
+        fun moveLegacy(key: String, path: String, destination: Map<*, *>, destinationKey: String = key) {
+            val oldValue = legacy[key] ?: return
+            if (destination[destinationKey] == null) migration[path] = oldValue
+            migration["user_settings/$userId/$key"] = null
+        }
+        moveLegacy("username", "users/$userId/username", accountValues)
+        moveLegacy("phone", "users/$userId/phone", accountValues)
+        moveLegacy("gender", "users/$userId/gender", accountValues)
+        moveLegacy("assistantName", "assistants/$userId/name", assistantValues, "name")
+        moveLegacy("assistantLanguage", "assistants/$userId/language", assistantValues, "language")
+        moveLegacy("relationship", "assistants/$userId/relationship", assistantValues)
+        moveLegacy("assistantThinkingMode", "assistants/$userId/thinkingMode", assistantValues, "thinkingMode")
+        val appSettings = setOf(
+            "speechEngine", "activeProvider", "theme", "fontSize", "storedHistory",
+            "storedMemories", "voiceOutputEnabled", "openRouterModelId",
+        )
+        appSettings.forEach { key ->
+            val oldValue = legacy[key] ?: return@forEach
+            if (currentSettingsValues[key] == null) {
+                migration["user_settings/$userId/$key"] = oldValue
+            }
+        }
+        if (oldSettings.exists()) migration["users/$userId/settings/cloud"] = null
+        if (migration.isNotEmpty()) database.reference.updateChildren(migration).await()
+        return merged.toCloudSettings()
+    }
+
+    override suspend fun createIfAbsent(userId: String, defaults: CloudSettings): CloudSettings? =
+        suspendCancellableCoroutine { continuation ->
+            FirebasePaths.cloudSettings(database, userId).runTransaction(
+                object : Transaction.Handler {
+                    override fun doTransaction(currentData: MutableData): Transaction.Result {
+                        if (currentData.value == null) {
+                            currentData.value = defaults.toFirebaseMap()
+                            return Transaction.success(currentData)
+                        }
+                        return Transaction.abort()
+                    }
+
+                    override fun onComplete(
+                        error: DatabaseError?,
+                        committed: Boolean,
+                        currentData: DataSnapshot?,
+                    ) {
+                        if (!continuation.isActive) return
+                        if (error != null) {
+                            continuation.resumeWithException(error.toException())
+                        } else {
+                            continuation.resume(
+                                (currentData?.value as? Map<*, *>)?.toCloudSettings()
+                            )
+                        }
+                    }
+                },
+                false,
+            )
+        }
+
+    private fun Map<*, *>.toCloudSettings(): CloudSettings {
+        val data = this
         return CloudSettings(
-            language = AssistantLanguage.fromDatabaseId(data["language"] as? String),
             speechEngine = when ((data["speechEngine"] as? String)?.lowercase()) {
                 "gemini", "advanced" -> SpeechEngine.ADVANCED
                 else -> SpeechEngine.SYSTEM
@@ -539,39 +613,76 @@ internal class FirebaseCloudSettingsRemoteStore(
             storedMemories = data["storedMemories"] as? Boolean ?: true,
             voiceOutputEnabled = data["voiceOutputEnabled"] as? Boolean ?: true,
             username = data["username"] as? String ?: "",
-            displayName = data["displayName"] as? String ?: "",
             phone = data["phone"] as? String ?: "",
             gender = Gender.fromId(data["gender"] as? String),
             assistantName = data["assistantName"] as? String ?: "Assistant",
             assistantLanguage = AssistantLanguage.fromDatabaseId(data["assistantLanguage"] as? String),
             relationship = RelationType.fromId(data["relationship"] as? String),
-            assistantVoice = AssistantVoice.fromStorageValue(data["assistantVoice"] as? String),
+            assistantThinkingMode = (data["assistantThinkingMode"] as? String)
+                .toEnumOrNull<AssistantThinkingMode>() ?: AssistantThinkingMode.AUTO,
+            openRouterModelId = (data["openRouterModelId"] as? String)
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?: AssistantProvider.OPENROUTER.defaultModelId,
         )
     }
 
+    private fun CloudSettings.toFirebaseMap(): Map<String, Any> = mapOf(
+        "speechEngine" to if (speechEngine == SpeechEngine.ADVANCED) "gemini" else "system",
+        "activeProvider" to activeProvider.name.lowercase(),
+        "theme" to theme,
+        "fontSize" to fontSize,
+        "storedHistory" to storedHistory,
+        "storedMemories" to storedMemories,
+        "voiceOutputEnabled" to voiceOutputEnabled,
+        "openRouterModelId" to openRouterModelId,
+    )
+
     override suspend fun update(userId: String, patch: CloudSettingsPatch) {
-        val data = buildMap<String, Any> {
-            patch.language?.let { put("language", it.language.id) }
-            patch.speechEngine?.let { put("speechEngine", if (it == SpeechEngine.ADVANCED) "gemini" else "system") }
-            patch.activeProvider?.let { put("activeProvider", it.name.lowercase()) }
-            patch.theme?.let { put("theme", it) }
-            patch.fontSize?.let { put("fontSize", it) }
-            patch.storedHistory?.let { put("storedHistory", it) }
-            patch.storedMemories?.let { put("storedMemories", it) }
-            patch.voiceOutputEnabled?.let { put("voiceOutputEnabled", it) }
-            patch.username?.let { put("username", it) }
-            patch.displayName?.let { put("displayName", it) }
-            patch.phone?.let { put("phone", it.ifBlank { "" }) }
-            patch.gender?.let { put("gender", it.id) }
-            patch.assistantName?.let { put("assistantName", it) }
-            patch.assistantLanguage?.let { put("assistantLanguage", it.language.id) }
-            patch.relationship?.let { put("relationship", it.id) }
-            patch.assistantVoice?.let { put("assistantVoice", it.name.lowercase()) }
+        val updates = buildMap<String, Any?> {
+            fun settings(field: String, value: Any?) {
+                put("user_settings/$userId/$field", value)
+            }
+            patch.speechEngine?.let { settings("speechEngine", if (it == SpeechEngine.ADVANCED) "gemini" else "system") }
+            patch.activeProvider?.let { settings("activeProvider", it.name.lowercase()) }
+            patch.theme?.let { settings("theme", it) }
+            patch.fontSize?.let { settings("fontSize", it) }
+            patch.storedHistory?.let { settings("storedHistory", it) }
+            patch.storedMemories?.let { settings("storedMemories", it) }
+            patch.voiceOutputEnabled?.let { settings("voiceOutputEnabled", it) }
+            patch.openRouterModelId?.let { settings("openRouterModelId", it.trim()) }
+
+            patch.username?.let {
+                put("users/$userId/username", it)
+                put("user_settings/$userId/username", null)
+            }
+            patch.phone?.let {
+                put("users/$userId/phone", it.ifBlank { "" })
+                put("user_settings/$userId/phone", null)
+            }
+            patch.gender?.let {
+                put("users/$userId/gender", it.id)
+                put("user_settings/$userId/gender", null)
+            }
+
+            patch.assistantName?.let {
+                put("assistants/$userId/name", it)
+                put("user_settings/$userId/assistantName", null)
+            }
+            patch.assistantLanguage?.let {
+                put("assistants/$userId/language", it.language.id)
+                put("user_settings/$userId/assistantLanguage", null)
+            }
+            patch.relationship?.let {
+                put("assistants/$userId/relationship", it.id)
+                put("user_settings/$userId/relationship", null)
+            }
+            patch.assistantThinkingMode?.let {
+                put("assistants/$userId/thinkingMode", it.name)
+                put("user_settings/$userId/assistantThinkingMode", null)
+            }
         }
-        if (data.isEmpty()) return
-        database.getReference("users").child(userId)
-            .child("settings").child("cloud")
-            .updateChildren(data)
-            .await()
+        if (updates.isEmpty()) return
+        database.reference.updateChildren(updates).await()
     }
 }

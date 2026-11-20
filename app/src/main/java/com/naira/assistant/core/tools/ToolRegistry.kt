@@ -65,7 +65,7 @@ import com.naira.assistant.core.tools.definition.terminalCalculationTool
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
 
-    private val approvalRequiredNames = setOf(
+    val settingsPermissionRequiredNames = setOf(
         "capture_screen",
         "read_screen_text",
         "perform_screen_action",
@@ -173,13 +173,11 @@ object ToolRegistry {
         markTodoDoneTool(),
         markTodoUndoneTool(),
     ).let { registered ->
-        check(approvalRequiredNames.all { required ->
+        check(settingsPermissionRequiredNames.all { required ->
             registered.any { it.name == required }
         }) {
-            "An approval-required tool is missing from the registry."
+            "A settings-permission tool is missing from the registry."
         }
-        registered.map { definition ->
-            definition.copy(requiresApproval = definition.name in approvalRequiredNames)
-        }
+        registered
     }
 }

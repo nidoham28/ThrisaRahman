@@ -276,6 +276,21 @@ internal fun buildTree(
                     )
                 } else null,
                 SettingsNode.Item(
+                    id = "sensitive-tool-access",
+                    title = "Sensitive assistant actions",
+                    subtitle = if (state.sensitiveToolAccessEnabled)
+                        "Screen access, edits and deletions are allowed"
+                    else "Screen access, edits and deletions are blocked",
+                    icon = Icons.Outlined.Security,
+                    onClick = { state.saveSensitiveToolAccess(!state.sensitiveToolAccessEnabled) },
+                    trailing = {
+                        TrailingBadge(
+                            if (state.sensitiveToolAccessEnabled) "ALLOWED" else "BLOCKED",
+                            if (state.sensitiveToolAccessEnabled) Success else Aqua,
+                        )
+                    },
+                ),
+                SettingsNode.Item(
                     id = "permission-mic", title = "Microphone",
                     subtitle = "Voice conversations & speech recognition",
                     icon = Icons.Outlined.Mic,

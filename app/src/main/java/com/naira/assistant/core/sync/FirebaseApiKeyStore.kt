@@ -70,7 +70,7 @@ class FirebaseApiKeyStore(
     }
 
     private fun providerKeysRef(uid: String) =
-        database.reference.child("users").child(uid).child("providerKeys")
+        FirebasePaths.providerKeys(database, uid)
 
     private companion object {
         const val TAG = "FirebaseApiKeyStore"

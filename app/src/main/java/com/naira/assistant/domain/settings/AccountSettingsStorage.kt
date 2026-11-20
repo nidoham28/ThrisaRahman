@@ -72,27 +72,15 @@ class AccountSettingsStorage(context: Context) {
     fun getUserName(): String = username
     fun setUserName(value: String) { username = value }
 
-    fun getDisplayName(): String = displayName
-    fun setDisplayName(value: String) { displayName = value }
-
     fun getGender(): Gender = gender
     fun setGender(value: Gender) { gender = value }
 
     fun getPhoneNumber(): String = phoneNumber
     fun setPhoneNumber(value: String) { phoneNumber = value }
 
-    fun getLanguage(): AssistantLanguage = language
-
-    fun setLanguage(value: AssistantLanguage) {
-        language = value
-    }
-
     private companion object {
         @Volatile
         var username: String = ""
-
-        @Volatile
-        var displayName: String = ""
 
         @Volatile
         var gender: Gender = Gender.PREFER_NOT_TO_SAY
@@ -100,7 +88,5 @@ class AccountSettingsStorage(context: Context) {
         @Volatile
         var phoneNumber: String = ""
 
-        @Volatile
-        var language: AssistantLanguage = AssistantLanguage.BANGLA
     }
 }

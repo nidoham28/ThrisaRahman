@@ -56,8 +56,8 @@ internal class SettingsState(
     private val assistantStorage = AssistantSettingsStorage(context)
     var assistantLanguage by mutableStateOf(assistantStorage.getLanguage())
     var assistantThinkingMode by mutableStateOf(assistantStorage.getThinkingMode())
+    var sensitiveToolAccessEnabled by mutableStateOf(assistantStorage.getSensitiveToolAccessEnabled())
     var username by mutableStateOf(accountStorage.getUserName())
-    var displayName by mutableStateOf(accountStorage.getDisplayName())
     var phone by mutableStateOf(accountStorage.getPhoneNumber())
     var gender by mutableStateOf(accountStorage.getGender())
     var assistantName by mutableStateOf(assistantStorage.getName())
@@ -155,6 +155,11 @@ internal class SettingsState(
         assistantStorage.setThinkingMode(value)
     }
 
+    fun saveSensitiveToolAccess(enabled: Boolean) {
+        sensitiveToolAccessEnabled = enabled
+        assistantStorage.setSensitiveToolAccessEnabled(enabled)
+    }
+
     fun saveProfileField(field: EditField, value: String) {
         val trimmed = value.trim()
         when (field) {
@@ -189,7 +194,6 @@ internal class SettingsState(
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
         username = accountStorage.getUserName()
-        displayName = accountStorage.getDisplayName()
         phone = accountStorage.getPhoneNumber()
         gender = accountStorage.getGender()
         assistantName = assistantStorage.getName()

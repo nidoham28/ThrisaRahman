@@ -49,7 +49,6 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -128,10 +127,8 @@ private fun isOpenableImageUri(uri: String): Boolean =
 fun ChatPage(
     messages: List<UiMessage>,
     busyStatus: String?,
-    awaitingApproval: Boolean,
     onSend: (String, String?) -> Unit,
     onOpenImage: (String) -> Unit,
-    onResolveTool: (Long, String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onStop: (() -> Unit)? = null,
 ) {
@@ -147,7 +144,7 @@ fun ChatPage(
     // (config changes are recompositions, not restarts).
     var attachedImage by remember { mutableStateOf<String?>(null) }
     val isBusy = busyStatus != null
-    val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy && !awaitingApproval
+    val canSend = (draft.isNotBlank() || attachedImage != null) && !isBusy
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -226,9 +223,6 @@ fun ChatPage(
                         MessageBubble(
                             message = message,
                             onOpenImage = onOpenImage,
-                            onResolveTool = { toolId, approved ->
-                                onResolveTool(message.id, toolId, approved)
-                            },
                         )
                     }
                 }
@@ -258,7 +252,7 @@ fun ChatPage(
             ComposerButton(
                 icon = Icons.Outlined.AddPhotoAlternate,
                 description = "Attach an image",
-                enabled = !isBusy && !awaitingApproval,
+                enabled = !isBusy,
                 onClick = {
                     imagePicker.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -269,7 +263,7 @@ fun ChatPage(
                 value = draft,
                 onValueChange = { draft = it },
                 modifier = Modifier.weight(1f),
-                enabled = !isBusy && !awaitingApproval,
+                enabled = !isBusy,
                 textStyle = LocalTextStyle.current.copy(
                     fontSize = BodySize,
                     lineHeight = BodyLineHeight
@@ -537,7 +531,6 @@ private fun SuggestionRow(suggestion: String, onClick: () -> Unit) {
 private fun MessageBubble(
     message: UiMessage,
     onOpenImage: (String) -> Unit,
-    onResolveTool: (String, Boolean) -> Unit,
 ) {
     // Skip empty assistant placeholders (a streamed message with no content
     // yet). User messages are guaranteed non-empty by `canSend`, so a
@@ -578,10 +571,7 @@ private fun MessageBubble(
             if (message.toolCalls.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     message.toolCalls.forEach { call ->
-                        ToolCallChip(
-                            call = call,
-                            onResolve = { approved -> onResolveTool(call.id, approved) },
-                        )
+                        ToolCallChip(call = call)
                     }
                 }
                 if (message.text.isNotBlank() || message.imageUri != null) {
@@ -618,10 +608,7 @@ private fun MessageBubble(
  * message id.
  */
 @Composable
-private fun ToolCallChip(
-    call: UiToolCall,
-    onResolve: (Boolean) -> Unit,
-) {
+private fun ToolCallChip(call: UiToolCall) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(
         Modifier
@@ -652,11 +639,6 @@ private fun ToolCallChip(
                 modifier = Modifier.weight(1f)
             )
             when {
-                call.approvalPending -> Text(
-                    text = "Needs approval",
-                    color = Aqua,
-                    fontSize = CaptionSize,
-                )
                 call.isRunning -> CircularProgressIndicator(
                     modifier = Modifier.size(12.dp),
                     strokeWidth = 2.dp,
@@ -685,11 +667,8 @@ private fun ToolCallChip(
                     .rotate(if (expanded) 180f else 0f)
             )
         }
-        if (call.approvalPending && call.input.isNotBlank() && call.input != "{}") {
-            ToolCallDetail(label = "Requested action", value = call.input)
-        }
         if (expanded) {
-            if (!call.approvalPending && call.input.isNotBlank() && call.input != "{}") {
+            if (call.input.isNotBlank() && call.input != "{}") {
                 ToolCallDetail(label = "Arguments", value = call.input)
             }
             if (call.result.isNotBlank()) {
@@ -698,25 +677,6 @@ private fun ToolCallChip(
                     value = call.result,
                     isError = call.isError,
                 )
-            }
-        }
-        if (call.approvalPending) {
-            Text(
-                text = "This action will run only after you approve it.",
-                color = TextSoft,
-                fontSize = CaptionSize,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = 2.dp),
-            ) {
-                TextButton(onClick = { onResolve(true) }) {
-                    Text("Approve")
-                }
-                TextButton(onClick = { onResolve(false) }) {
-                    Text("Deny")
-                }
             }
         }
     }

@@ -286,7 +286,7 @@ class FirebaseReminderRepository private constructor(
     }
 
     private fun remindersRef(uid: String): DatabaseReference =
-        database.reference.child("users").child(uid).child("reminders")
+        FirebasePaths.reminders(database, uid)
 
     private fun DataSnapshot.toReminderItems(): List<ReminderItem> =
         children.mapNotNull { it.toReminderItem() }.sortedBy(ReminderItem::nextTriggerMs).take(1000)

@@ -74,7 +74,6 @@ class WakeWordForegroundService : Service() {
     private var wakeWordDetector: WakeWordDetector? = null
     private var monitorJob: Job? = null
     private var voiceStateJob: Job? = null
-    private var approvalJob: Job? = null
     private var alertStopJob: Job? = null
     private var alertTone: ToneGenerator? = null
     private var alertAudioFocusRequest: AudioFocusRequest? = null
@@ -140,7 +139,7 @@ class WakeWordForegroundService : Service() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                buildNotification(VoiceState.Preparing, awaitingApproval = false),
+                buildNotification(VoiceState.Preparing),
                 serviceType,
             )
             foreground = true
@@ -157,7 +156,7 @@ class WakeWordForegroundService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
             postNotification(
-                buildNotification(errorState, awaitingApproval = false, ongoing = false),
+                buildNotification(errorState, ongoing = false),
             )
             stopSelf(startId)
         }
@@ -206,7 +205,7 @@ class WakeWordForegroundService : Service() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                buildNotification(_state.value, awaitingApproval = false),
+                buildNotification(_state.value),
                 serviceType,
             )
             foreground = true
@@ -376,11 +375,6 @@ class WakeWordForegroundService : Service() {
                 }
             }
         }
-        approvalJob = serviceScope.launch {
-            assistantViewModel.awaitingApproval.collect {
-                updateNotification()
-            }
-        }
         monitorJob = serviceScope.launch {
             try {
                 while (_isMonitoring.value && currentCoroutineContext().isActive) {
@@ -433,7 +427,7 @@ class WakeWordForegroundService : Service() {
         if (foreground) stopForeground(STOP_FOREGROUND_DETACH)
         foreground = false
         postNotification(
-            buildNotification(errorState, awaitingApproval = false, ongoing = false),
+            buildNotification(errorState, ongoing = false),
         )
         stopSelf()
     }
@@ -457,8 +451,6 @@ class WakeWordForegroundService : Service() {
         monitorJob = null
         voiceStateJob?.cancel()
         voiceStateJob = null
-        approvalJob?.cancel()
-        approvalJob = null
         conversation?.close()
         conversation = null
         wakeWordDetector = null
@@ -493,7 +485,6 @@ class WakeWordForegroundService : Service() {
         postNotification(
             buildNotification(
                 state = _state.value,
-                awaitingApproval = assistant?.awaitingApproval?.value == true,
             ),
         )
     }
@@ -513,13 +504,11 @@ class WakeWordForegroundService : Service() {
 
     private fun buildNotification(
         state: VoiceState,
-        awaitingApproval: Boolean,
         ongoing: Boolean = true,
     ): Notification {
         val status = when {
             alertActive ->
                 "Phone alert is ringing. Say 'stop phone alert' or tap Stop alert."
-            awaitingApproval -> "An action needs your approval. Open Naira to review it."
             state is VoiceState.Error -> state.message
             state is VoiceState.WakeWordListening ->
                 "Listening for Hey Assistant. Wake-word detection runs on-device."
@@ -701,7 +690,6 @@ private fun AssistantViewModel.asVoiceChatController(): VoiceChatController =
             list.lastOrNull { !it.isUser }?.let { AssistantReply(it.text, it.isError) }
         }
         override val busyStatus = this@asVoiceChatController.busyStatus
-        override val awaitingApproval = this@asVoiceChatController.awaitingApproval
         override fun send(text: String) = this@asVoiceChatController.sendMessageStream(text)
         override fun cancelCurrent() = this@asVoiceChatController.cancelCurrent()
     }

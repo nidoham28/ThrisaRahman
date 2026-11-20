@@ -182,14 +182,6 @@ fun SettingsScreen(
             Toast.makeText(context, e.message ?: "Couldn't save the provider key.", Toast.LENGTH_LONG).show()
             return
         }
-        if (provider == AssistantProvider.GROQ) {
-            Toast.makeText(
-                context,
-                "Groq API key changes are saved on this device only; cloud sync needs backend support.",
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
         coroutineScope.launch {
             val synced = try {
                 if (key.isBlank()) apiKeySync.delete(provider)
@@ -247,14 +239,6 @@ fun SettingsScreen(
 
     fun chooseActiveProvider(provider: AssistantProvider) {
         state.saveProvider(provider, userId)
-        if (provider == AssistantProvider.GROQ) {
-            Toast.makeText(
-                context,
-                "Groq selection is saved on this device; cross-device sync needs backend support.",
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
         cloudSettingsRepository.recordChange(CloudSettingsPatch(activeProvider = provider))
         synchronizeCloudSettings()
     }
@@ -420,7 +404,13 @@ fun SettingsScreen(
             cloudSettingsRepository.recordChange(CloudSettingsPatch(assistantLanguage = value))
             synchronizeCloudSettings()
         },
-        onSaveAssistantThinkingMode = state::saveAssistantThinkingMode,
+        onSaveAssistantThinkingMode = { value ->
+            state.saveAssistantThinkingMode(value)
+            cloudSettingsRepository.recordChange(
+                CloudSettingsPatch(assistantThinkingMode = value)
+            )
+            synchronizeCloudSettings()
+        },
         onSaveSpeechEngine = { value ->
             state.saveSpeechEngine(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
@@ -524,6 +514,10 @@ fun SettingsScreen(
             onSave = { value: String ->
                 if (field == EditField.OPENROUTER_MODEL) {
                     state.saveOpenRouterModelId(value)
+                    cloudSettingsRepository.recordChange(
+                        CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
+                    )
+                    synchronizeCloudSettings()
                 } else {
                     state.saveProfileField(field, value)
                     val patch = when (field) {

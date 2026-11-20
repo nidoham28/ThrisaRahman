@@ -201,18 +201,17 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `requires approval for high impact app tools`() {
+    fun `high impact tools do not request runtime approval`() {
         val definition = ToolDefinition(
             name = "perform_screen_action",
             description = "Interact with the current screen",
             parameters = buildJsonObject { put("type", "object") },
-            requiresApproval = true,
         )
         val tool = definition.toAgentTool {
             error("Execution must not be needed to evaluate approval.")
         }
 
-        assertEquals(true, tool.needsApproval(buildJsonObject {}))
+        assertEquals(false, tool.needsApproval(buildJsonObject {}))
     }
 
     @Test
@@ -230,8 +229,7 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `registered privacy and destructive tools require approval`() {
-        val definitions = ToolRegistry.definitions.associateBy { it.name }
+    fun `registered privacy and destructive tools require settings permission`() {
         val protectedTools = setOf(
             "capture_screen",
             "read_screen_text",
@@ -241,9 +239,9 @@ class AssistantApiServiceTest {
             "delete_todo",
         )
 
-        assertTrue(protectedTools.all { definitions[it]?.requiresApproval == true })
-        assertFalse(definitions.getValue("get_current_time").requiresApproval)
-        assertFalse(definitions.getValue("create_note").requiresApproval)
+        assertTrue(protectedTools.all { it in ToolRegistry.settingsPermissionRequiredNames })
+        assertFalse("get_current_time" in ToolRegistry.settingsPermissionRequiredNames)
+        assertFalse("create_note" in ToolRegistry.settingsPermissionRequiredNames)
     }
 
     @Test

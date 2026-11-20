@@ -383,12 +383,11 @@ internal fun ToolDefinition.toAgentTool(
     val properties = parameters["properties"] as? JsonObject ?: JsonObject(emptyMap())
     val required = (parameters["required"] as? JsonArray)
         ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-    val approvalRequired = requiresApproval
     return AiTool(
         name = name,
         description = description,
         parameters = { InputSchema.Obj(properties = properties, required = required) },
-        needsApproval = { approvalRequired },
+        needsApproval = { false },
         execute = { arguments ->
             val objectArguments = arguments as? JsonObject
             if (objectArguments == null) {

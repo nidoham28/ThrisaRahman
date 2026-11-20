@@ -4,7 +4,7 @@ import android.content.Context
 import com.naira.assistant.core.sound.SpeechToText
 import com.naira.assistant.core.sound.SpeechToTextFactory
 import com.naira.assistant.core.sound.TextToSpeech
-import com.naira.assistant.domain.settings.AccountSettingsStorage
+import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.sttLanguageTag
 
 /**
@@ -15,12 +15,12 @@ object AppModule {
     fun createSpeechToText(context: Context): SpeechToText =
         SpeechToTextFactory.create(
             context.applicationContext,
-            AccountSettingsStorage(context.applicationContext).getLanguage().sttLanguageTag(),
+            AssistantSettingsStorage(context.applicationContext).getLanguage().sttLanguageTag(),
         )
 
     fun createTextToSpeech(context: Context): TextToSpeech =
         TextToSpeech(
             context.applicationContext,
-            AccountSettingsStorage(context.applicationContext).getLanguage().sttLanguageTag(),
+            AssistantSettingsStorage(context.applicationContext).getLanguage().sttLanguageTag(),
         )
 }

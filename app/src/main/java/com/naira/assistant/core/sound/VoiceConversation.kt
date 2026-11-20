@@ -90,9 +90,7 @@ class VoiceConversation(
             }
             is VoiceState.Preparing, is VoiceState.Transcribing -> stop()
             is VoiceState.WakeWordListening -> stop()
-            is VoiceState.Thinking -> {
-                if (chat.awaitingApproval.value) stop() else interrupt()
-            }
+            is VoiceState.Thinking -> interrupt()
             is VoiceState.Speaking -> interrupt()
         }
     }
@@ -232,25 +230,21 @@ class VoiceConversation(
         val text: String,
         val isError: Boolean,
         val done: Boolean,
-        val awaitingApproval: Boolean,
     )
 
     /** Speaks the streaming answer sentence by sentence. Returns false when the conversation should end. */
     private suspend fun speakReply(): Boolean {
-        val snapshots = combine(chat.replies, chat.busyStatus, chat.awaitingApproval) { reply, busy, awaitingApproval ->
+        val snapshots = combine(chat.replies, chat.busyStatus) { reply, busy ->
             Snapshot(
                 text = reply?.text.orEmpty(),
                 isError = reply?.isError == true,
-                done = busy == null && !awaitingApproval,
-                awaitingApproval = awaitingApproval,
+                done = busy == null,
             )
         }
         var spoken = 0
         while (true) {
             val s = snapshots.first { it.done || sentenceEnd(it.text, spoken) > spoken }
             if (interrupted) return true
-            if (s.awaitingApproval) _state.value = VoiceState.Thinking
-
             if (s.isError) {
                 reportError(s.text.trim().ifBlank { "Something went wrong." })
                 return false
