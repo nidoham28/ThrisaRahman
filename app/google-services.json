@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "218401631722",
+    "firebase_url": "https://naira-assistant-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "naira-assistant",
+    "storage_bucket": "naira-assistant.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218401631722:android:486f28038f20d5cd3a9693",
+        "android_client_info": {
+          "package_name": "com.naira.assistant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "218401631722-8udm6l4hcisap7obvt8m00lltknvmgor.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGD5J9qdW4fhxU_LazdlJxiUZYb354Sq8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "218401631722-8udm6l4hcisap7obvt8m00lltknvmgor.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

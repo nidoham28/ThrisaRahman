@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Repository interface for persistent AI memories.
  *
- * The production implementation is cloud-only (`SupabaseMemoryRepository`,
- * backed by the `user_memories` table); the interface stays storage-agnostic
+ * The production implementation is cloud-only (`FirebaseMemoryRepository`,
+ * backed by Firebase Realtime Database); the interface stays storage-agnostic
  * so tests or future backends can slot in.
  */
 interface MemoryRepository {
@@ -62,7 +62,7 @@ interface MemoryRepository {
     ): List<MemoryItem>
 
     /**
-     * Fetches a memory item by its local primary key [id].
+     * Fetches a memory item by its numeric compatibility identifier [id].
      */
     suspend fun getById(id: Long): MemoryItem?
 

@@ -12,8 +12,8 @@ import com.naira.assistant.ai.toReasoningLevel
 import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.InstructionsConfig
 import com.naira.assistant.core.service.image.InlineImage
-import com.naira.assistant.core.service.SupabaseAuthService
-import com.naira.assistant.core.sync.SupabaseApiKeyStore
+import com.naira.assistant.core.service.FirebaseAuthService
+import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.tools.executor.BuiltinToolExecutor
 import com.naira.assistant.core.tools.executor.ImageToolExecutor
 import com.naira.assistant.core.tools.executor.ScreenToolExecutor
@@ -201,8 +201,8 @@ class AssistantViewModel(
     private val assistantApi = AssistantApiService(appContext)
     private val apiKeyStorage = ApiKeyStorage(appContext)
     private val sensitiveContentSettingsStorage = SensitiveContentSettingsStorage(appContext)
-    private val authService = SupabaseAuthService()
-    private val apiKeySync = SupabaseApiKeyStore()
+    private val authService = FirebaseAuthService()
+    private val apiKeySync = FirebaseApiKeyStore()
     private val modelHistory = mutableListOf<AgentMessage>()
     private val accountStorage = AccountSettingsStorage(appContext)
     private val assistantSettingsStorage = AssistantSettingsStorage(appContext)
@@ -226,7 +226,7 @@ class AssistantViewModel(
     val currentSessionMood: StateFlow<String?> = _currentSessionMood.asStateFlow()
 
     private val _reduceSensitiveContent = MutableStateFlow(
-        sensitiveContentSettingsStorage.getReduceSensitiveContent(authService.currentUser()?.id)
+        sensitiveContentSettingsStorage.getReduceSensitiveContent(authService.currentUser()?.uid)
     )
 
     private var currentJob: Job? = null
@@ -274,7 +274,7 @@ class AssistantViewModel(
     /** Reload the cloud-backed assistant language when returning from settings. */
     fun refreshAssistantIdentity() {
         activeLanguage = assistantSettingsStorage.getLanguage()
-        val userId = authService.currentUser()?.id
+        val userId = authService.currentUser()?.uid
         _reduceSensitiveContent.value =
             sensitiveContentSettingsStorage.getReduceSensitiveContent(userId)
     }
@@ -320,7 +320,7 @@ class AssistantViewModel(
      */
     private suspend fun reloadProviderSettings(syncCloud: Boolean): String? {
         authService.awaitInitialization()
-        val userId = authService.currentUser()?.id
+        val userId = authService.currentUser()?.uid
         loadLocalProviderSettings(userId)
         if (userId != null && (syncCloud || activeApiKey.isNullOrBlank())) {
             pullCloudApiKeys(userId)
@@ -331,7 +331,7 @@ class AssistantViewModel(
 
     private suspend fun pullCloudApiKeys(userId: String) {
         val cloudKeys = apiKeySync.fetchAll()
-        if (authService.currentUser()?.id != userId) return
+        if (authService.currentUser()?.uid != userId) return
         for ((provider, key) in cloudKeys) {
             if (apiKeyStorage.getApiKey(provider.name, userId) != key) {
                 apiKeyStorage.saveApiKey(provider.name, userId, key)
@@ -357,7 +357,7 @@ class AssistantViewModel(
     }
 
     fun setReduceSensitiveContent(enabled: Boolean) {
-        val userId = authService.currentUser()?.id
+        val userId = authService.currentUser()?.uid
         sensitiveContentSettingsStorage.setReduceSensitiveContent(userId, enabled)
         _reduceSensitiveContent.value = enabled
     }

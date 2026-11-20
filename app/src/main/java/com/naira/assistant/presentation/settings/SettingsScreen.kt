@@ -53,7 +53,6 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
@@ -73,7 +72,6 @@ import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -122,11 +120,11 @@ import com.naira.assistant.core.service.CloudSettingsPatch
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
-import com.naira.assistant.core.service.SupabaseAuthService
-import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
+import com.naira.assistant.core.service.FirebaseAuthService
+import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.sound.SpeechEngine
-import com.naira.assistant.core.sync.SupabaseApiKeyStore
+import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.Lilac
@@ -154,7 +152,7 @@ import kotlinx.coroutines.launch
 /* ------------------------------------------------------------------ */
 
 enum class SettingsDestination {
-    PERSONA, SUBSCRIPTION, APPEARANCE, PRIVACY, ABOUT
+    APPEARANCE
 }
 
 private enum class RowStyle { NORMAL, PREMIUM, DANGER }
@@ -167,7 +165,6 @@ private enum class EditField(
     val requiresNonBlank: Boolean = false,
 ) {
     USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
-    DISPLAY_NAME("Display name", "Name shown on your profile.", "e.g. Rahim"),
     PHONE("Phone number", "Your profile phone number.", "+880 1XXXXXXXXX", isPhoneNumber = true),
     OPENROUTER_MODEL(
         "OpenRouter model",
@@ -213,8 +210,6 @@ private val rootCategoryOrder = listOf(
     "ai",
     "permissions",
     "engine",
-    "data",
-    "about",
 )
 
 /* ------------------------------------------------------------------ */
@@ -382,7 +377,6 @@ private class SettingsState(
         val trimmed = value.trim()
         when (field) {
             EditField.USERNAME -> { username = trimmed; accountStorage.setUserName(trimmed) }
-            EditField.DISPLAY_NAME -> { displayName = trimmed; accountStorage.setDisplayName(trimmed) }
             EditField.PHONE -> { phone = trimmed; accountStorage.setPhoneNumber(trimmed) }
             else -> Unit
         }
@@ -435,23 +429,23 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val storage = remember { ApiKeyStorage(context.applicationContext) }
-    val authService = remember { SupabaseAuthService() }
+    val authService = remember { FirebaseAuthService() }
     val state = remember(storage) {
         SettingsState(
             storage = storage,
             context = context.applicationContext,
-            currentUserId = { authService.currentUser()?.id },
+            currentUserId = { authService.currentUser()?.uid },
         )
     }
     val cloudSettingsRepository = remember(context) {
         CloudSettingsRepository(
             local = SharedCloudSettingsLocalStore(context.applicationContext),
-            remote = SupabaseCloudSettingsRemoteStore(),
-            currentUserId = { authService.currentUser()?.id },
+            remote = FirebaseCloudSettingsRemoteStore(),
+            currentUserId = { authService.currentUser()?.uid },
         )
     }
     val coroutineScope = rememberCoroutineScope()
-    val apiKeySync = remember(context) { SupabaseApiKeyStore() }
+    val apiKeySync = remember(context) { FirebaseApiKeyStore() }
     var cloudSyncError by remember { mutableStateOf<String?>(null) }
 
     var pathIds by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
@@ -471,7 +465,7 @@ fun SettingsScreen(
 
     var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
-    val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.id }
+    val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -608,12 +602,14 @@ fun SettingsScreen(
 
     LaunchedEffect(userId) {
         if (userId == null) return@LaunchedEffect
+        cloudSyncError = null
         val cloudKeys = try {
             apiKeySync.fetchAll()
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            emptyMap()
+        } catch (e: Exception) {
+            cloudSyncError = e.message ?: "Couldn't load provider keys from Firebase."
+            return@LaunchedEffect
         }
         cloudKeys.forEach { (provider, key) -> state.saveApiKey(provider, key) }
     }
@@ -860,7 +856,6 @@ fun SettingsScreen(
     editingField?.let { field ->
         val initialValue = when (field) {
             EditField.USERNAME -> state.username
-            EditField.DISPLAY_NAME -> state.displayName
             EditField.PHONE -> state.phone
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
         }
@@ -874,7 +869,6 @@ fun SettingsScreen(
                     state.saveProfileField(field, value)
                     val patch = when (field) {
                         EditField.USERNAME -> CloudSettingsPatch(username = state.username)
-                        EditField.DISPLAY_NAME -> CloudSettingsPatch(displayName = state.displayName)
                         EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
                         EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
                     }
@@ -986,7 +980,11 @@ private fun checkPermissions(context: Context): PermissionStatus {
 
     val mediaPermissions = mediaReadPermissions()
     val fullMediaPermissions = mediaPermissions.filterNot {
-        it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            it == Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+        } else {
+            TODO("VERSION.SDK_INT < UPSIDE_DOWN_CAKE")
+        }
     }
     val grantedMediaCount = fullMediaPermissions.count {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
@@ -1121,12 +1119,6 @@ private fun buildTree(
                     onClick = { onEditField(EditField.USERNAME) },
                 ),
                 SettingsNode.Item(
-                    id = "display-name", title = "Display name",
-                    subtitle = state.displayName.ifBlank { "Set your profile name" },
-                    icon = Icons.Outlined.Person,
-                    onClick = { onEditField(EditField.DISPLAY_NAME) },
-                ),
-                SettingsNode.Item(
                     id = "phone", title = "Phone number",
                     subtitle = state.phone.ifBlank { "Not set" },
                     icon = Icons.Outlined.Phone,
@@ -1136,19 +1128,6 @@ private fun buildTree(
                     id = "gender", title = "Gender", subtitle = "Profile information",
                     icon = Icons.Outlined.Person,
                     trailing = { GenderDropdown(state.gender, onSaveGender) },
-                ),
-                SettingsNode.Item(
-                    id = "subscription", title = "Subscription", subtitle = "Free plan",
-                    icon = Icons.Outlined.WorkspacePremium,
-                    style = RowStyle.PREMIUM,
-                    onClick = { onNavigate(SettingsDestination.SUBSCRIPTION) },
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TrailingBadge("PRO", Premium)
-                            Spacer(Modifier.width(8.dp))
-                            TrailingChevron()
-                        }
-                    }
                 ),
             )
         ),
@@ -1296,18 +1275,6 @@ private fun buildTree(
             icon = Icons.Outlined.DarkMode,
             children = listOf(
                 SettingsNode.Item(
-                    id = "theme", title = "Theme",
-                    icon = Icons.Outlined.DarkMode,
-                    onClick = { onNavigate(SettingsDestination.APPEARANCE) },
-                    trailing = { TrailingValue(state.theme.replaceFirstChar { it.uppercase() }) }
-                ),
-                SettingsNode.Item(
-                    id = "textsize", title = "Text size",
-                    icon = Icons.Outlined.FormatSize,
-                    onClick = { onNavigate(SettingsDestination.APPEARANCE) },
-                    trailing = { TrailingValue(state.fontSize.replaceFirstChar { it.uppercase() }) }
-                ),
-                SettingsNode.Item(
                     id = "language", title = "Language",
                     icon = Icons.Outlined.Language,
                     onClick = { onNavigate(SettingsDestination.APPEARANCE) },
@@ -1445,36 +1412,6 @@ private fun buildTree(
                     icon = Icons.Outlined.Settings,
                     onClick = permissionActions.onOpenAppSettings,
                     trailing = { TrailingChevron() }
-                )
-            )
-        ),
-        SettingsNode.Category(
-            id = "data", title = "Data & Privacy", subtitle = "Your data, your control",
-            icon = Icons.Outlined.Lock,
-            children = listOf(
-                SettingsNode.Item(
-                    id = "privacy-permissions", title = "App permissions",
-                    subtitle = if (permissionStatus.allGranted) "All permissions granted"
-                    else "${permissionStatus.grantedCount} of ${permissionStatus.totalCount} granted",
-                    icon = Icons.Outlined.Security,
-                    onClick = permissionActions.onOpenPermissions,
-                    trailing = {
-                        TrailingBadge(
-                            if (permissionStatus.allGranted) "ALLOWED" else "MANAGE",
-                            if (permissionStatus.allGranted) Success else Aqua
-                        )
-                    }
-                ),
-            )
-        ),
-        SettingsNode.Category(
-            id = "about", title = "About", subtitle = "Version & legal",
-            icon = Icons.Outlined.Info,
-            children = listOf(
-                SettingsNode.Item(
-                    id = "terms", title = "Terms & Privacy",
-                    icon = Icons.Outlined.Description,
-                    onClick = { onNavigate(SettingsDestination.ABOUT) }
                 )
             )
         )

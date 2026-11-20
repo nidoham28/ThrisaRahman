@@ -5,9 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Repository interface for persistent AI-managed reminders.
  *
- * Mirrors the offline-first design of [com.naira.assistant.core.database.memory.MemoryRepository]:
- * all mutations are suspend functions, queries are suspend or Flow-based,
- * and the implementation holds a reactive [StateFlow] cache for Compose UI.
+ * All mutations are suspend functions, queries are suspend or Flow-based,
+ * and the Firebase-backed implementation holds an in-memory [StateFlow] for Compose UI.
  */
 interface ReminderRepository {
 
@@ -70,7 +69,7 @@ interface ReminderRepository {
     suspend fun cancel(id: Long): ReminderItem?
 
     /**
-     * Fetches a single reminder by its local [id].
+     * Fetches a single reminder by its numeric compatibility identifier [id].
      */
     suspend fun getById(id: Long): ReminderItem?
 

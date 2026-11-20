@@ -14,7 +14,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.naira.assistant.core.service.SupabaseAuthService
+import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.service.hasValidatedInternet
 import com.naira.assistant.domain.LoginStateStorage
 import com.naira.assistant.presentation.auth.pages.LoginScreen
@@ -42,7 +42,7 @@ fun ThrisaNavScaffold(
 
     // Shared authentication service.
     val authService = remember {
-        SupabaseAuthService()
+        FirebaseAuthService()
     }
 
     var checkingSignIn by remember {

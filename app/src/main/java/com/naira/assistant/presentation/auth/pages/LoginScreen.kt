@@ -36,7 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.naira.assistant.core.service.SupabaseAuthService
+import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.presentation.auth.components.AuthFieldShape
 import com.naira.assistant.presentation.auth.components.AuthFooter
 import com.naira.assistant.presentation.auth.components.AuthHeader
@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LoginScreen(
     modifier: Modifier = Modifier,
-    authService: SupabaseAuthService = remember { SupabaseAuthService() },
+    authService: FirebaseAuthService = remember { FirebaseAuthService() },
     onBack: (() -> Unit)? = null,
     onLoggedIn: (() -> Unit)? = null,
     onRegisterClick: (() -> Unit)? = null,

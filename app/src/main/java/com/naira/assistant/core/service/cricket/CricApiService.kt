@@ -1,7 +1,7 @@
 package com.naira.assistant.core.service.cricket
 
 import android.content.Context
-import com.naira.assistant.core.service.SupabaseAuthService
+import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.domain.ApiKeyStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -24,7 +24,7 @@ class CricApiService(
 ) {
     private val appContext = context.applicationContext
     private val apiKeyStorage = ApiKeyStorage(appContext)
-    private val authService = SupabaseAuthService()
+    private val authService = FirebaseAuthService()
 
     suspend fun getCurrentMatches(): JsonObject =
         request("currentMatches", mapOf("offset" to "0"))
@@ -38,7 +38,7 @@ class CricApiService(
     }
 
     private suspend fun request(endpoint: String, parameters: Map<String, String>): JsonObject {
-        val apiKey = authService.currentUser()?.id
+        val apiKey = authService.currentUser()?.uid
             ?.let(apiKeyStorage::getCricApiKey)
             ?.trim()
             ?.takeIf(String::isNotEmpty)

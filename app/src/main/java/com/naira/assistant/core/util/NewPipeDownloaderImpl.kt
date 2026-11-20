@@ -1,4 +1,4 @@
-package com.naira.service.util
+package com.naira.assistant.core.util
 
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody

@@ -32,9 +32,9 @@ import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
-import com.naira.assistant.core.service.SupabaseAuthService
-import com.naira.assistant.core.service.SupabaseCloudSettingsRemoteStore
-import com.naira.assistant.core.sync.SupabaseReminderRepository
+import com.naira.assistant.core.service.FirebaseAuthService
+import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
+import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.util.GreetingProvider
 import com.naira.assistant.domain.AccountSettingsStorage
@@ -80,13 +80,13 @@ fun MainScreen(
     // --- Stable singletons --------------------------------------------------
     val accountStorage = remember(appContext) { AccountSettingsStorage(appContext) }
     val assistantSettingsStorage = remember(appContext) { AssistantSettingsStorage(appContext) }
-    val authService = remember { SupabaseAuthService() }
-    val reminderRepository = remember { SupabaseReminderRepository.getInstance() }
+    val authService = remember { FirebaseAuthService() }
+    val reminderRepository = remember { FirebaseReminderRepository.getInstance() }
     val cloudSettingsRepository = remember(appContext, authService) {
         CloudSettingsRepository(
             local = SharedCloudSettingsLocalStore(appContext),
-            remote = SupabaseCloudSettingsRemoteStore(),
-            currentUserId = { authService.currentUser()?.id },
+            remote = FirebaseCloudSettingsRemoteStore(),
+            currentUserId = { authService.currentUser()?.uid },
         )
     }
 

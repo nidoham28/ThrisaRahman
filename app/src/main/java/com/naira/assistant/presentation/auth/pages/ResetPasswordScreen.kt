@@ -55,7 +55,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.naira.assistant.core.service.SupabaseAuthService
+import com.naira.assistant.core.service.FirebaseAuthService
+import com.naira.assistant.core.service.FirebaseSessionStatus
 import com.naira.assistant.core.service.UpdateResult
 import com.naira.assistant.presentation.auth.components.AuthFieldShape
 import com.naira.assistant.presentation.auth.components.AuthHeader
@@ -67,7 +68,6 @@ import com.naira.assistant.presentation.auth.components.authFieldColors
 import com.naira.assistant.presentation.auth.components.showFeedback
 import com.naira.assistant.presentation.auth.components.stripWhitespace
 import com.naira.assistant.presentation.auth.components.validateEmail
-import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,15 +84,14 @@ private enum class ResetStep { Request, Sent, Update }
  *     recovery link signs the user in)
  *
  * @param redirectUrl Deep link the email points to, e.g. "naira://auth-callback".
- *   It must be in Supabase > Auth > URL Configuration > Redirect URLs and match
- *   the scheme/host you set in install(Auth).
+ *   Firebase email actions are configured in the Firebase Console.
  * @param onBack Leave the flow without finishing (pop the screen).
  * @param onCompleted Password changed (navigate to Login).
  */
 @Composable
 fun ResetPasswordScreen(
     modifier: Modifier = Modifier,
-    authService: SupabaseAuthService = remember { SupabaseAuthService() },
+    authService: FirebaseAuthService = remember { FirebaseAuthService() },
     redirectUrl: String? = null,
     onBack: () -> Unit,
     onCompleted: () -> Unit,
@@ -139,7 +138,7 @@ fun ResetPasswordScreen(
     // a from-scratch "forgot password". Document if the semantics change.
     val sessionStatus by authService.sessionStatus.collectAsStateWithLifecycle()
     LaunchedEffect(sessionStatus) {
-        if (sessionStatus is SessionStatus.Authenticated && step != ResetStep.Update) {
+        if (sessionStatus is FirebaseSessionStatus.Authenticated && step != ResetStep.Update) {
             goTo(ResetStep.Update)
         }
     }

@@ -57,7 +57,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.core.database.memory.MemoryCategory
 import com.naira.assistant.core.database.memory.MemoryItem
-import com.naira.assistant.core.sync.SupabaseMemoryRepository
+import com.naira.assistant.core.sync.FirebaseMemoryRepository
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.AquaDeep
 import com.naira.assistant.core.theme.CardBrush
@@ -87,7 +87,7 @@ fun MemoriesPage(
     modifier: Modifier = Modifier,
     assistantName: String = "NAIRA",
 ) {
-    val repository = remember { SupabaseMemoryRepository.getInstance() }
+    val repository = remember { FirebaseMemoryRepository.getInstance() }
     val scope = rememberCoroutineScope()
 
     // Lifecycle-aware collection: pauses while the screen is backgrounded.
@@ -101,13 +101,10 @@ fun MemoriesPage(
     // Losing the dialog on rotation is acceptable (user re-opens).
     var memoryToDelete by remember { mutableStateOf<MemoryItem?>(null) }
 
-    // Shows a spinner only when the DB is empty *and* the first refresh is
-    // still in flight. If the local DB already has cached data, no spinner
-    // flashes (avoids the "No memories yet" flicker on cold open).
+    // Keep the first-load spinner visible until the initial Firebase read completes.
     var isLoading by remember { mutableStateOf(true) }
 
-    // Initial load + every resume. Refresh failures are non-fatal — the
-    // local DB is authoritative for rendering.
+    // Initial load + every resume; Firebase is the persistent source of truth.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         scope.launch {
             try {

@@ -1,4 +1,4 @@
-package com.naira.service.util
+package com.naira.assistant.core.util
 
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList

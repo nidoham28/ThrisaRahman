@@ -6,8 +6,8 @@ import java.util.UUID
 /**
  * Represents a persistent memory item remembered by the AI assistant.
  *
- * @property id Primary key (the `user_memories` row id on Supabase).
- * @property uuid Globally unique identifier (UUIDv4) used as the sync key.
+ * @property id Numeric identifier maintained for compatibility with tool APIs.
+ * @property uuid Globally unique identifier (UUIDv4) used as the Firebase record key.
  * @property content The core text/fact/preference being remembered.
  * @property category The semantic category (e.g. "preference", "fact", "profile", "work").
  * @property importance Importance rating from 1 (minor detail) to 5 (critical core fact).

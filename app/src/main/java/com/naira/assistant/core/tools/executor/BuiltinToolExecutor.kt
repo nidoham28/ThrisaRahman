@@ -6,8 +6,8 @@ import com.naira.assistant.core.database.memory.MemoryRepository
 import com.naira.assistant.core.database.note.SqliteNoteDatabase
 import com.naira.assistant.core.database.reminder.ReminderRepository
 import com.naira.assistant.core.database.todo.SqliteTodoDatabase
-import com.naira.assistant.core.sync.SupabaseMemoryRepository
-import com.naira.assistant.core.sync.SupabaseReminderRepository
+import com.naira.assistant.core.sync.FirebaseMemoryRepository
+import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.tools.ToolRegistry
 import com.naira.assistant.core.tools.executor.AlarmToolExecutor.executeCreateAlarm
 import com.naira.assistant.core.tools.executor.AlarmToolExecutor.executeDeleteAlarm
@@ -92,11 +92,11 @@ object BuiltinToolExecutor {
      * required by device/battery, applications, media playback/volume, device toggles, calendar, alarms, notes, and todo tools.
      *
      * Memory and reminder tools are cloud-only: they read and write the
-     * Supabase `user_memories` / `user_schedule` tables as the signed-in user.
+     * Firestore user memories/reminders for the signed-in user.
      */
     fun executor(context: Context): suspend (FunctionCall) -> JsonObject {
-        val memoryRepo: MemoryRepository = SupabaseMemoryRepository.getInstance()
-        val reminderRepo: ReminderRepository = SupabaseReminderRepository.getInstance()
+        val memoryRepo: MemoryRepository = FirebaseMemoryRepository.getInstance()
+        val reminderRepo: ReminderRepository = FirebaseReminderRepository.getInstance()
 
         val noteRepo = SqliteNoteDatabase.getInstance(context)
         val todoRepo = SqliteTodoDatabase.getInstance(context)

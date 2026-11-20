@@ -2,6 +2,7 @@ package com.naira.assistant
 
 import android.app.Application
 import android.util.Log
+import com.google.firebase.FirebaseApp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -9,7 +10,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.naira.assistant.domain.LegacySettingsCleanup
 import com.naira.assistant.presentation.main.AssistantViewModel
-import com.naira.service.util.NewPipeExtractorInstance
+import com.naira.assistant.core.util.NewPipeExtractorInstance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ class ThrisaApp : Application(), ViewModelStoreOwner {
 
     override fun onCreate() {
         super.onCreate()
+        FirebaseApp.initializeApp(this)
         cleanUpLegacySettings()
         NewPipeExtractorInstance.init()
     }

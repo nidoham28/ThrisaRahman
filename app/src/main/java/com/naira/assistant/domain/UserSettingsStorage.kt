@@ -1,6 +1,6 @@
 package com.naira.assistant.domain
 
-/** In-memory cache for the non-secret fields synchronized from Supabase. */
+/** In-memory cache for the non-secret fields synchronized from Firebase. */
 class UserSettingsStorage {
     fun getTheme(): String = theme
     fun setTheme(value: String) { theme = value }

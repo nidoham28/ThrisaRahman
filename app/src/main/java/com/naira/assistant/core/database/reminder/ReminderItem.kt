@@ -68,10 +68,10 @@ enum class ReminderPriority(val id: String, val level: Int) {
 }
 
 /**
- * A single reminder item stored locally by the AI assistant.
+ * A single reminder item stored in the user's Firebase Realtime Database.
  *
- * @property id              Local SQLite primary key (autoincrement).
- * @property uuid            Globally unique ID (UUIDv4) for future sync.
+ * @property id              Numeric identifier maintained for compatibility with tool APIs.
+ * @property uuid             Globally unique ID (UUIDv4) used as the Firebase record key.
  * @property title           Short human-readable label (e.g. "Call mom").
  * @property description     Optional longer note for the reminder.
  * @property triggerAtMs     Unix epoch milliseconds when this reminder should first fire.

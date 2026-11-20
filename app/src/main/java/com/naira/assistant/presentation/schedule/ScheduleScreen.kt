@@ -48,7 +48,7 @@ import com.naira.assistant.core.database.reminder.RecurrenceType
 import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderPriority
 import com.naira.assistant.core.database.reminder.ReminderStatus
-import com.naira.assistant.core.sync.SupabaseReminderRepository
+import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.Lilac
@@ -78,15 +78,14 @@ fun ScheduleScreen(
     assistantName: String = "NAIRA",
     onBack: () -> Unit = {},
 ) {
-    val repo = remember { SupabaseReminderRepository.getInstance() }
+    val repo = remember { FirebaseReminderRepository.getInstance() }
     val scope = rememberCoroutineScope()
 
     // Lifecycle-aware: pauses while backgrounded, resumes when the screen
     // comes back into the composition.
     val reminders by repo.observeAll().collectAsStateWithLifecycle()
 
-    // Refresh on first mount AND every resume. Failures are non-fatal — the
-    // local DB is authoritative for rendering, remote is best-effort.
+    // Refresh on first mount and every resume from the Firebase source of truth.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         scope.launch {
             try {

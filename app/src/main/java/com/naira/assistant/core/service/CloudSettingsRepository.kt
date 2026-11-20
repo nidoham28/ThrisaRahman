@@ -15,10 +15,8 @@ import com.naira.assistant.domain.Gender
 import com.naira.assistant.domain.RelationType
 import com.naira.assistant.domain.SpeechSettingsStorage
 import com.naira.assistant.domain.UserSettingsStorage
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.exceptions.HttpRequestException
-import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.query.Columns
+import com.google.firebase.database.FirebaseDatabase
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -218,7 +216,8 @@ internal class CloudSettingsRepository(
             // intentionally generic.
             Log.w(TAG, "Cloud settings sync failed", e)
             val message = when (e) {
-                is HttpRequestException ->
+                is java.net.UnknownHostException,
+                is java.net.SocketTimeoutException ->
                     "Can't reach the settings server. Changes aren't saved yet; retry when connected."
                 else ->
                     "Couldn't sync settings. Changes aren't saved yet; retry."
@@ -516,173 +515,63 @@ internal class SharedCloudSettingsLocalStore(context: Context) : CloudSettingsLo
         CloudPendingPatchStore.clearPending(userId, patch)
 }
 
-internal class SupabaseCloudSettingsRemoteStore(
-    private val client: SupabaseClient = Supabase.client,
+internal class FirebaseCloudSettingsRemoteStore(
+    private val database: FirebaseDatabase = FirebaseDatabase.getInstance(
+        "https://naira-assistant-default-rtdb.asia-southeast1.firebasedatabase.app",
+    ),
 ) : CloudSettingsRemoteStore {
 
-    /**
-     * Fetches the full [CloudSettings] for [userId].
-     *
-     * - Returns `null` when the `user_settings` row is missing (i.e. the
-     *   account has no cloud settings yet).
-     * - Throws [CloudSettingsNotSetUpException] when `user_profiles` or
-     *   `user_assistant` rows are missing — the backend is expected to seed
-     *   all three on signup.
-     *
-     * Row fields are nullable with fallbacks on purpose: a NULL or unexpected
-     * value in one column must degrade that single setting to its default,
-     * not abort the whole sync. [fetch] runs before every upload, so a throw
-     * here used to break download *and* upload until the row was fixed.
-     */
     override suspend fun fetch(userId: String): CloudSettings? {
-        val settings = client.from("user_settings")
-            .select(columns = Columns.list(
-                "uid", "speech_engine", "active_provider", "theme", "font_size", "language",
-                "stored_history", "stored_memories", "voice_output_enabled",
-            )) {
-                filter { eq("uid", userId) }
-            }
-            .decodeList<RemoteSettingsRow>()
-        val profile = client.from("user_profiles")
-            .select(columns = Columns.list("username", "display_name", "phone", "gender")) {
-                filter { eq("id", userId) }
-            }
-            .decodeList<RemoteProfileRow>()
-        val assistant = client.from("user_assistant")
-            .select(columns = Columns.list("name", "language", "relationship", "voice_type")) {
-                filter { eq("uid", userId) }
-            }
-            .decodeList<RemoteAssistantRow>()
-
-        if (settings.size > 1 || profile.size > 1 || assistant.size > 1) {
-            throw CloudSettingsNotSetUpException(
-                "A settings table returned multiple rows for one account",
-            )
-        }
-
-        val settingsRow = settings.singleOrNull() ?: return null
-        val profileRow = profile.singleOrNull()
-            ?: throw CloudSettingsNotSetUpException("user_profiles row missing")
-        val assistantRow = assistant.singleOrNull()
-            ?: throw CloudSettingsNotSetUpException("user_assistant row missing")
-        return settingsRow.toCloudSettings(profileRow, assistantRow)
+        val snapshot = database.getReference("users").child(userId)
+            .child("settings").child("cloud").get().await()
+        if (!snapshot.exists()) return null
+        val data = snapshot.value as? Map<*, *> ?: return null
+        return CloudSettings(
+            language = AssistantLanguage.fromDatabaseId(data["language"] as? String),
+            speechEngine = when ((data["speechEngine"] as? String)?.lowercase()) {
+                "gemini", "advanced" -> SpeechEngine.ADVANCED
+                else -> SpeechEngine.SYSTEM
+            },
+            activeProvider = AssistantProvider.fromStorageValue(data["activeProvider"] as? String),
+            theme = data["theme"] as? String ?: "system",
+            fontSize = data["fontSize"] as? String ?: "medium",
+            storedHistory = data["storedHistory"] as? Boolean ?: true,
+            storedMemories = data["storedMemories"] as? Boolean ?: true,
+            voiceOutputEnabled = data["voiceOutputEnabled"] as? Boolean ?: true,
+            username = data["username"] as? String ?: "",
+            displayName = data["displayName"] as? String ?: "",
+            phone = data["phone"] as? String ?: "",
+            gender = Gender.fromId(data["gender"] as? String),
+            assistantName = data["assistantName"] as? String ?: "Assistant",
+            assistantLanguage = AssistantLanguage.fromDatabaseId(data["assistantLanguage"] as? String),
+            relationship = RelationType.fromId(data["relationship"] as? String),
+            assistantVoice = AssistantVoice.fromStorageValue(data["assistantVoice"] as? String),
+        )
     }
 
     override suspend fun update(userId: String, patch: CloudSettingsPatch) {
-        if (patch.hasSettingsFields()) {
-            client.from("user_settings").update({
-                patch.language?.let { set("language", it.language.id) }
-                patch.speechEngine?.let { set("speech_engine", it.toDatabaseValue()) }
-                patch.activeProvider?.let { set("active_provider", it.name.lowercase()) }
-                patch.theme?.let { set("theme", it) }
-                patch.fontSize?.let { set("font_size", it) }
-                patch.storedHistory?.let { set("stored_history", it) }
-                patch.storedMemories?.let { set("stored_memories", it) }
-                patch.voiceOutputEnabled?.let { set("voice_output_enabled", it) }
-            }) {
-                filter { eq("uid", userId) }
-            }
+        val data = buildMap<String, Any> {
+            patch.language?.let { put("language", it.language.id) }
+            patch.speechEngine?.let { put("speechEngine", if (it == SpeechEngine.ADVANCED) "gemini" else "system") }
+            patch.activeProvider?.let { put("activeProvider", it.name.lowercase()) }
+            patch.theme?.let { put("theme", it) }
+            patch.fontSize?.let { put("fontSize", it) }
+            patch.storedHistory?.let { put("storedHistory", it) }
+            patch.storedMemories?.let { put("storedMemories", it) }
+            patch.voiceOutputEnabled?.let { put("voiceOutputEnabled", it) }
+            patch.username?.let { put("username", it) }
+            patch.displayName?.let { put("displayName", it) }
+            patch.phone?.let { put("phone", it.ifBlank { "" }) }
+            patch.gender?.let { put("gender", it.id) }
+            patch.assistantName?.let { put("assistantName", it) }
+            patch.assistantLanguage?.let { put("assistantLanguage", it.language.id) }
+            patch.relationship?.let { put("relationship", it.id) }
+            patch.assistantVoice?.let { put("assistantVoice", it.name.lowercase()) }
         }
-        if (patch.hasProfileFields()) {
-            client.from("user_profiles").update({
-                patch.username?.let { set("username", it) }
-                patch.displayName?.let { set("display_name", it) }
-                patch.phone?.let { set("phone", it.ifBlank { null }) }
-                patch.gender?.let { set("gender", it.id) }
-            }) {
-                filter { eq("id", userId) }
-            }
-        }
-        if (patch.hasAssistantFields()) {
-            client.from("user_assistant").update({
-                patch.assistantName?.let { set("name", it) }
-                patch.assistantLanguage?.let { set("language", it.language.id) }
-                patch.relationship?.let { set("relationship", it.id) }
-                patch.assistantVoice?.let { set("voice_type", it.name.lowercase()) }
-            }) {
-                filter { eq("uid", userId) }
-            }
-        }
+        if (data.isEmpty()) return
+        database.getReference("users").child(userId)
+            .child("settings").child("cloud")
+            .updateChildren(data)
+            .await()
     }
-
-    private fun RemoteSettingsRow.toCloudSettings(
-        profile: RemoteProfileRow,
-        assistant: RemoteAssistantRow,
-    ) = CloudSettings(
-        language = language.toAssistantLanguage(),
-        speechEngine = speechEngine.toSpeechEngine(),
-        activeProvider = AssistantProvider.fromStorageValue(activeProvider),
-        theme = theme ?: "system",
-        fontSize = fontSize ?: "medium",
-        storedHistory = storedHistory ?: true,
-        storedMemories = storedMemories ?: true,
-        voiceOutputEnabled = voiceOutputEnabled ?: true,
-        username = profile.username.orEmpty(),
-        displayName = profile.displayName.orEmpty(),
-        phone = profile.phone.orEmpty(),
-        gender = Gender.fromId(profile.gender),
-        assistantName = assistant.name ?: "Assistant",
-        assistantLanguage = assistant.language.toAssistantLanguage(),
-        relationship = RelationType.fromId(assistant.relationship),
-        assistantVoice = AssistantVoice.fromStorageValue(assistant.voiceType),
-    )
-
-    private fun SpeechEngine.toDatabaseValue(): String = when (this) {
-        SpeechEngine.SYSTEM -> "system"
-        SpeechEngine.ADVANCED -> "gemini"
-    }
-
-    /** Lenient: NULL or unknown ids fall back to the default language instead of throwing. */
-    private fun String?.toAssistantLanguage(): AssistantLanguage =
-        AssistantLanguage.fromDatabaseId(this)
-
-    /** Lenient: unknown or NULL values fall back to the system engine instead of throwing. */
-    private fun String?.toSpeechEngine(): SpeechEngine = when (this?.trim()?.lowercase()) {
-        "gemini", "advanced" -> SpeechEngine.ADVANCED
-        else -> SpeechEngine.SYSTEM
-    }
-
-    private fun CloudSettingsPatch.hasSettingsFields() =
-        language != null || speechEngine != null || activeProvider != null ||
-                theme != null || fontSize != null ||
-                storedHistory != null || storedMemories != null || voiceOutputEnabled != null
-
-    private fun CloudSettingsPatch.hasProfileFields() =
-        username != null || displayName != null || phone != null || gender != null
-
-    private fun CloudSettingsPatch.hasAssistantFields() =
-        assistantName != null || assistantLanguage != null || relationship != null ||
-                assistantVoice != null
-
-    /** Nullable fields: a NULL column degrades to that setting's default in [toCloudSettings]. */
-    @Serializable
-    @JsonIgnoreUnknownKeys
-    private data class RemoteSettingsRow(
-        @SerialName("language") val language: String? = null,
-        @SerialName("speech_engine") val speechEngine: String? = null,
-        @SerialName("active_provider") val activeProvider: String? = null,
-        @SerialName("theme") val theme: String? = null,
-        @SerialName("font_size") val fontSize: String? = null,
-        @SerialName("stored_history") val storedHistory: Boolean? = null,
-        @SerialName("stored_memories") val storedMemories: Boolean? = null,
-        @SerialName("voice_output_enabled") val voiceOutputEnabled: Boolean? = null,
-    )
-
-    @Serializable
-    @JsonIgnoreUnknownKeys
-    private data class RemoteProfileRow(
-        @SerialName("username") val username: String? = null,
-        @SerialName("display_name") val displayName: String? = null,
-        @SerialName("phone") val phone: String? = null,
-        @SerialName("gender") val gender: String? = null,
-    )
-
-    @Serializable
-    @JsonIgnoreUnknownKeys
-    private data class RemoteAssistantRow(
-        @SerialName("name") val name: String? = null,
-        @SerialName("language") val language: String? = null,
-        @SerialName("relationship") val relationship: String? = null,
-        @SerialName("voice_type") val voiceType: String? = null,
-    )
 }
