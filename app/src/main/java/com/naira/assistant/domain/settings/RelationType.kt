@@ -1,4 +1,4 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 /**
  * The single relationship setting — who she is to the user and how far the

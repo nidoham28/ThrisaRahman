@@ -34,9 +34,9 @@ import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import com.naira.assistant.core.tools.ToolDefinition
-import com.naira.assistant.domain.AssistantProvider
-import com.naira.assistant.domain.AssistantThinkingMode
-import com.naira.assistant.domain.AssistantVoice
+import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantThinkingMode
+import com.naira.assistant.domain.settings.AssistantVoice
 import com.naira.assistant.domain.FunctionCall
 import me.rerere.ai.agent.AgentRequest
 import me.rerere.ai.core.ReasoningLevel

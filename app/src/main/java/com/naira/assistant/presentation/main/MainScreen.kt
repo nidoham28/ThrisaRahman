@@ -37,9 +37,9 @@ import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
 import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.util.GreetingProvider
-import com.naira.assistant.domain.AccountSettingsStorage
-import com.naira.assistant.domain.AssistantSettingsStorage
-import com.naira.assistant.domain.sttLanguageTag
+import com.naira.assistant.domain.settings.AccountSettingsStorage
+import com.naira.assistant.domain.settings.AssistantSettingsStorage
+import com.naira.assistant.domain.settings.sttLanguageTag
 import com.naira.assistant.presentation.main.component.AppDrawer
 import com.naira.assistant.presentation.main.component.AssistantNavigation
 import com.naira.assistant.presentation.main.component.DrawerAction

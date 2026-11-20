@@ -18,7 +18,7 @@ import me.rerere.asr.providers.VolcengineASRController
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import com.naira.assistant.domain.AsrProviderSettings
+import com.naira.assistant.domain.settings.AsrProviderSettings
 
 internal class ModuleSpeechToText(
     context: Context,
@@ -148,19 +148,19 @@ internal fun AsrProviderSettings.toModuleProvider(): ASRProviderSetting {
             "Add an API key for ${provider.displayName} in Settings → Engine → Speech recognition."
         )
     return when (provider) {
-        com.naira.assistant.domain.AsrProvider.SYSTEM ->
+        com.naira.assistant.domain.settings.AsrProvider.SYSTEM ->
             error("Android speech recognition does not use a speech-module provider.")
-        com.naira.assistant.domain.AsrProvider.OPENAI_REALTIME ->
+        com.naira.assistant.domain.settings.AsrProvider.OPENAI_REALTIME ->
             ASRProviderSetting.OpenAIRealtime(apiKey = apiKey)
-        com.naira.assistant.domain.AsrProvider.DASHSCOPE ->
+        com.naira.assistant.domain.settings.AsrProvider.DASHSCOPE ->
             ASRProviderSetting.DashScope(apiKey = apiKey)
-        com.naira.assistant.domain.AsrProvider.VOLCENGINE ->
+        com.naira.assistant.domain.settings.AsrProvider.VOLCENGINE ->
             ASRProviderSetting.Volcengine(apiKey = apiKey)
-        com.naira.assistant.domain.AsrProvider.MIMO ->
+        com.naira.assistant.domain.settings.AsrProvider.MIMO ->
             ASRProviderSetting.MiMo(apiKey = apiKey)
-        com.naira.assistant.domain.AsrProvider.STEP ->
+        com.naira.assistant.domain.settings.AsrProvider.STEP ->
             ASRProviderSetting.Step(apiKey = apiKey)
-        com.naira.assistant.domain.AsrProvider.DEEPSEEK ->
+        com.naira.assistant.domain.settings.AsrProvider.DEEPSEEK ->
             ASRProviderSetting.DeepSeek(apiKey = apiKey)
     }
 }

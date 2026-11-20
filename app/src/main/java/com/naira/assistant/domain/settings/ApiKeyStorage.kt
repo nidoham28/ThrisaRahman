@@ -1,9 +1,10 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import java.util.Locale
+
 
 enum class AssistantProvider(
     val displayName: String,

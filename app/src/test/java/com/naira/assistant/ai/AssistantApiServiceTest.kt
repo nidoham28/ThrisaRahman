@@ -2,7 +2,7 @@ package com.naira.assistant.ai
 
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.core.tools.ToolRegistry
-import com.naira.assistant.domain.AssistantThinkingMode
+import com.naira.assistant.domain.settings.AssistantThinkingMode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -16,7 +16,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessagePart
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 import okhttp3.Request
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals

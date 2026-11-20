@@ -5,7 +5,7 @@ import com.naira.assistant.core.database.reminder.RecurrenceType
 import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderPriority
 import com.naira.assistant.core.database.reminder.ReminderStatus
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.util.UUID

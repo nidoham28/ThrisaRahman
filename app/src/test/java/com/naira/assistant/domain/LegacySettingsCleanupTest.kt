@@ -1,8 +1,13 @@
 package com.naira.assistant.domain
 
+import com.naira.assistant.domain.settings.isSupportedApiPreferenceKey
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+
+
+
+
 
 class LegacySettingsCleanupTest {
     @Test

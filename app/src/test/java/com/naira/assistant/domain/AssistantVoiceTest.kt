@@ -1,8 +1,14 @@
 package com.naira.assistant.domain
 
+import com.naira.assistant.domain.settings.AssistantCharacter
+import com.naira.assistant.domain.settings.AssistantVoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+
+
+
+
 
 class AssistantVoiceTest {
     @Test

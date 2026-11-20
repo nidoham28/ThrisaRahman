@@ -32,8 +32,8 @@ import com.naira.assistant.core.sound.VoiceConversation
 import com.naira.assistant.core.sound.VoiceState
 import com.naira.assistant.core.sound.WakeWordDetector
 import com.naira.assistant.core.sound.isActive
-import com.naira.assistant.domain.AssistantSettingsStorage
-import com.naira.assistant.domain.sttLanguageTag
+import com.naira.assistant.domain.settings.AssistantSettingsStorage
+import com.naira.assistant.domain.settings.sttLanguageTag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope

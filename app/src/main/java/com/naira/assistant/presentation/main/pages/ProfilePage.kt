@@ -55,7 +55,7 @@ import com.naira.assistant.core.theme.OnAqua
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.core.util.GreetingProvider
-import com.naira.assistant.domain.RelationType
+import com.naira.assistant.domain.settings.RelationType
 
 // ──────────────────────────────────────────────────────────────────────────
 // Design tokens

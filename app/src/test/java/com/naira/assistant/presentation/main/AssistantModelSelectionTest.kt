@@ -1,7 +1,7 @@
 package com.naira.assistant.presentation.main
 
 import com.naira.assistant.ai.AssistantApiService
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

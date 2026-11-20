@@ -1,7 +1,7 @@
 package com.naira.assistant.core.sound
 
-import com.naira.assistant.domain.AsrProvider
-import com.naira.assistant.domain.AsrProviderSettings
+import com.naira.assistant.domain.settings.AsrProvider
+import com.naira.assistant.domain.settings.AsrProviderSettings
 import me.rerere.asr.ASRProviderSetting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

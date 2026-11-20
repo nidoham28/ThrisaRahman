@@ -1,7 +1,12 @@
 package com.naira.assistant.domain
 
+import com.naira.assistant.domain.settings.AssistantLanguage
+import com.naira.assistant.domain.settings.LanguageManager
 import org.junit.Assert.assertEquals
 import org.junit.Test
+
+
+
 
 class LanguageManagerTest {
     @Test

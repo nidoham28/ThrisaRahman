@@ -1,6 +1,7 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 import android.content.Context
+
 
 enum class Gender(val id: String, val label: String) {
     MALE("male", "Male"),

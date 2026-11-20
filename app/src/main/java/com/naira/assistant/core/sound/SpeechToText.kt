@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import com.naira.assistant.domain.AsrProviderSettings
+import com.naira.assistant.domain.settings.AsrProviderSettings
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -61,7 +61,7 @@ object SpeechToTextFactory {
         language: String = "bn-BD",
         settings: AsrProviderSettings = AsrProviderSettings(),
     ): SpeechToText =
-        if (settings.provider == com.naira.assistant.domain.AsrProvider.SYSTEM) {
+        if (settings.provider == com.naira.assistant.domain.settings.AsrProvider.SYSTEM) {
             SystemSpeechToText(context.applicationContext, language)
         } else {
             ModuleSpeechToText(context.applicationContext, settings)

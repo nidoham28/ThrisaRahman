@@ -1,6 +1,7 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 import android.content.Context
+
 
 enum class AssistantVoice(
     val label: String,

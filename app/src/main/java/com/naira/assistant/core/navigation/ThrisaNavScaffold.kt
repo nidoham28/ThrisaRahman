@@ -22,7 +22,7 @@ import com.naira.assistant.presentation.auth.pages.RegisterScreen
 import com.naira.assistant.presentation.auth.pages.ResetPasswordScreen
 import com.naira.assistant.presentation.main.MainScreen
 import com.naira.assistant.presentation.schedule.ScheduleScreen
-import com.naira.assistant.presentation.settings.SettingsScreen
+import com.naira.assistant.presentation.settings.screen.SettingsScreen
 import com.naira.assistant.presentation.splash.SplashScreen
 import kotlinx.coroutines.CancellationException
 

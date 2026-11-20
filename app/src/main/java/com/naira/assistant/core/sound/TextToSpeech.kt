@@ -13,9 +13,9 @@ import android.speech.tts.TextToSpeech as AndroidTextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.naira.assistant.ai.AssistantApiService
 import com.naira.assistant.core.config.API_KEYS
-import com.naira.assistant.domain.CharacterVoice
-import com.naira.assistant.domain.AssistantVoice
-import com.naira.assistant.domain.SpeechSettingsStorage
+import com.naira.assistant.domain.settings.CharacterVoice
+import com.naira.assistant.domain.settings.AssistantVoice
+import com.naira.assistant.domain.settings.SpeechSettingsStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope

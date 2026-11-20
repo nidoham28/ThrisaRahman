@@ -1,6 +1,6 @@
 package com.naira.assistant.presentation.main
 
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

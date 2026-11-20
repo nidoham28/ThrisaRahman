@@ -2,7 +2,7 @@ package com.naira.assistant.core.service.cricket
 
 import android.content.Context
 import com.naira.assistant.core.service.FirebaseAuthService
-import com.naira.assistant.domain.ApiKeyStorage
+import com.naira.assistant.domain.settings.ApiKeyStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get

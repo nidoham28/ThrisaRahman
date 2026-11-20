@@ -1,4 +1,4 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 /** In-memory cache for the non-secret fields synchronized from Firebase. */
 class UserSettingsStorage {

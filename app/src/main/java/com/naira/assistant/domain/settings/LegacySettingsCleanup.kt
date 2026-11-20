@@ -1,7 +1,8 @@
-package com.naira.assistant.domain
+package com.naira.assistant.domain.settings
 
 import android.content.Context
 import androidx.core.content.edit
+
 
 object LegacySettingsCleanup {
     fun clearUnsupportedSettings(context: Context) {

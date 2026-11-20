@@ -4,8 +4,8 @@ import android.content.Context
 import com.naira.assistant.core.sound.SpeechToText
 import com.naira.assistant.core.sound.SpeechToTextFactory
 import com.naira.assistant.core.sound.TextToSpeech
-import com.naira.assistant.domain.AccountSettingsStorage
-import com.naira.assistant.domain.sttLanguageTag
+import com.naira.assistant.domain.settings.AccountSettingsStorage
+import com.naira.assistant.domain.settings.sttLanguageTag
 
 /**
  * App-wide dependencies.

@@ -1,11 +1,11 @@
 package com.naira.assistant.core.service
 
 import com.naira.assistant.core.sound.SpeechEngine
-import com.naira.assistant.domain.AssistantLanguage
-import com.naira.assistant.domain.AssistantProvider
-import com.naira.assistant.domain.AssistantVoice
-import com.naira.assistant.domain.Gender
-import com.naira.assistant.domain.RelationType
+import com.naira.assistant.domain.settings.AssistantLanguage
+import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantVoice
+import com.naira.assistant.domain.settings.Gender
+import com.naira.assistant.domain.settings.RelationType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -8,7 +8,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.naira.assistant.domain.LegacySettingsCleanup
+import com.naira.assistant.domain.settings.LegacySettingsCleanup
 import com.naira.assistant.presentation.main.AssistantViewModel
 import com.naira.assistant.core.util.NewPipeExtractorInstance
 import kotlinx.coroutines.CancellationException

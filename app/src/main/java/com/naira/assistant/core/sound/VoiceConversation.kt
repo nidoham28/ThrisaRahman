@@ -2,7 +2,7 @@ package com.naira.assistant.core.sound
 
 import android.content.Context
 import android.speech.SpeechRecognizer
-import com.naira.assistant.domain.AsrProvider
+import com.naira.assistant.domain.settings.AsrProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.naira.assistant.domain.AsrProviderSettingsStorage
+import com.naira.assistant.domain.settings.AsrProviderSettingsStorage
 import java.io.Closeable
 
 // ───────────────────────── State ─────────────────────────

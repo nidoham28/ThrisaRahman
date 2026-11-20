@@ -6,7 +6,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseException
 import com.google.firebase.database.FirebaseDatabase
 import com.naira.assistant.core.sync.model.FirebaseProviderKeyRecord
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 

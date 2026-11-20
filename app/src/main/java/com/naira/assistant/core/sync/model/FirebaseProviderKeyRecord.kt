@@ -1,7 +1,7 @@
 package com.naira.assistant.core.sync.model
 
 import com.google.firebase.database.IgnoreExtraProperties
-import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProvider
 
 @IgnoreExtraProperties
 data class FirebaseProviderKeyRecord(
