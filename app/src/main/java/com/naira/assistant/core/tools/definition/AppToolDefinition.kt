@@ -1,6 +1,8 @@
+
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -9,10 +11,17 @@ import kotlinx.serialization.json.putJsonObject
 fun listInstalledAppsTool() = ToolDefinition(
     name = "list_installed_apps",
     description = """
-        List or search applications installed on the user's Android device.
-        Use when the user asks 'what apps do I have?', 'show my apps', 'list my applications', 
-        or when you need to discover the exact name or package name of an app on the phone.
-        By default, returns launchable user-facing apps.
+        Discover applications installed on the user's Android device.
+
+        Use when the user asks to list, show, find, or search installed apps,
+        or when you need to identify an app's exact display name or package name.
+
+        By default, return launchable user-facing apps only.
+        Set include_system_apps=true only when the user explicitly asks for
+        system apps or a complete package list.
+
+        Use query to search by app name or package name.
+        Do not claim an app is installed unless it appears in the results.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -21,31 +30,42 @@ fun listInstalledAppsTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "Optional search query to filter apps by name or package (e.g. 'camera', 'google', 'music')."
+                    "Optional search term. Matches application names or package names."
                 )
             }
             putJsonObject("include_system_apps") {
                 put("type", "boolean")
                 put(
                     "description",
-                    "Whether to include background/system packages. Default is false (only launchable user apps)."
+                    "Include system and non-launchable packages. Default: false."
                 )
             }
             putJsonObject("limit") {
                 put("type", "integer")
-                put("description", "Maximum number of apps to return (1-100, default 50).")
+                put(
+                    "description",
+                    "Maximum number of results, from 1 to 100. Default: 50."
+                )
             }
         }
         putJsonArray("required") {}
-    },
+    }
 )
 
 fun checkAppInstalledTool() = ToolDefinition(
     name = "check_app_installed",
     description = """
-        Check whether a specific application is installed on the user's device.
-        Use when the user asks 'do I have WhatsApp installed?', 'is Spotify on my phone?', 
-        'is Netflix installed?', or to verify an app exists before attempting to open it.
+        Verify whether a specific application is installed on the user's device.
+
+        Use when the user asks whether an app is installed or when you need
+        to verify an app before opening it.
+
+        Provide app_name for a common or display name, or package_name
+        for an exact Android package identifier. Use both when available
+        to improve identification.
+
+        Do not infer installation from an app's popularity or availability
+        on the Play Store. Report only the result returned by the device.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -54,29 +74,39 @@ fun checkAppInstalledTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "The common or display name of the app (e.g. 'WhatsApp', 'Spotify', 'Chrome', 'Camera')."
+                    "Common or display name of the application, such as WhatsApp or Spotify."
                 )
             }
             putJsonObject("package_name") {
                 put("type", "string")
                 put(
                     "description",
-                    "Optional exact package name (e.g. 'com.whatsapp', 'com.spotify.music')."
+                    "Exact Android package name, such as com.whatsapp. Optional when app_name is provided."
                 )
             }
         }
-        putJsonArray("required") {}
-    },
+        putJsonArray("required") {
+            add(JsonPrimitive("app_name"))
+        }
+    }
 )
 
 fun openAppTool() = ToolDefinition(
     name = "open_app",
     description = """
-        Launch and open an installed application on the user's device when the user asks you to.
-        Open it directly; do not ask the user to launch it themselves or ask for confirmation again.
-        Use when the user says 'open YouTube', 'launch WhatsApp', 'start Spotify', 
-        'open calculator', 'open camera', or any similar request to open an app.
-        You can pass the app name (e.g. 'YouTube') or exact package name if known.
+        Launch an installed application on the user's Android device.
+
+        Use only when the user explicitly asks to open, launch, or start an app.
+        Accept a recognizable app name or an exact package name.
+
+        If the app name is ambiguous, use check_app_installed or
+        list_installed_apps to identify the correct application first.
+
+        Launch the requested app directly without asking for redundant
+        confirmation. Do not claim it opened unless the launch succeeds.
+
+        If the app is not installed, unavailable, or cannot be launched,
+        report the actual result. Never substitute a different app silently.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -85,17 +115,19 @@ fun openAppTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "The display name of the app to open (e.g. 'YouTube', 'Chrome', 'Calculator', 'Camera')."
+                    "Display or common name of the application to launch."
                 )
             }
             putJsonObject("package_name") {
                 put("type", "string")
                 put(
                     "description",
-                    "Optional exact package name to launch directly (e.g. 'com.google.android.youtube')."
+                    "Exact Android package name. Prefer this when already known."
                 )
             }
         }
-        putJsonArray("required") {}
-    },
+        putJsonArray("required") {
+            add(JsonPrimitive("app_name"))
+        }
+    }
 )

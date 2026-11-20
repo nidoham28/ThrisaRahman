@@ -1,3 +1,4 @@
+
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
@@ -7,49 +8,62 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
+/**
+ * Alarm and timer tool definitions.
+ *
+ * These tools interact with the Android device's native Clock app
+ * and maintain locally tracked alarm information.
+ */
+
 fun createAlarmTool() = ToolDefinition(
     name = "create_alarm",
     description = """
-        Set and schedule an alarm on the user's Android device.
-        Use when the user says 'set an alarm for 7:00 AM', 'wake me up at 6:30', 
-        'set alarm for 8 o'clock tomorrow', etc.
-        Triggers the device's native clock alarm and tracks it locally.
+        Create and schedule a new alarm on the user's Android device.
+
+        Use for requests such as setting an alarm, waking up at a specific
+        time, or creating a recurring alarm.
+
+        Rules:
+        - Convert the requested time to 24-hour format.
+        - Always provide hour and minute.
+        - Use days only when repetition is requested.
+        - Use an empty or omitted label when no label is specified.
+        - Do not assume recurring days unless explicitly requested.
+        - Respect AM/PM and relative dates when determining the time.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("hour") {
                 put("type", "integer")
-                put("description", "Hour of the day in 24-hour format (0 to 23).")
+                put("description", "Required. Hour in 24-hour format (0-23).")
             }
             putJsonObject("minute") {
                 put("type", "integer")
-                put("description", "Minute of the hour (0 to 59).")
+                put("description", "Required. Minute (0-59).")
             }
             putJsonObject("label") {
                 put("type", "string")
-                put(
-                    "description",
-                    "Optional alarm label or message (e.g. 'Morning wake up', 'Take medication', 'Workout')."
-                )
+                put("description", "Optional descriptive alarm label.")
             }
             putJsonObject("days") {
                 put("type", "string")
                 put(
                     "description",
-                    "Optional repeating days. Comma-separated day numbers (1=Sunday, 2=Monday, ..., 7=Saturday), " +
-                            "or keywords like 'everyday', 'weekdays', 'weekends'."
+                    "Optional repeat schedule: 'everyday', 'weekdays', " +
+                            "'weekends', or comma-separated day numbers " +
+                            "(1=Sunday, 2=Monday, ..., 7=Saturday)."
                 )
             }
             putJsonObject("vibrate") {
                 put("type", "boolean")
-                put("description", "Whether the alarm should vibrate (default true).")
+                put("description", "Enable vibration. Defaults to true.")
             }
             putJsonObject("skip_ui") {
                 put("type", "boolean")
                 put(
                     "description",
-                    "Whether to set the alarm in the background without opening the clock app (default true)."
+                    "Set in the background without opening Clock. Defaults to true."
                 )
             }
         }
@@ -57,150 +71,202 @@ fun createAlarmTool() = ToolDefinition(
             add("hour")
             add("minute")
         }
-    },
+    }
 )
 
 fun listAlarmsTool() = ToolDefinition(
     name = "list_alarms",
     description = """
-        List all saved or scheduled alarms on the device.
-        Use when the user asks 'what alarms do I have?', 'show my alarms', 
-        'is my 7 AM alarm on?', etc.
+        Retrieve alarms saved on the user's Android device.
+
+        Use when the user asks to see, check, find, or identify their alarms.
+
+        Rules:
+        - Use enabled_only=true when only active alarms are requested.
+        - Use the returned alarm IDs for subsequent operations.
+        - Do not assume an alarm exists without checking the results.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("enabled_only") {
                 put("type", "boolean")
-                put("description", "Filter only enabled/active alarms.")
+                put("description", "Return only enabled alarms. Defaults to false.")
             }
             putJsonObject("limit") {
                 put("type", "integer")
-                put("description", "Maximum number of alarms to return (default 20).")
+                put("description", "Maximum number of results. Defaults to 20.")
             }
         }
         putJsonArray("required") {}
-    },
+    }
 )
 
 fun getAlarmTool() = ToolDefinition(
     name = "get_alarm",
     description = """
-        Fetch details of a specific alarm by its numeric ID.
+        Retrieve complete details of a specific alarm using its numeric ID.
+
+        Use when the user asks about a particular alarm and its ID is known.
+        If the ID is unknown, call list_alarms first.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("id") {
                 put("type", "integer")
-                put("description", "Numeric ID of the alarm.")
+                put("description", "Required. Existing alarm ID.")
             }
         }
-        putJsonArray("required") { add("id") }
-    },
+        putJsonArray("required") {
+            add("id")
+        }
+    }
 )
 
 fun updateAlarmTool() = ToolDefinition(
     name = "update_alarm",
     description = """
-        Update an existing alarm's time, label, repeat days, or active state by its numeric ID.
-        Call `list_alarms` first if you don't know the alarm ID.
+        Modify an existing alarm on the user's Android device.
+
+        Supported changes:
+        - Alarm time (hour and minute).
+        - Label.
+        - Repeating days.
+        - Enabled or disabled state.
+        - Vibration.
+
+        Rules:
+        - Always provide the target alarm ID.
+        - Only include fields the user wants to change.
+        - Do not overwrite unspecified settings.
+        - If the alarm ID is unknown, call list_alarms first.
+        - Never create a new alarm when the user requests an update.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("id") {
                 put("type", "integer")
-                put("description", "Numeric ID of the alarm to update.")
+                put("description", "Required. ID of the existing alarm.")
             }
             putJsonObject("hour") {
                 put("type", "integer")
-                put("description", "New hour in 24-hour format (0 to 23).")
+                put("description", "New hour in 24-hour format (0-23).")
             }
             putJsonObject("minute") {
                 put("type", "integer")
-                put("description", "New minute (0 to 59).")
+                put("description", "New minute (0-59).")
             }
             putJsonObject("label") {
                 put("type", "string")
-                put("description", "New label for the alarm.")
+                put("description", "New alarm label.")
             }
             putJsonObject("days") {
                 put("type", "string")
-                put("description", "New repeat days (e.g. 'weekdays', 'everyday', '1,2,3').")
+                put(
+                    "description",
+                    "New repeat schedule: 'everyday', 'weekdays', " +
+                            "'weekends', or comma-separated day numbers."
+                )
             }
             putJsonObject("enabled") {
                 put("type", "boolean")
-                put("description", "Enable (true) or disable (false) the alarm.")
+                put("description", "Enable or disable the alarm.")
             }
             putJsonObject("vibrate") {
                 put("type", "boolean")
-                put("description", "Enable or disable vibration.")
+                put("description", "Enable or disable alarm vibration.")
             }
         }
-        putJsonArray("required") { add("id") }
-    },
+        putJsonArray("required") {
+            add("id")
+        }
+    }
 )
 
 fun deleteAlarmTool() = ToolDefinition(
     name = "delete_alarm",
     description = """
-        Permanently delete an alarm by its numeric ID.
-        Call `list_alarms` first if you don't know the ID.
+        Permanently delete an existing alarm from the user's Android device.
+
+        Rules:
+        - Requires the exact alarm ID.
+        - If the ID is unknown, call list_alarms first.
+        - Never delete an alarm based on an ambiguous time or label.
+        - Do not use this tool to temporarily disable an alarm.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("id") {
                 put("type", "integer")
-                put("description", "Numeric ID of the alarm to delete.")
+                put("description", "Required. ID of the alarm to delete.")
             }
         }
-        putJsonArray("required") { add("id") }
-    },
+        putJsonArray("required") {
+            add("id")
+        }
+    }
 )
 
 fun setTimerTool() = ToolDefinition(
     name = "set_timer",
     description = """
-        Set and start a countdown timer on the user's Android device.
-        Use when the user says 'set a timer for 10 minutes', 'timer for 30 seconds', 'start 5 min timer', etc.
+        Create and start a countdown timer on the user's Android device.
+
+        Use for requests involving a duration, such as minutes, seconds,
+        or hours.
+
+        Rules:
+        - Convert the requested duration to total seconds.
+        - Always provide length_seconds.
+        - Use a label only when specified or clearly implied.
+        - Do not use this tool for alarms tied to a clock time.
+        - Do not silently change the requested duration.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("length_seconds") {
                 put("type", "integer")
-                put("description", "Length of the timer in seconds (e.g. 300 for 5 minutes).")
+                put(
+                    "description",
+                    "Required. Countdown duration in seconds. Must be greater than zero."
+                )
             }
             putJsonObject("label") {
                 put("type", "string")
-                put(
-                    "description",
-                    "Optional label for the timer (e.g. 'Tea', 'Boil eggs', 'Study')."
-                )
+                put("description", "Optional descriptive timer label.")
             }
             putJsonObject("skip_ui") {
                 put("type", "boolean")
                 put(
                     "description",
-                    "Whether to start the timer in background without opening the clock app (default true)."
+                    "Start in the background without opening Clock. Defaults to true."
                 )
             }
         }
-        putJsonArray("required") { add("length_seconds") }
-    },
+        putJsonArray("required") {
+            add("length_seconds")
+        }
+    }
 )
 
 fun showAlarmsTool() = ToolDefinition(
     name = "show_alarms",
     description = """
-        Open the device's native clock application to view alarms and timers.
-        Use when the user asks to open their clock app or see their alarms on screen.
+        Open the Android Clock app and display the user's alarms and timers.
+
+        Use when the user explicitly asks to open the Clock app,
+        view alarms on screen, or access their clock interface.
+
+        Do not use this tool merely to retrieve alarm information.
+        Use list_alarms for that instead.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {}
         putJsonArray("required") {}
-    },
+    }
 )

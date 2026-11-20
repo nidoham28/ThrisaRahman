@@ -5,135 +5,179 @@ import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderPriority
 import com.naira.assistant.core.database.reminder.ReminderRepository
 import com.naira.assistant.core.database.reminder.ReminderStatus
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
+import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 
 /**
- * Logic implementations for the AI reminder tools:
- *  - `create_reminder`
- *  - `update_reminder`
- *  - `delete_reminder`
- *  - `list_reminders`
- *  - `search_reminders`
- *  - `snooze_reminder`
- *  - `mark_reminder_done`
+ * Executes AI reminder tools.
  */
 object ReminderToolExecutor {
 
-    // ------------------------------------------------------------------
-    // Tool executors
-    // ------------------------------------------------------------------
+    private val validStatuses = setOf(
+        "active", "done", "snoozed", "cancelled"
+    )
 
-    /** Handles `create_reminder`. */
+    private val validPriorities = setOf(
+        "low", "normal", "high", "urgent"
+    )
+
+    // ----------------------------------------------------------------
+    // Create
+    // ----------------------------------------------------------------
+
     suspend fun executeCreateReminder(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val title = jsonStringArg(call, "title")
-        if (title.isNullOrBlank()) {
-            return error("Argument 'title' is required and must not be blank.")
-        }
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return error("'title' is required.")
 
         val triggerAtMs = extractLongArg(call, "trigger_at_ms")
-            ?: return error("Argument 'trigger_at_ms' (Unix epoch milliseconds) is required.")
+            ?: return error("'trigger_at_ms' must be a valid Unix timestamp in milliseconds.")
 
-        if (triggerAtMs <= 0) {
-            return error("'trigger_at_ms' must be a positive Unix epoch in milliseconds.")
+        if (triggerAtMs <= System.currentTimeMillis()) {
+            return error("The reminder time must be in the future.")
         }
 
-        val description = jsonStringArg(call, "description") ?: ""
-        val recurrence = RecurrenceType.fromId(jsonStringArg(call, "recurrence"))
+        val recurrence = RecurrenceType.fromId(
+            jsonStringArg(call, "recurrence")
+        )
+
         val recurrenceInterval = extractIntArg(call, "recurrence_interval") ?: 0
-        val priority = ReminderPriority.fromId(jsonStringArg(call, "priority"))
-        val tags = extractTagsArg(call, "tags")
+
+        if (recurrence == RecurrenceType.CUSTOM && recurrenceInterval <= 0) {
+            return error("A positive 'recurrence_interval' is required for custom recurrence.")
+        }
+
+        if (recurrenceInterval < 0) {
+            return error("'recurrence_interval' cannot be negative.")
+        }
+
+        val priorityValue = jsonStringArg(call, "priority") ?: "normal"
+
+        if (priorityValue !in validPriorities) {
+            return error("Invalid priority. Allowed values: ${validPriorities.joinToString()}.")
+        }
 
         val inserted = repo.insert(
             title = title,
-            description = description,
+            description = jsonStringArg(call, "description")?.trim().orEmpty(),
             triggerAtMs = triggerAtMs,
             recurrence = recurrence,
             recurrenceInterval = recurrenceInterval,
-            priority = priority,
-            tags = tags,
+            priority = ReminderPriority.fromId(priorityValue),
+            tags = extractTagsArg(call, "tags"),
         )
 
-        return buildJsonObject {
-            put("success", true)
-            put("action", "created")
-            put("message", "Reminder #${inserted.id} '${inserted.title}' created successfully.")
-            put("reminder", inserted.toJsonObject())
-        }
+        return success(
+            action = "created",
+            message = "Reminder #${inserted.id} created successfully.",
+            reminder = inserted,
+        )
     }
 
-    /** Handles `update_reminder`. */
+    // ----------------------------------------------------------------
+    // Update
+    // ----------------------------------------------------------------
+
     suspend fun executeUpdateReminder(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("A valid positive numeric 'id' is required to update a reminder.")
+            ?.takeIf { it > 0 }
+            ?: return error("A valid positive reminder 'id' is required.")
 
-        if (id <= 0) return error("'id' must be a positive integer.")
-
-        val title = jsonStringArg(call, "title")
-        val description = jsonStringArg(call, "description")
         val triggerAtMs = extractLongArg(call, "trigger_at_ms")
-        val recurrence = if (call.args.containsKey("recurrence"))
-            RecurrenceType.fromId(jsonStringArg(call, "recurrence")) else null
+
+        if (call.args.containsKey("trigger_at_ms")) {
+            if (triggerAtMs == null || triggerAtMs <= System.currentTimeMillis()) {
+                return error("'trigger_at_ms' must be a valid future timestamp.")
+            }
+        }
+
+        val recurrence = if (call.args.containsKey("recurrence")) {
+            RecurrenceType.fromId(jsonStringArg(call, "recurrence"))
+        } else {
+            null
+        }
+
         val recurrenceInterval = extractIntArg(call, "recurrence_interval")
-        val priority = if (call.args.containsKey("priority"))
-            ReminderPriority.fromId(jsonStringArg(call, "priority")) else null
-        val tags = if (call.args.containsKey("tags")) extractTagsArg(call, "tags") else null
+
+        if (recurrenceInterval != null && recurrenceInterval <= 0) {
+            return error("'recurrence_interval' must be positive.")
+        }
+
+        if (recurrence == RecurrenceType.CUSTOM && recurrenceInterval == null) {
+            return error("'recurrence_interval' is required when setting custom recurrence.")
+        }
+
+        val priority = if (call.args.containsKey("priority")) {
+            val value = jsonStringArg(call, "priority")
+                ?: return error("'priority' cannot be empty.")
+
+            if (value !in validPriorities) {
+                return error("Invalid priority. Allowed values: ${validPriorities.joinToString()}.")
+            }
+
+            ReminderPriority.fromId(value)
+        } else {
+            null
+        }
 
         val updated = repo.update(
             id = id,
-            title = title,
-            description = description,
+            title = jsonStringArg(call, "title")?.trim()?.takeIf(String::isNotBlank),
+            description = jsonStringArg(call, "description"),
             triggerAtMs = triggerAtMs,
             recurrence = recurrence,
             recurrenceInterval = recurrenceInterval,
             priority = priority,
-            tags = tags,
-        ) ?: return error("Reminder with id #$id was not found.")
+            tags = if (call.args.containsKey("tags")) {
+                extractTagsArg(call, "tags")
+            } else {
+                null
+            },
+        ) ?: return error("Reminder #$id was not found.")
 
-        return buildJsonObject {
-            put("success", true)
-            put("action", "updated")
-            put("message", "Reminder #$id updated successfully.")
-            put("reminder", updated.toJsonObject())
-        }
+        return success(
+            action = "updated",
+            message = "Reminder #$id updated successfully.",
+            reminder = updated,
+        )
     }
 
-    /** Handles `delete_reminder`. */
+    // ----------------------------------------------------------------
+    // Delete
+    // ----------------------------------------------------------------
+
     suspend fun executeDeleteReminder(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("A valid positive numeric 'id' is required to delete a reminder.")
+            ?.takeIf { it > 0 }
+            ?: return error("A valid positive reminder 'id' is required.")
 
-        val deleted = repo.delete(id)
-        return if (deleted) {
-            buildJsonObject {
-                put("success", true)
-                put("action", "deleted")
-                put("id", id)
-                put("message", "Reminder #$id has been permanently deleted.")
-            }
-        } else {
-            error("Reminder with id #$id was not found or has already been deleted.")
+        if (!repo.delete(id)) {
+            return error("Reminder #$id was not found.")
+        }
+
+        return buildJsonObject {
+            put("success", true)
+            put("action", "deleted")
+            put("id", id)
+            put("message", "Reminder #$id deleted successfully.")
         }
     }
 
-    /** Handles `list_reminders`. */
+    // ----------------------------------------------------------------
+    // List
+    // ----------------------------------------------------------------
+
     suspend fun executeListReminders(
         call: FunctionCall,
         repo: ReminderRepository,
@@ -142,121 +186,204 @@ object ReminderToolExecutor {
         val priority = jsonStringArg(call, "priority")
         val limit = extractIntArg(call, "limit") ?: 20
 
-        val statusFilter = if (status == "all") null else status
-        val results = repo.getAll(status = statusFilter, priority = priority, limit = limit)
-        val total = repo.count()
+        if (status != "all" && status !in validStatuses) {
+            return error("Invalid status. Allowed values: all, ${validStatuses.joinToString()}.")
+        }
+
+        if (priority != null && priority !in validPriorities) {
+            return error("Invalid priority. Allowed values: ${validPriorities.joinToString()}.")
+        }
+
+        if (limit !in 1..100) {
+            return error("'limit' must be between 1 and 100.")
+        }
+
+        val results = repo.getAll(
+            status = status.takeUnless { it == "all" },
+            priority = priority,
+            limit = limit,
+        )
 
         return buildJsonObject {
             put("success", true)
             put("action", "list")
             put("status_filter", status)
-            put("total_stored", total)
+            put("total_stored", repo.count())
             put("returned_count", results.size)
-            put("reminders", buildJsonArray { results.forEach { add(it.toJsonObject()) } })
+            put("reminders", results.toJsonArray())
         }
     }
 
-    /** Handles `search_reminders`. */
+    // ----------------------------------------------------------------
+    // Search
+    // ----------------------------------------------------------------
+
     suspend fun executeSearchReminders(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val query = jsonStringArg(call, "query")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return error("'query' is required and cannot be blank.")
+
         val status = jsonStringArg(call, "status")
         val limit = extractIntArg(call, "limit") ?: 10
 
-        val results = repo.search(query = query, status = status, limit = limit)
+        if (status != null && status !in validStatuses) {
+            return error("Invalid status. Allowed values: ${validStatuses.joinToString()}.")
+        }
+
+        if (limit !in 1..50) {
+            return error("'limit' must be between 1 and 50.")
+        }
+
+        val results = repo.search(
+            query = query,
+            status = status,
+            limit = limit,
+        )
 
         return buildJsonObject {
             put("success", true)
             put("action", "search")
-            put("query", query ?: "")
+            put("query", query)
             put("count", results.size)
-            put("reminders", buildJsonArray { results.forEach { add(it.toJsonObject()) } })
+            put("reminders", results.toJsonArray())
         }
     }
 
-    /** Handles `snooze_reminder`. */
+    // ----------------------------------------------------------------
+    // Snooze
+    // ----------------------------------------------------------------
+
     suspend fun executeSnoozeReminder(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("A valid positive numeric 'id' is required.")
+            ?.takeIf { it > 0 }
+            ?: return error("A valid positive reminder 'id' is required.")
+
         val until = extractLongArg(call, "snooze_until_ms")
-            ?: return error("'snooze_until_ms' (Unix epoch milliseconds) is required.")
+            ?: return error("'snooze_until_ms' must be a valid Unix timestamp.")
 
         if (until <= System.currentTimeMillis()) {
-            return error("'snooze_until_ms' must be a future timestamp.")
+            return error("'snooze_until_ms' must be in the future.")
         }
 
-        val updated = repo.snooze(id, until) ?: return error("Reminder with id #$id was not found.")
+        val updated = repo.snooze(id, until)
+            ?: return error("Reminder #$id was not found.")
 
-        return buildJsonObject {
-            put("success", true)
-            put("action", "snoozed")
-            put("message", "Reminder #$id snoozed until epoch ms $until.")
-            put("reminder", updated.toJsonObject())
-        }
+        return success(
+            action = "snoozed",
+            message = "Reminder #$id snoozed successfully.",
+            reminder = updated,
+        )
     }
 
-    /** Handles `mark_reminder_done`. */
+    // ----------------------------------------------------------------
+    // Mark done
+    // ----------------------------------------------------------------
+
     suspend fun executeMarkReminderDone(
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("A valid positive numeric 'id' is required.")
+            ?.takeIf { it > 0 }
+            ?: return error("A valid positive reminder 'id' is required.")
 
-        val updated = repo.markDone(id) ?: return error("Reminder with id #$id was not found.")
+        val updated = repo.markDone(id)
+            ?: return error("Reminder #$id was not found.")
 
-        val msg = if (updated.status == ReminderStatus.DONE) {
+        val message = if (updated.status == ReminderStatus.DONE) {
             "Reminder #$id marked as done."
         } else {
-            "Reminder #$id marked done; next occurrence scheduled at epoch ms ${updated.nextTriggerMs}."
+            "Reminder #$id completed. Next occurrence: ${updated.nextTriggerMs}."
         }
 
-        return buildJsonObject {
-            put("success", true)
-            put("action", "done")
-            put("message", msg)
-            put("reminder", updated.toJsonObject())
-        }
+        return success(
+            action = "done",
+            message = message,
+            reminder = updated,
+        )
     }
 
-    // ------------------------------------------------------------------
+    // ----------------------------------------------------------------
     // Helpers
-    // ------------------------------------------------------------------
+    // ----------------------------------------------------------------
 
-    private fun error(message: String): JsonObject = buildJsonObject { put("error", message) }
+    private fun error(message: String): JsonObject = buildJsonObject {
+        put("success", false)
+        put("error", message)
+    }
 
-    private fun extractLongArg(call: FunctionCall, key: String): Long? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.longOrNull
-                ?: element.jsonPrimitive.content.trim().toLongOrNull()
-        }.getOrNull()
+    private fun success(
+        action: String,
+        message: String,
+        reminder: ReminderItem,
+    ): JsonObject = buildJsonObject {
+        put("success", true)
+        put("action", action)
+        put("message", message)
+        put("reminder", reminder.toJsonObject())
+    }
 
-    private fun extractIntArg(call: FunctionCall, key: String): Int? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.content.trim().toIntOrNull()
-        }.getOrNull()
+    private fun extractLongArg(
+        call: FunctionCall,
+        key: String,
+    ): Long? {
+        val primitive = call.args[key] as? JsonPrimitive ?: return null
+        if (primitive.isString && primitive.content.isBlank()) return null
 
-    private fun extractTagsArg(call: FunctionCall, key: String): List<String> =
-        runCatching {
-            val element = call.args[key] ?: return emptyList()
-            when (element) {
-                is JsonArray -> element.mapNotNull { it.jsonPrimitive.content.takeIf(String::isNotBlank) }
-                else -> {
-                    val raw = element.jsonPrimitive.content
-                    if (raw.isBlank()) emptyList()
-                    else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                }
+        return primitive.longOrNull
+            ?: primitive.content.trim().toLongOrNull()
+    }
+
+    private fun extractIntArg(
+        call: FunctionCall,
+        key: String,
+    ): Int? {
+        val primitive = call.args[key] as? JsonPrimitive ?: return null
+        if (primitive.isString && primitive.content.isBlank()) return null
+
+        return primitive.intOrNull
+            ?: primitive.content.trim().toIntOrNull()
+    }
+
+    private fun extractTagsArg(
+        call: FunctionCall,
+        key: String,
+    ): List<String> {
+        val element = call.args[key] ?: return emptyList()
+
+        val values = when (element) {
+            is JsonArray -> element.mapNotNull { item ->
+                (item as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
             }
-        }.getOrDefault(emptyList())
 
-    /** Serialises a [ReminderItem] to a compact [JsonObject] for returning to the model. */
+            is JsonPrimitive -> {
+                if (!element.isString) return emptyList()
+                element.content.split(",")
+            }
+
+            else -> return emptyList()
+        }
+
+        return values
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+    }
+
+    private fun List<ReminderItem>.toJsonArray(): JsonArray =
+        buildJsonArray {
+            forEach { add(it.toJsonObject()) }
+        }
+
     private fun ReminderItem.toJsonObject(): JsonObject = buildJsonObject {
         put("id", id)
         put("uuid", uuid)
@@ -265,11 +392,22 @@ object ReminderToolExecutor {
         put("trigger_at_ms", triggerAtMs)
         put("next_trigger_ms", nextTriggerMs)
         put("recurrence", recurrence.id)
-        if (recurrence == RecurrenceType.CUSTOM) put("recurrence_interval_minutes", recurrenceInterval)
+
+        if (recurrence == RecurrenceType.CUSTOM) {
+            put("recurrence_interval_minutes", recurrenceInterval)
+        }
+
         put("status", status.id)
         put("priority", priority.id)
-        put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
-        if (snoozedUntilMs > 0) put("snoozed_until_ms", snoozedUntilMs)
+
+        put("tags", buildJsonArray {
+            tags.forEach { add(JsonPrimitive(it)) }
+        })
+
+        if (snoozedUntilMs > 0) {
+            put("snoozed_until_ms", snoozedUntilMs)
+        }
+
         put("created_at_ms", createdAt)
         put("updated_at_ms", updatedAt)
     }

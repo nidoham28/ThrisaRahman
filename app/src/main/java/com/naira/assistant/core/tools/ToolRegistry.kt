@@ -1,5 +1,11 @@
 package com.naira.assistant.core.tools
 
+import com.naira.assistant.core.tools.definition.MemoryTools.insertMemoryTool
+import com.naira.assistant.core.tools.definition.MemoryTools.listMemoriesTool
+import com.naira.assistant.core.tools.definition.MemoryTools.mergeMemoriesTool
+import com.naira.assistant.core.tools.definition.MemoryTools.removeMemoryTool
+import com.naira.assistant.core.tools.definition.MemoryTools.searchMemoriesTool
+import com.naira.assistant.core.tools.definition.MemoryTools.updateMemoryTool
 import com.naira.assistant.core.tools.definition.bluetoothControlTool
 import com.naira.assistant.core.tools.definition.checkAppInstalledTool
 import com.naira.assistant.core.tools.definition.createAlarmTool
@@ -21,13 +27,10 @@ import com.naira.assistant.core.tools.definition.deviceInfoTool
 import com.naira.assistant.core.tools.definition.getAlarmTool
 import com.naira.assistant.core.tools.definition.getCalendarEventTool
 import com.naira.assistant.core.tools.definition.getMediaStatusTool
-import com.naira.assistant.core.tools.definition.generateImageTool
-import com.naira.assistant.core.tools.definition.insertMemoryTool
 import com.naira.assistant.core.tools.definition.listAlarmsTool
 import com.naira.assistant.core.tools.definition.listCalendarEventsTool
 import com.naira.assistant.core.tools.definition.listInstalledAppsTool
 import com.naira.assistant.core.tools.definition.listNotesTool
-import com.naira.assistant.core.tools.definition.listMemoriesTool
 import com.naira.assistant.core.tools.definition.listRemindersTool
 import com.naira.assistant.core.tools.definition.listTodosTool
 import com.naira.assistant.core.tools.definition.liveCricketScoresTool
@@ -37,101 +40,165 @@ import com.naira.assistant.core.tools.definition.markTodoUndoneTool
 import com.naira.assistant.core.tools.definition.mediaPlaybackControlTool
 import com.naira.assistant.core.tools.definition.mediaVolumeControlTool
 import com.naira.assistant.core.tools.definition.phoneAlertControlTool
-import com.naira.assistant.core.tools.definition.mergeMemoriesTool
 import com.naira.assistant.core.tools.definition.openAppTool
-import com.naira.assistant.core.tools.definition.removeMemoryTool
-import com.naira.assistant.core.tools.definition.searchMemoriesTool
 import com.naira.assistant.core.tools.definition.searchNotesTool
 import com.naira.assistant.core.tools.definition.searchRemindersTool
 import com.naira.assistant.core.tools.definition.searchTodosTool
 import com.naira.assistant.core.tools.definition.captureScreenTool
+import com.naira.assistant.core.tools.definition.findTerminalTool
 import com.naira.assistant.core.tools.definition.readScreenTextTool
 import com.naira.assistant.core.tools.definition.performScreenActionTool
 import com.naira.assistant.core.tools.definition.setTimerTool
 import com.naira.assistant.core.tools.definition.showAlarmsTool
 import com.naira.assistant.core.tools.definition.snoozeReminderTool
 import com.naira.assistant.core.tools.definition.shareTextTool
+import com.naira.assistant.core.tools.definition.terminalCalculationTool
 import com.naira.assistant.core.tools.definition.timeTool
 import com.naira.assistant.core.tools.definition.updateAlarmTool
 import com.naira.assistant.core.tools.definition.updateCalendarEventTool
-import com.naira.assistant.core.tools.definition.updateMemoryTool
 import com.naira.assistant.core.tools.definition.updateNoteTool
 import com.naira.assistant.core.tools.definition.wifiControlTool
 import com.naira.assistant.core.tools.definition.updateReminderTool
 import com.naira.assistant.core.tools.definition.updateTodoTool
-import com.naira.assistant.core.tools.definition.findTerminalTool
-import com.naira.assistant.core.tools.definition.terminalCalculationTool
 
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
-
     val settingsPermissionRequiredNames = setOf(
-        "capture_screen",
-        "read_screen_text",
-        "perform_screen_action",
-        "update_calendar_event",
-        "delete_calendar_event",
-        "update_alarm",
-        "delete_alarm",
+        /**
+         * Memories declarations
+         */
         "insert_memory",
         "update_memory",
         "remove_memory",
         "merge_memories",
-        "update_reminder",
-        "delete_reminder",
+
+        /**
+         * Notes declarations
+         */
         "update_note",
         "delete_note",
+
+        /**
+         * Calendar declarations
+         */
+        "update_calendar_event",
+        "delete_calendar_event",
+
+        /**
+         * TODO declarations
+         */
         "update_todo",
         "delete_todo",
+
+        /**
+         * Alarm declarations
+         */
+        "update_alarm",
+        "delete_alarm",
+
+        /**
+         * Reminders declarations
+         */
+        "update_reminder",
+        "delete_reminder",
+
+        /**
+         * capture_screen declarations
+         */
+        "capture_screen",
+        "read_screen_text",
+        "perform_screen_action",
+
+        /**
+         * Device declarations
+         */
+        "get_current_time",
+        "get_device_info",
+        "control_flashlight",
+        "control_bluetooth",
+        "control_wifi",
+
+
+        /**
+         * Software declarations
+         */
+        "list_installed_apps",
+        "check_app_installed",
+        "open_app",
+
+        /**
+         * Multimedia declarations
+         */
+        "phone_alert_control",
+        "media_playback_control",
+        "media_volume_control",
+        "get_media_status",
+
+        /**
+         * Communication declarations
+         */
+        "compose_email",
+        "compose_text_message",
+        "share_text",
+
+        /**
+         * Cricket declarations
+         */
+        "get_live_cricket_scores",
+        "get_cricket_matches",
+        "get_cricket_scorecard",
+
+        /**
+         * Terminal declarations
+         */
+        "terminal_find_tool",
+        "terminal_calculate",
     )
 
     val definitions: List<ToolDefinition> = listOf(
-        // Time & device
-        timeTool(),
-        deviceInfoTool(),
-        findTerminalTool(),
-        terminalCalculationTool(),
 
-        // Cricket
-        liveCricketScoresTool(),
-        cricketMatchesTool(),
-        cricketScorecardTool(),
+        /**
+         * Memories declarations
+         */
+        insertMemoryTool(),
+        updateMemoryTool(),
+        removeMemoryTool(),
+        mergeMemoriesTool(),
+        searchMemoriesTool(),
+        listMemoriesTool(),
 
-        // Applications
-        listInstalledAppsTool(),
-        checkAppInstalledTool(),
-        openAppTool(),
+        /**
+         * Notes declarations
+         */
+        createNoteTool(),
+        updateNoteTool(),
+        deleteNoteTool(),
+        listNotesTool(),
+        searchNotesTool(),
 
-        // Screen access & automation (accessibility)
-        captureScreenTool(),
-        readScreenTextTool(),
-        performScreenActionTool(),
-
-        // Communication drafts and sharing
-        composeEmailTool(),
-        composeTextMessageTool(),
-        shareTextTool(),
-        generateImageTool(),
-
-        // Media playback & volume
-        mediaPlaybackControlTool(),
-        mediaVolumeControlTool(),
-        getMediaStatusTool(),
-        phoneAlertControlTool(),
-
-        // Device toggles (flashlight, Bluetooth, Wi-Fi)
-        flashlightControlTool(),
-        bluetoothControlTool(),
-        wifiControlTool(),
-
-        // Calendar
+        /**
+         * Calendar declarations
+         */
         createCalendarEventTool(),
         listCalendarEventsTool(),
         getCalendarEventTool(),
         updateCalendarEventTool(),
         deleteCalendarEventTool(),
 
-        // Alarm & Timer
+        /**
+         * TODO declarations
+         */
+        createTodoTool(),
+        updateTodoTool(),
+        deleteTodoTool(),
+        listTodosTool(),
+        searchTodosTool(),
+        markTodoDoneTool(),
+        markTodoUndoneTool(),
+
+        /**
+         * Alarm declarations
+         */
         createAlarmTool(),
         listAlarmsTool(),
         getAlarmTool(),
@@ -140,15 +207,9 @@ object ToolRegistry {
         setTimerTool(),
         showAlarmsTool(),
 
-        // Long-term memory
-        insertMemoryTool(),
-        updateMemoryTool(),
-        removeMemoryTool(),
-        mergeMemoriesTool(),
-        searchMemoriesTool(),
-        listMemoriesTool(),
-
-        // Reminders
+        /**
+         * Reminders declarations
+         */
         createReminderTool(),
         updateReminderTool(),
         deleteReminderTool(),
@@ -157,21 +218,57 @@ object ToolRegistry {
         snoozeReminderTool(),
         markReminderDoneTool(),
 
-        // Notes
-        createNoteTool(),
-        updateNoteTool(),
-        deleteNoteTool(),
-        listNotesTool(),
-        searchNotesTool(),
+        /**
+         * capture_screen declarations
+         */
+        captureScreenTool(),
+        readScreenTextTool(),
+        performScreenActionTool(),
 
-        // To-do
-        createTodoTool(),
-        updateTodoTool(),
-        deleteTodoTool(),
-        listTodosTool(),
-        searchTodosTool(),
-        markTodoDoneTool(),
-        markTodoUndoneTool(),
+        /**
+         * Device declarations
+         */
+        timeTool(),
+        deviceInfoTool(),
+        flashlightControlTool(),
+        bluetoothControlTool(),
+        wifiControlTool(),
+
+        /**
+         * Software declarations
+         */
+        listInstalledAppsTool(),
+        checkAppInstalledTool(),
+        openAppTool(),
+
+        /**
+         * Multimedia declarations
+         */
+        mediaPlaybackControlTool(),
+        mediaVolumeControlTool(),
+        getMediaStatusTool(),
+        phoneAlertControlTool(),
+
+        /**
+         * Communication declarations
+         */
+        composeEmailTool(),
+        composeTextMessageTool(),
+        shareTextTool(),
+
+        /**
+         * Cricket declarations
+         */
+        liveCricketScoresTool(),
+        cricketMatchesTool(),
+        cricketScorecardTool(),
+
+        /**
+         * Terminal declarations
+         */
+        findTerminalTool(),
+        terminalCalculationTool(),
+
     ).let { registered ->
         check(settingsPermissionRequiredNames.all { required ->
             registered.any { it.name == required }

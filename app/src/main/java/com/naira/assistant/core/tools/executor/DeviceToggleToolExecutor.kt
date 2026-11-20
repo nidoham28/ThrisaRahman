@@ -1,338 +1,439 @@
+
 package com.naira.assistant.core.tools.executor
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.provider.Settings
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
+import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
-/**
- * Implementation of the device-toggle tools: `control_flashlight`,
- * `control_bluetooth` and `control_wifi`.
- *
- * - Flashlight uses [CameraManager.setTorchMode], which needs no camera
- *   permission; the current torch state is read through a
- *   [CameraManager.TorchCallback], which reports every camera's state
- *   immediately upon registration.
- * - Bluetooth goes through [BluetoothAdapter]. Direct switching is blocked
- *   from Android 13, so newer devices get the system Bluetooth settings panel
- *   instead. Reading the state needs BLUETOOTH_CONNECT (API 31+), which the
- *   app requests from its Settings screen.
- * - Wi-Fi programmatic switching is blocked since Android 10, so those
- *   devices get the system Wi-Fi settings panel instead; the state itself is
- *   always readable.
- *
- * The [context] is the Android application context. It is injected once when
- * the tool executor is built, NOT supplied by the model.
- */
 object DeviceToggleToolExecutor {
 
-    /** How long to wait for the torch callback's immediate state dispatch. */
-    private const val TORCH_STATE_TIMEOUT_MS = 500L
+    private const val TORCH_TIMEOUT_MS = 1000L
 
-    /**
-     * Value of `Settings.Panel.ACTION_BLUETOOTH`. Referenced by its documented
-     * string value because the platform jar used by the build omits the constant.
-     */
-    private const val ACTION_BLUETOOTH_PANEL = "android.settings.panel.action.BLUETOOTH"
+    private const val ACTION_BLUETOOTH_PANEL =
+        "android.settings.panel.action.BLUETOOTH"
 
-    /**
-     * Executes the `control_flashlight` tool.
-     *
-     * @param call    the function call from Gemini, carrying `action`.
-     * @param context Android application context for the camera service.
-     * @return a [JsonObject] with the flashlight state after the action.
-     */
-    fun executeFlashlightControl(call: FunctionCall, context: Context): JsonObject {
+    private val validActions = setOf(
+        "turn_on",
+        "turn_off",
+        "check_status"
+    )
+
+    // ---------------------------------------------------------
+    // Flashlight
+    // ---------------------------------------------------------
+
+    fun executeFlashlightControl(
+        call: FunctionCall,
+        context: Context
+    ): JsonObject {
         val action = parseToggleAction(jsonStringArg(call, "action"))
             ?: return toggleActionError()
 
-        val cameraManager =
-            context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-                ?: return error("This device has no camera service.")
+        val manager = context.applicationContext
+            .getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+            ?: return error("Camera service is unavailable.")
 
-        val cameraId = torchCameraId(cameraManager)
-            ?: return error("This device has no flashlight unit.")
+        return try {
+            val cameraId = torchCameraId(manager)
+                ?: return error("This device has no available flashlight.")
 
-        return when (action) {
-            "turn_on" -> {
-                cameraManager.setTorchMode(cameraId, true)
-                toggleResult("flashlight", action, enabled = true, message = "Flashlight turned on.")
-            }
-
-            "turn_off" -> {
-                cameraManager.setTorchMode(cameraId, false)
-                toggleResult("flashlight", action, enabled = false, message = "Flashlight turned off.")
-            }
-
-            else -> {
-                val lit = currentTorchState(cameraManager, cameraId) ?: false
-                toggleResult(
-                    "flashlight",
-                    action,
-                    enabled = lit,
-                    message = if (lit) "The flashlight is on." else "The flashlight is off."
-                )
-            }
-        }
-    }
-
-    /**
-     * Executes the `control_bluetooth` tool.
-     *
-     * @param call    the function call from Gemini, carrying `action`.
-     * @param context Android application context for the Bluetooth service.
-     * @return a [JsonObject] with the Bluetooth state after the action.
-     */
-    fun executeBluetoothControl(call: FunctionCall, context: Context): JsonObject {
-        val action = parseToggleAction(jsonStringArg(call, "action"))
-            ?: return toggleActionError()
-
-        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)
-            ?.adapter
-            ?: return error("This device does not support Bluetooth.")
-
-        when (action) {
-            "check_status" -> {
-                val enabled = adapterState(adapter)
-                    ?: return error(
-                        "Bluetooth permission is not granted, so its state cannot be read. " +
-                                "Ask the user to grant Bluetooth permission from the app's settings screen."
-                    )
-                return toggleResult(
-                    "bluetooth",
-                    action,
-                    enabled = enabled,
-                    message = if (enabled) "Bluetooth is on." else "Bluetooth is off."
-                )
-            }
-
-            "turn_on", "turn_off" -> {
-                // Android 13 removed programmatic Bluetooth switching; ask the
-                // user to flip it in the system panel instead.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    return openBluetoothFallback(context, action, adapter)
-                }
-                val switched = runCatching {
-                    setBluetoothEnabledLegacy(adapter, action == "turn_on")
-                }.getOrDefault(false)
-
-                return if (switched) {
-                    val verb = if (action == "turn_on") "on" else "off"
-                    toggleResult(
-                        "bluetooth",
-                        action,
-                        enabled = action == "turn_on",
-                        message = "Bluetooth is turning $verb."
-                    )
-                } else {
-                    openBluetoothFallback(context, action, adapter)
-                }
-            }
-
-            else -> return toggleActionError()
-        }
-    }
-
-    // Programmatic switching remains available on Android 12 and earlier. Android 13+
-    // uses the system panel above, where this legacy API is no longer permitted.
-    @Suppress("DEPRECATION")
-    private fun setBluetoothEnabledLegacy(adapter: BluetoothAdapter, enabled: Boolean): Boolean =
-        if (enabled) adapter.enable() else adapter.disable()
-
-    /**
-     * Executes the `control_wifi` tool.
-     *
-     * @param call    the function call from Gemini, carrying `action`.
-     * @param context Android application context for the Wi-Fi service.
-     * @return a [JsonObject] with the Wi-Fi state after the action.
-     */
-    fun executeWifiControl(call: FunctionCall, context: Context): JsonObject {
-        val action = parseToggleAction(jsonStringArg(call, "action"))
-            ?: return toggleActionError()
-
-        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE)
-            as? WifiManager
-            ?: return error("This device does not support Wi-Fi.")
-
-        return when (action) {
-            "check_status" -> {
-                val enabled = wifiManager.isWifiEnabled
-                toggleResult(
-                    "wifi",
-                    action,
-                    enabled = enabled,
-                    message = if (enabled) "Wi-Fi is on." else "Wi-Fi is off."
-                )
-            }
-
-            "turn_on", "turn_off" -> {
-                // Android 10 removed programmatic Wi-Fi switching; ask the
-                // user to flip it in the system panel instead.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    return openWifiFallback(context, action, wifiManager)
-                }
-                @Suppress("DEPRECATION")
-                wifiManager.isWifiEnabled = action == "turn_on"
-                val verb = if (action == "turn_on") "on" else "off"
-                toggleResult(
-                    "wifi",
-                    action,
-                    enabled = action == "turn_on",
-                    message = "Wi-Fi is turning $verb."
-                )
-            }
-
-            else -> return toggleActionError()
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Pure helpers (unit-tested)
-    // ------------------------------------------------------------------
-
-    /**
-     * Normalizes the model-supplied action into one of the three supported
-     * toggle actions, tolerating a few common synonyms. Returns null when
-     * the value is missing or unrecognised.
-     */
-    internal fun parseToggleAction(raw: String?): String? =
-        raw?.trim()?.lowercase()?.let { action ->
             when (action) {
-                "turn_on", "on", "enable" -> "turn_on"
-                "turn_off", "off", "disable" -> "turn_off"
-                "check_status", "status", "check" -> "check_status"
-                else -> null
+                "check_status" -> {
+                    val enabled = currentTorchState(manager, cameraId)
+                        ?: return error(
+                            "Unable to determine the current flashlight state."
+                        )
+
+                    toggleResult(
+                        "flashlight",
+                        action,
+                        enabled,
+                        "Flashlight is ${if (enabled) "on" else "off"}."
+                    )
+                }
+
+                "turn_on", "turn_off" -> {
+                    val requestedState = action == "turn_on"
+
+                    manager.setTorchMode(cameraId, requestedState)
+
+                    val actualState = currentTorchState(manager, cameraId)
+
+                    if (actualState == requestedState) {
+                        toggleResult(
+                            "flashlight",
+                            action,
+                            actualState,
+                            "Flashlight turned ${if (actualState) "on" else "off"}."
+                        )
+                    } else {
+                        buildJsonObject {
+                            put("success", true)
+                            put("feature", "flashlight")
+                            put("action", action)
+                            put("status", "requested")
+                            put("message", "Flashlight state change was requested, but the resulting state could not be confirmed.")
+                        }
+                    }
+                }
+
+                else -> toggleActionError()
             }
+        } catch (e: SecurityException) {
+            error("Permission denied while accessing the flashlight.")
+        } catch (e: CameraAccessException) {
+            error("Camera access failed: ${e.message ?: "unknown camera error"}")
+        } catch (e: IllegalArgumentException) {
+            error("The requested flashlight camera is unavailable.")
+        } catch (e: Exception) {
+            error("Flashlight operation failed: ${e.message ?: "unknown error"}")
         }
+    }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
+    private fun torchCameraId(manager: CameraManager): String? {
+        return try {
+            val cameras = manager.cameraIdList
 
-    /** First back camera whose characteristics report an available flash unit. */
-    private fun torchCameraId(cameraManager: CameraManager): String? =
-        runCatching {
-            cameraManager.cameraIdList.firstOrNull { id ->
+            val available = cameras.filter { id ->
                 runCatching {
-                    cameraManager.getCameraCharacteristics(id)
+                    manager.getCameraCharacteristics(id)
                         .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
                 }.getOrDefault(false)
             }
-        }.getOrNull()
+
+            // Prefer the rear-facing camera.
+            available.firstOrNull { id ->
+                runCatching {
+                    manager.getCameraCharacteristics(id)
+                        .get(CameraCharacteristics.LENS_FACING) ==
+                            CameraCharacteristics.LENS_FACING_BACK
+                }.getOrDefault(false)
+            } ?: available.firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     /**
-     * Reads the current torch state for [cameraId]. [CameraManager] reports
-     * every camera's torch state immediately when a callback is registered,
-     * so a short latch wait is enough; null means the state never arrived.
+     * Uses a dedicated HandlerThread so waiting for the torch callback
+     * cannot block the main thread that would deliver that callback.
      */
-    private fun currentTorchState(cameraManager: CameraManager, cameraId: String): Boolean? {
-        var state: Boolean? = null
+    private fun currentTorchState(
+        manager: CameraManager,
+        cameraId: String
+    ): Boolean? {
+        val state = AtomicReference<Boolean?>(null)
         val received = CountDownLatch(1)
+
+        val thread = HandlerThread("NairaTorchCallback").apply {
+            start()
+        }
+
         val callback = object : CameraManager.TorchCallback() {
-            override fun onTorchModeChanged(id: String, enabled: Boolean) {
-                if (id == cameraId && state == null) {
-                    state = enabled
+            override fun onTorchModeChanged(
+                id: String,
+                enabled: Boolean
+            ) {
+                if (id == cameraId && state.compareAndSet(null, enabled)) {
+                    received.countDown()
+                }
+            }
+
+            override fun onTorchModeUnavailable(id: String) {
+                if (id == cameraId && state.compareAndSet(null, null)) {
                     received.countDown()
                 }
             }
         }
-        cameraManager.registerTorchCallback(callback, null)
+
         try {
-            received.await(TORCH_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            manager.registerTorchCallback(
+                callback,
+                Handler(thread.looper)
+            )
+
+            received.await(
+                TORCH_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS
+            )
+
+            return state.get()
+        } catch (_: Exception) {
+            return null
         } finally {
-            cameraManager.unregisterTorchCallback(callback)
+            runCatching {
+                manager.unregisterTorchCallback(callback)
+            }
+            thread.quitSafely()
         }
-        return state
     }
 
-    /** Safe read of the adapter's enabled state; null when unreadable. */
-    private fun adapterState(adapter: BluetoothAdapter): Boolean? =
-        runCatching { adapter.isEnabled }.getOrNull()
+    // ---------------------------------------------------------
+    // Bluetooth
+    // ---------------------------------------------------------
 
-    /**
-     * Opens the system Bluetooth panel and reports that the user must
-     * confirm the switch manually.
-     */
+    fun executeBluetoothControl(
+        call: FunctionCall,
+        context: Context
+    ): JsonObject {
+        val action = parseToggleAction(jsonStringArg(call, "action"))
+            ?: return toggleActionError()
+
+        val appContext = context.applicationContext
+
+        val adapter = (appContext.getSystemService(
+            Context.BLUETOOTH_SERVICE
+        ) as? BluetoothManager)?.adapter
+            ?: return error("This device does not support Bluetooth.")
+
+        if (action == "check_status") {
+            val enabled = readBluetoothState(adapter)
+                ?: return error(
+                    "Cannot read Bluetooth state. Grant the required Bluetooth permission."
+                )
+
+            return toggleResult(
+                "bluetooth",
+                action,
+                enabled,
+                "Bluetooth is ${if (enabled) "on" else "off"}."
+            )
+        }
+
+        // Direct switching is unavailable for Android 13+ and
+        // apps targeting Android 13+.
+        val directControlAllowed =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+                    appContext.applicationInfo.targetSdkVersion <
+                    Build.VERSION_CODES.TIRAMISU
+
+        if (!directControlAllowed) {
+            return openBluetoothFallback(appContext, action, adapter)
+        }
+
+        return try {
+            @Suppress("DEPRECATION")
+            val accepted = if (action == "turn_on") {
+                adapter.enable()
+            } else {
+                adapter.disable()
+            }
+
+            if (accepted) {
+                changeRequestedResult(
+                    "bluetooth",
+                    action,
+                    readBluetoothState(adapter)
+                )
+            } else {
+                openBluetoothFallback(appContext, action, adapter)
+            }
+        } catch (e: SecurityException) {
+            error("Bluetooth permission is missing or was denied.")
+        } catch (e: Exception) {
+            error("Bluetooth operation failed: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    private fun readBluetoothState(
+        adapter: BluetoothAdapter
+    ): Boolean? = try {
+        adapter.isEnabled
+    } catch (_: SecurityException) {
+        null
+    } catch (_: Exception) {
+        null
+    }
+
     private fun openBluetoothFallback(
         context: Context,
         action: String,
         adapter: BluetoothAdapter
     ): JsonObject {
-        val panelOpened = runCatching {
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                Intent(ACTION_BLUETOOTH_PANEL)
-            } else {
+        val opened = openFirstAvailable(
+            context,
+            listOf(
+                Intent(ACTION_BLUETOOTH_PANEL),
                 Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-            }
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            true
-        }.getOrDefault(false)
-
-        val knownState = adapterState(adapter)
-        return buildJsonObject {
-            put("success", panelOpened)
-            put("feature", "bluetooth")
-            put("action", action)
-            put("panel_opened", panelOpened)
-            knownState?.let { put("enabled", it) }
-            put(
-                "message",
-                if (panelOpened) {
-                    "Android does not allow apps to switch Bluetooth directly. " +
-                            "Opened the Bluetooth settings panel — ask the user to confirm there."
-                } else {
-                    "Could not switch Bluetooth or open its settings panel."
-                }
             )
+        )
+
+        return settingsResult(
+            "bluetooth",
+            action,
+            opened,
+            readBluetoothState(adapter)
+        )
+    }
+
+    // ---------------------------------------------------------
+    // Wi-Fi
+    // ---------------------------------------------------------
+
+    fun executeWifiControl(
+        call: FunctionCall,
+        context: Context
+    ): JsonObject {
+        val action = parseToggleAction(jsonStringArg(call, "action"))
+            ?: return toggleActionError()
+
+        val appContext = context.applicationContext
+
+        val wifiManager = appContext.getSystemService(
+            Context.WIFI_SERVICE
+        ) as? WifiManager
+            ?: return error("Wi-Fi service is unavailable.")
+
+        if (action == "check_status") {
+            val enabled = readWifiState(wifiManager)
+                ?: return error("Unable to read the current Wi-Fi state.")
+
+            return toggleResult(
+                "wifi",
+                action,
+                enabled,
+                "Wi-Fi is ${if (enabled) "on" else "off"}."
+            )
+        }
+
+        // Android 10+ does not allow ordinary apps to change
+        // Wi-Fi state through WifiManager.setWifiEnabled().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return openWifiFallback(appContext, action, wifiManager)
+        }
+
+        return try {
+            @Suppress("DEPRECATION")
+            val accepted = wifiManager.isWifiEnabled.let {
+                wifiManager.setWifiEnabled(action == "turn_on")
+            }
+
+            if (accepted) {
+                changeRequestedResult(
+                    "wifi",
+                    action,
+                    readWifiState(wifiManager)
+                )
+            } else {
+                openWifiFallback(appContext, action, wifiManager)
+            }
+        } catch (e: SecurityException) {
+            error("Permission denied while changing Wi-Fi state.")
+        } catch (e: Exception) {
+            error("Wi-Fi operation failed: ${e.message ?: "unknown error"}")
         }
     }
 
-    /**
-     * Opens the system Wi-Fi panel and reports that the user must confirm
-     * the switch manually.
-     */
+    private fun readWifiState(
+        manager: WifiManager
+    ): Boolean? = try {
+        @Suppress("DEPRECATION")
+        manager.isWifiEnabled
+    } catch (_: Exception) {
+        null
+    }
+
     private fun openWifiFallback(
         context: Context,
         action: String,
-        wifiManager: WifiManager
+        manager: WifiManager
     ): JsonObject {
-        val panelOpened = runCatching {
-            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                Intent(Settings.Panel.ACTION_WIFI)
-            } else {
-                Intent(Settings.ACTION_WIFI_SETTINGS)
-            }
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            true
-        }.getOrDefault(false)
+        return settingsResult(
+            "wifi",
+            action,
+            openFirstAvailable(
+                context,
+                listOf(
+                    Intent(Settings.Panel.ACTION_WIFI),
+                    Intent(Settings.ACTION_WIFI_SETTINGS)
+                )
+            ),
+            readWifiState(manager)
+        )
+    }
 
-        return buildJsonObject {
-            put("success", panelOpened)
-            put("feature", "wifi")
-            put("action", action)
-            put("panel_opened", panelOpened)
-            put("enabled", wifiManager.isWifiEnabled)
-            put(
-                "message",
-                if (panelOpened) {
-                    "Android does not allow apps to switch Wi-Fi directly. " +
-                            "Opened the Wi-Fi settings panel — ask the user to confirm there."
-                } else {
-                    "Could not switch Wi-Fi or open its settings panel."
-                }
-            )
+    // ---------------------------------------------------------
+    // Settings navigation
+    // ---------------------------------------------------------
+
+    private fun openFirstAvailable(
+        context: Context,
+        intents: List<Intent>
+    ): Boolean {
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                return true
+            } catch (_: Exception) {
+                // Try the next supported settings screen.
+            }
+        }
+
+        return false
+    }
+
+    private fun settingsResult(
+        feature: String,
+        action: String,
+        opened: Boolean,
+        enabled: Boolean?
+    ): JsonObject = buildJsonObject {
+        put("success", opened)
+        put("feature", feature)
+        put("action", action)
+        put("status", if (opened) {
+            "awaiting_user_confirmation"
+        } else {
+            "failed"
+        })
+        put("panel_opened", opened)
+
+        if (enabled != null) {
+            put("enabled", enabled)
+        }
+
+        put(
+            "message",
+            if (opened) {
+                "Opened system settings. The user must confirm the requested change."
+            } else {
+                "Could not open the system settings screen."
+            }
+        )
+    }
+
+    // ---------------------------------------------------------
+    // Shared helpers
+    // ---------------------------------------------------------
+
+    internal fun parseToggleAction(raw: String?): String? {
+        val action = raw?.trim()?.lowercase(Locale.ROOT)
+            ?: return null
+
+        return when (action) {
+            "turn_on", "on", "enable" -> "turn_on"
+            "turn_off", "off", "disable" -> "turn_off"
+            "check_status", "status", "check" -> "check_status"
+            else -> null
         }
     }
 
@@ -345,16 +446,44 @@ object DeviceToggleToolExecutor {
         put("success", true)
         put("feature", feature)
         put("action", action)
+        put("status", "confirmed")
         put("enabled", enabled)
         put("message", message)
     }
 
-    private fun toggleActionError(): JsonObject = error(
-        "Please provide an 'action' to perform: turn_on, turn_off or check_status."
+    private fun changeRequestedResult(
+        feature: String,
+        action: String,
+        currentState: Boolean?
+    ): JsonObject = buildJsonObject {
+        put("success", true)
+        put("feature", feature)
+        put("action", action)
+        put("status", "change_requested")
+
+        if (currentState != null) {
+            put("enabled", currentState)
+        }
+
+        put(
+            "requested_enabled",
+            action == "turn_on"
+        )
+
+        put(
+            "message",
+            "The system accepted the request. The final state has not yet been confirmed."
+        )
+    }
+
+    private fun toggleActionError() = error(
+        "Invalid action. Allowed values: turn_on, turn_off, check_status."
     )
 
-    private fun error(message: String): JsonObject = buildJsonObject {
-        put("success", false)
-        put("error", message)
-    }
+    private fun error(message: String): JsonObject =
+        buildJsonObject {
+            put("success", false)
+            put("status", "failed")
+            put("error", message)
+        }
 }

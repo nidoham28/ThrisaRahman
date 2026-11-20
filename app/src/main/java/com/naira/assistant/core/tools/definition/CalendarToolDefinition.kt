@@ -1,3 +1,4 @@
+
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
@@ -5,174 +6,286 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
+
+private fun calendarParameters(
+    required: List<String> = emptyList(),
+    properties: kotlinx.serialization.json.JsonObject
+) = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    put("properties", properties)
+
+    putJsonArray("required") {
+        required.forEach { add(it) }
+    }
+}
+
+private fun calendarStringProperty(
+    description: String,
+    maxLength: Int? = null
+) = buildJsonObject {
+    put("type", "string")
+    put("description", description)
+    maxLength?.let { put("maxLength", it) }
+}
+
+private fun calendarIntegerProperty(
+    description: String,
+    minimum: Long? = null
+) = buildJsonObject {
+    put("type", "integer")
+    put("description", description)
+    minimum?.let { put("minimum", it) }
+}
+
+private fun calendarBooleanProperty(
+    description: String
+) = buildJsonObject {
+    put("type", "boolean")
+    put("description", description)
+}
+
+// CREATE EVENT
 
 fun createCalendarEventTool() = ToolDefinition(
     name = "create_calendar_event",
     description = """
-        Create a new event in the user's device calendar.
-        Use when the user says 'schedule a meeting', 'add an event to my calendar', 
-        'put this on my calendar', 'calendar event for tomorrow at 3pm', etc.
-        Call `get_current_time` first when computing relative times.
-        Always confirm event details back to the user after creation.
+        Create an event in the user's device calendar.
+        Use when the user asks to schedule, book, or add an event.
+        Resolve relative dates and times using get_current_time first.
+        Convert start and end times to Unix epoch milliseconds.
+        If the end time is omitted, the event lasts one hour.
+        Confirm the saved event details after successful creation.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("title") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Event summary or title (e.g. 'Team Sync', 'Doctor appointment')."
+    parameters = calendarParameters(
+        required = listOf("title", "start_time_ms"),
+        properties = buildJsonObject {
+            put(
+                "title",
+                calendarStringProperty(
+                    "Event title or summary.",
+                    maxLength = 200
                 )
-            }
-            putJsonObject("start_time_ms") {
-                put("type", "integer")
-                put("description", "Start time of the event as Unix epoch milliseconds.")
-            }
-            putJsonObject("end_time_ms") {
-                put("type", "integer")
-                put(
-                    "description",
-                    "Optional end time as Unix epoch milliseconds. Defaults to 1 hour after start if omitted."
+            )
+
+            put(
+                "start_time_ms",
+                calendarIntegerProperty(
+                    "Event start time as Unix epoch milliseconds.",
+                    minimum = 0
                 )
-            }
-            putJsonObject("description") {
-                put("type", "string")
-                put("description", "Optional event description or notes.")
-            }
-            putJsonObject("location") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Optional event location (e.g. 'Office Room 3', 'Online Google Meet')."
+            )
+
+            put(
+                "end_time_ms",
+                calendarIntegerProperty(
+                    "Optional event end time in Unix epoch milliseconds. Defaults to one hour after the start.",
+                    minimum = 0
                 )
-            }
-            putJsonObject("all_day") {
-                put("type", "boolean")
-                put("description", "Whether this is an all-day event (default false).")
-            }
+            )
+
+            put(
+                "description",
+                calendarStringProperty(
+                    "Optional event description, agenda, or notes.",
+                    maxLength = 5000
+                )
+            )
+
+            put(
+                "location",
+                calendarStringProperty(
+                    "Optional physical address, venue, or online meeting location.",
+                    maxLength = 500
+                )
+            )
+
+            put(
+                "all_day",
+                calendarBooleanProperty(
+                    "Whether this is an all-day event. Defaults to false."
+                )
+            )
         }
-        putJsonArray("required") {
-            add("title")
-            add("start_time_ms")
-        }
-    },
+    )
 )
+
+// LIST EVENTS
 
 fun listCalendarEventsTool() = ToolDefinition(
     name = "list_calendar_events",
     description = """
-        List or search events from the user's device calendar.
-        Use when the user asks 'what is on my calendar?', 'check my schedule for today', 
-        'do I have any events this week?', or to find an event's ID before updating or deleting it.
+        Retrieve calendar events within a time range.
+        Use when the user asks about their schedule, upcoming events,
+        or events on a particular day or date range.
+        Also use to find an event ID before updating or deleting it.
+        Resolve relative date ranges using get_current_time first.
+        Defaults to today through the next 30 days, with up to 20 results.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("start_from_ms") {
-                put("type", "integer")
-                put(
-                    "description",
-                    "Unix epoch ms from which to search events (defaults to start of current day)."
+    parameters = calendarParameters(
+        properties = buildJsonObject {
+            put(
+                "start_from_ms",
+                calendarIntegerProperty(
+                    "Optional inclusive range start as Unix epoch milliseconds. Defaults to the start of today.",
+                    minimum = 0
                 )
-            }
-            putJsonObject("end_to_ms") {
-                put("type", "integer")
-                put(
-                    "description",
-                    "Unix epoch ms up to which to search events (defaults to 30 days ahead)."
+            )
+
+            put(
+                "end_to_ms",
+                calendarIntegerProperty(
+                    "Optional inclusive range end as Unix epoch milliseconds. Defaults to 30 days after the current time.",
+                    minimum = 0
                 )
-            }
-            putJsonObject("query") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Optional keyword search in event title, description, or location."
+            )
+
+            put(
+                "query",
+                calendarStringProperty(
+                    "Optional keyword filter for event title, description, or location.",
+                    maxLength = 500
                 )
-            }
-            putJsonObject("limit") {
-                put("type", "integer")
-                put("description", "Maximum number of events to return (1-100, default 20).")
-            }
+            )
+
+            put(
+                "limit",
+                buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum number of events to return. Defaults to 20.")
+                    put("minimum", 1)
+                    put("maximum", 100)
+                }
+            )
         }
-        putJsonArray("required") {}
-    },
+    )
 )
+
+// GET EVENT
 
 fun getCalendarEventTool() = ToolDefinition(
     name = "get_calendar_event",
     description = """
-        Fetch detailed information about a single calendar event by its numeric ID.
+        Retrieve complete details for a single calendar event by its ID.
+        Use when the user asks for details about a specific event.
+        Find the ID with list_calendar_events if it is unknown.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("event_id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the calendar event.")
-            }
+    parameters = calendarParameters(
+        required = listOf("event_id"),
+        properties = buildJsonObject {
+            put(
+                "event_id",
+                calendarIntegerProperty(
+                    "Numeric ID of the calendar event.",
+                    minimum = 1
+                )
+            )
         }
-        putJsonArray("required") { add("event_id") }
-    },
+    )
 )
+
+// UPDATE EVENT
 
 fun updateCalendarEventTool() = ToolDefinition(
     name = "update_calendar_event",
     description = """
-        Update an existing event in the user's device calendar by its numeric ID.
-        Call `list_calendar_events` first if you don't know the event ID.
+        Update an existing device calendar event by ID.
+        Find the event with list_calendar_events if its ID is unknown.
+        Only include fields the user wants to change.
+        Preserve all omitted fields.
+        Resolve relative date and time changes using get_current_time.
+        Confirm the updated event details after success.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("event_id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the calendar event to update.")
-            }
-            putJsonObject("title") {
-                put("type", "string")
-                put("description", "New title for the event.")
-            }
-            putJsonObject("start_time_ms") {
-                put("type", "integer")
-                put("description", "New start time in Unix epoch milliseconds.")
-            }
-            putJsonObject("end_time_ms") {
-                put("type", "integer")
-                put("description", "New end time in Unix epoch milliseconds.")
-            }
-            putJsonObject("description") {
-                put("type", "string")
-                put("description", "New description/notes.")
-            }
-            putJsonObject("location") {
-                put("type", "string")
-                put("description", "New location.")
-            }
-            putJsonObject("all_day") {
-                put("type", "boolean")
-                put("description", "Set all-day flag.")
-            }
+    parameters = calendarParameters(
+        required = listOf("event_id"),
+        properties = buildJsonObject {
+            put(
+                "event_id",
+                calendarIntegerProperty(
+                    "Numeric ID of the event to update.",
+                    minimum = 1
+                )
+            )
+
+            put(
+                "title",
+                calendarStringProperty(
+                    "Replacement event title.",
+                    maxLength = 200
+                )
+            )
+
+            put(
+                "start_time_ms",
+                calendarIntegerProperty(
+                    "Replacement start time as Unix epoch milliseconds.",
+                    minimum = 0
+                )
+            )
+
+            put(
+                "end_time_ms",
+                calendarIntegerProperty(
+                    "Replacement end time as Unix epoch milliseconds.",
+                    minimum = 0
+                )
+            )
+
+            put(
+                "description",
+                calendarStringProperty(
+                    "Replacement event description or notes.",
+                    maxLength = 5000
+                )
+            )
+
+            put(
+                "location",
+                calendarStringProperty(
+                    "Replacement event location.",
+                    maxLength = 500
+                )
+            )
+
+            put(
+                "all_day",
+                calendarBooleanProperty(
+                    "Whether the event should be an all-day event."
+                )
+            )
         }
-        putJsonArray("required") { add("event_id") }
-    },
+    )
 )
+
+// DELETE EVENT
 
 fun deleteCalendarEventTool() = ToolDefinition(
     name = "delete_calendar_event",
     description = """
-        Permanently delete an event from the user's device calendar by its numeric ID.
-        Call `list_calendar_events` first if you don't know the event ID.
+        Delete an event from the user's device calendar by ID.
+        Find the event with list_calendar_events if its ID is unknown.
+        Use only when the user explicitly requests deletion.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("event_id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the event to delete.")
-            }
+    parameters = calendarParameters(
+        required = listOf("event_id"),
+        properties = buildJsonObject {
+            put(
+                "event_id",
+                calendarIntegerProperty(
+                    "Numeric ID of the event to delete.",
+                    minimum = 1
+                )
+            )
         }
-        putJsonArray("required") { add("event_id") }
-    },
+    )
+)
+
+// ALL CALENDAR TOOLS
+
+fun allCalendarTools() = listOf(
+    createCalendarEventTool(),
+    listCalendarEventsTool(),
+    getCalendarEventTool(),
+    updateCalendarEventTool(),
+    deleteCalendarEventTool()
 )

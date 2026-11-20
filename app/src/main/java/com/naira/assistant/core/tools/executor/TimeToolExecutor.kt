@@ -1,6 +1,7 @@
+
 package com.naira.assistant.core.tools.executor
 
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
+import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.IllegalTimeZoneException
@@ -12,82 +13,112 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlin.math.abs
 import kotlin.time.Clock
 
 object TimeToolExecutor {
+
+    private const val DEFAULT_TIMEZONE = "Asia/Dhaka"
+
     /**
-     * Implementation of the `get_current_time` tool.
+     * Executes get_current_time.
      *
-     * Resolves the optional `timezone` argument (IANA identifier such as
-     * `"America/New_York"`) via [TimeZone.of]. When absent, uses
-     * [TimeZone.currentSystemDefault] — the device's local zone on Android, the
-     * browser's zone on JS, the OS zone on desktop / native. When present but
-     * unrecognised, [TimeZone.of] throws [IllegalTimeZoneException] and we return a
-     * structured error rather than silently falling back to UTC, so the model can
-     * correct itself on retry.
-     *
-     * The response deliberately over-describes the instant: `datetime` for precise
-     * parsing, plus `date` / `time` / `weekday` / `utc_offset` for easy reasoning,
-     * plus `epoch_seconds` for arithmetic. Models are unreliable at recomputing one
-     * of these from another, so it's cheaper to send all of them than to induce a
-     * follow-up tool call.
+     * Returns the current date, time, timezone, UTC offset,
+     * and Unix timestamps for reliable time calculations.
      */
     fun executeGetCurrentTime(call: FunctionCall): JsonObject {
-        val requested = jsonStringArg(call, "timezone")
 
-        val zone: TimeZone = try {
-            if (requested == null) TimeZone.currentSystemDefault() else TimeZone.of(requested)
+        val requested = jsonStringArg(call, "timezone")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        val zone = try {
+            TimeZone.of(requested ?: DEFAULT_TIMEZONE)
         } catch (_: IllegalTimeZoneException) {
             return buildJsonObject {
+                put("success", false)
+                put("error", "Unknown timezone '$requested'.")
                 put(
-                    "error",
-                    "Unknown timezone '$requested'. Use an IANA identifier such as " +
-                            "'America/New_York', 'Europe/London' or 'Asia/Tokyo'.",
+                    "hint",
+                    "Use a valid IANA timezone such as Asia/Dhaka, " +
+                            "Asia/Kolkata, Europe/London, or America/New_York."
                 )
             }
         }
 
+        // Capture the current instant exactly once.
         val now = Clock.System.now()
+
         val local = now.toLocalDateTime(zone)
         val offset = zone.offsetAt(now)
 
         return buildJsonObject {
+            put("success", true)
+
             put("timezone", zone.id)
             put("datetime", isoOffsetDateTime(local, offset))
             put("date", local.date.toString())
             put("time", formatClockTime(local))
             put("weekday", local.dayOfWeek.displayName())
             put("utc_offset", formatUtcOffset(offset))
+
             put("epoch_seconds", now.epochSeconds)
+            put("epoch_milliseconds", now.toEpochMilliseconds())
         }
     }
 
-    /** Renders `2024-01-15T14:30:00+09:00` — the same shape `ISO_OFFSET_DATE_TIME` gives. */
-    fun isoOffsetDateTime(local: LocalDateTime, offset: UtcOffset): String =
-        "${local.date}T${formatClockTime(local)}${formatUtcOffset(offset)}"
+    // ---------------------------------------------------------
+    // Date and time formatting
+    // ---------------------------------------------------------
 
-    /** `HH:mm:ss`, zero-padded. */
-    fun formatClockTime(local: LocalDateTime): String {
-        val h = local.hour.toString().padStart(2, '0')
-        val m = local.minute.toString().padStart(2, '0')
-        val s = local.second.toString().padStart(2, '0')
-        return "$h:$m:$s"
+    /**
+     * ISO-8601 offset datetime.
+     * Example: 2026-11-20T15:30:00+06:00
+     */
+    private fun isoOffsetDateTime(
+        local: LocalDateTime,
+        offset: UtcOffset
+    ): String {
+        return "${local.date}T${formatClockTime(local)}${formatUtcOffset(offset)}"
     }
 
-    /** `Z` for UTC, otherwise `+HH:MM` / `-HH:MM`. */
-    fun formatUtcOffset(offset: UtcOffset): String {
-        val total = offset.totalSeconds
-        if (total == 0) return "Z"
-        val sign = if (total < 0) "-" else "+"
-        val absSec = abs(total)
-        val h = (absSec / 3600).toString().padStart(2, '0')
-        val m = ((absSec % 3600) / 60).toString().padStart(2, '0')
-        return "$sign$h:$m"
+    /**
+     * Returns HH:mm:ss.
+     */
+    private fun formatClockTime(local: LocalDateTime): String {
+        val hours = local.hour.toString().padStart(2, '0')
+        val minutes = local.minute.toString().padStart(2, '0')
+        val seconds = local.second.toString().padStart(2, '0')
+
+        return "$hours:$minutes:$seconds"
     }
 
-    /** English weekday name. Models reason about prose better than enum names. */
-    fun DayOfWeek.displayName(): String = when (this) {
+    /**
+     * Returns Z for UTC or +/-HH:MM for other offsets.
+     */
+    private fun formatUtcOffset(offset: UtcOffset): String {
+        val totalSeconds = offset.totalSeconds
+
+        if (totalSeconds == 0) return "Z"
+
+        val sign = if (totalSeconds < 0) "-" else "+"
+        val absoluteSeconds = kotlin.math.abs(totalSeconds.toLong())
+
+        val hours = (absoluteSeconds / 3600)
+            .toString()
+            .padStart(2, '0')
+
+        val minutes = ((absoluteSeconds % 3600) / 60)
+            .toString()
+            .padStart(2, '0')
+
+        return "$sign$hours:$minutes"
+    }
+
+    // ---------------------------------------------------------
+    // Weekday formatting
+    // ---------------------------------------------------------
+
+    private fun DayOfWeek.displayName(): String = when (this) {
         DayOfWeek.MONDAY -> "Monday"
         DayOfWeek.TUESDAY -> "Tuesday"
         DayOfWeek.WEDNESDAY -> "Wednesday"

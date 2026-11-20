@@ -1,53 +1,106 @@
+
 package com.naira.assistant.core.tools.executor
 
 import com.naira.assistant.core.database.memory.MemoryItem
 import com.naira.assistant.core.database.memory.MemoryRepository
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 /**
- * Logic implementations for AI memory tools:
- *  - `insert_memory`
- *  - `update_memory`
- *  - `remove_memory`
- *  - `merge_memories`
- *  - `search_memories`
- *  - `list_memories`
+ * Executes Naira's persistent memory tools.
+ *
+ * Supports:
+ * - insert_memory
+ * - update_memory
+ * - remove_memory
+ * - merge_memories
+ * - search_memories
+ * - list_memories
+ *
+ * Ownership, authorization, and database transaction guarantees
+ * must be enforced by the repository/database layer.
  */
 object MemoryToolExecutor {
 
-    /**
-     * Executes `insert_memory` to store a new fact, preference, or detail about the user.
-     */
-    suspend fun executeInsertMemory(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val content = jsonStringArg(call, "content")
-        if (content.isNullOrBlank()) {
-            return buildJsonObject {
-                put("error", "Argument 'content' is required and must not be blank.")
-            }
+    // ---------------------------------------------------------
+    // Configuration
+    // ---------------------------------------------------------
+
+    private val categories = setOf(
+        "profile",
+        "preference",
+        "fact",
+        "work",
+        "relationship",
+        "goal",
+        "general"
+    )
+
+    private const val DEFAULT_IMPORTANCE = 3
+    private const val DEFAULT_SEARCH_LIMIT = 10
+    private const val DEFAULT_LIST_LIMIT = 20
+
+    private const val MAX_CONTENT_LENGTH = 2000
+    private const val MAX_MERGED_CONTENT_LENGTH = 3000
+    private const val MAX_TAGS = 10
+    private const val MAX_TAG_LENGTH = 50
+    private const val MAX_MERGE_IDS = 20
+
+    // ---------------------------------------------------------
+    // 1. INSERT MEMORY
+    // ---------------------------------------------------------
+
+    suspend fun executeInsertMemory(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("insert_memory") {
+
+        val content = stringArg(call, "content")?.trim()
+            ?: return@safely error("A non-empty 'content' is required.")
+
+        if (content.isBlank() || content.length > MAX_CONTENT_LENGTH) {
+            return@safely error(
+                "'content' must contain 1-$MAX_CONTENT_LENGTH characters."
+            )
         }
 
-        val category = jsonStringArg(call, "category") ?: "general"
-        val importance = extractIntArg(call, "importance") ?: 3
-        val tags = extractTagsArg(call, "tags")
+        val category = stringArg(call, "category") ?: "general"
+
+        if (category !in categories) {
+            return@safely error("Invalid memory category: $category")
+        }
+
+        val importance = intArg(call, "importance")
+            ?: DEFAULT_IMPORTANCE
+
+        if (importance !in 1..5) {
+            return@safely error("'importance' must be between 1 and 5.")
+        }
+
+        val tags = if (call.args.containsKey("tags")) {
+            parseTags(call.args["tags"])
+                ?: return@safely error("Invalid 'tags'.")
+        } else {
+            emptyList()
+        }
 
         val inserted = repository.insert(
             content = content,
             category = category,
             importance = importance,
             tags = tags,
-            source = "ai_tool",
+            source = "ai_tool"
         )
 
-        return buildJsonObject {
+        buildJsonObject {
             put("success", true)
             put("action", "inserted")
             put("message", "Memory #${inserted.id} successfully saved.")
@@ -55,225 +108,509 @@ object MemoryToolExecutor {
         }
     }
 
-    /**
-     * Executes `update_memory` to modify an existing memory by ID.
-     */
-    suspend fun executeUpdateMemory(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val id = extractLongArg(call, "id")
-        if (id == null || id <= 0) {
-            return buildJsonObject {
-                put("error", "A valid positive numeric 'id' is required to update a memory.")
-            }
+    // ---------------------------------------------------------
+    // 2. UPDATE MEMORY
+    // ---------------------------------------------------------
+
+    suspend fun executeUpdateMemory(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("update_memory") {
+
+        val id = longArg(call, "id")
+            ?: return@safely error("A valid positive memory ID is required.")
+
+        if (id <= 0) {
+            return@safely error("Memory ID must be positive.")
         }
 
-        val content = jsonStringArg(call, "content")
-        if (content.isNullOrBlank()) {
-            return buildJsonObject {
-                put("error", "Argument 'content' is required and must not be blank.")
-            }
+        val content = stringArg(call, "content")?.trim()
+            ?: return@safely error("A non-empty 'content' is required.")
+
+        if (content.isBlank() || content.length > MAX_CONTENT_LENGTH) {
+            return@safely error(
+                "'content' must contain 1-$MAX_CONTENT_LENGTH characters."
+            )
         }
 
-        val category = jsonStringArg(call, "category")
-        val importance = extractIntArg(call, "importance")
-        val tags = if (call.args.containsKey("tags")) extractTagsArg(call, "tags") else null
+        val category = if (call.args.containsKey("category")) {
+            stringArg(call, "category")
+                ?: return@safely error("Invalid 'category'.")
+        } else {
+            null
+        }
+
+        if (category != null && category !in categories) {
+            return@safely error("Invalid memory category: $category")
+        }
+
+        val importance = if (call.args.containsKey("importance")) {
+            intArg(call, "importance")
+                ?: return@safely error("Invalid 'importance'.")
+        } else {
+            null
+        }
+
+        if (importance != null && importance !in 1..5) {
+            return@safely error("'importance' must be between 1 and 5.")
+        }
+
+        val tags = if (call.args.containsKey("tags")) {
+            parseTags(call.args["tags"])
+                ?: return@safely error("Invalid 'tags'.")
+        } else {
+            null
+        }
 
         val updated = repository.update(
             id = id,
             content = content,
             category = category,
             importance = importance,
-            tags = tags,
+            tags = tags
         )
 
-        return if (updated != null) {
-            buildJsonObject {
-                put("success", true)
-                put("action", "updated")
-                put("message", "Memory #$id successfully updated.")
-                put("memory", updated.toJsonObject())
-            }
-        } else {
-            buildJsonObject {
-                put("error", "Memory with id #$id was not found.")
-            }
+        if (updated == null) {
+            return@safely error("Memory #$id was not found.")
+        }
+
+        buildJsonObject {
+            put("success", true)
+            put("action", "updated")
+            put("message", "Memory #$id successfully updated.")
+            put("memory", updated.toJsonObject())
         }
     }
 
-    /**
-     * Executes `remove_memory` to delete/forget a memory by ID.
-     */
-    suspend fun executeRemoveMemory(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val id = extractLongArg(call, "id")
-        if (id == null || id <= 0) {
-            return buildJsonObject {
-                put("error", "A valid positive numeric 'id' is required to remove a memory.")
-            }
+    // ---------------------------------------------------------
+    // 3. REMOVE MEMORY
+    // ---------------------------------------------------------
+
+    suspend fun executeRemoveMemory(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("remove_memory") {
+
+        val id = longArg(call, "id")
+            ?: return@safely error("A valid positive memory ID is required.")
+
+        if (id <= 0) {
+            return@safely error("Memory ID must be positive.")
         }
 
-        val reason = jsonStringArg(call, "reason")
+        val reason = stringArg(call, "reason")
+
+        if (reason != null && reason.length > 300) {
+            return@safely error("'reason' cannot exceed 300 characters.")
+        }
+
         val removed = repository.remove(id)
 
-        return if (removed) {
-            buildJsonObject {
-                put("success", true)
-                put("action", "removed")
-                put("id", id)
-                put("message", "Memory #$id was forgotten." + (reason?.let { " Reason: $it" } ?: ""))
-            }
-        } else {
-            buildJsonObject {
-                put("error", "Memory with id #$id was not found or has already been removed.")
-            }
-        }
-    }
-
-    /**
-     * Executes `merge_memories` to atomically replace multiple older memories
-     * with a single unified, updated memory.
-     */
-    suspend fun executeMergeMemories(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val ids = extractLongListArg(call, "memory_ids")
-        if (ids.size < 2) {
-            return buildJsonObject {
-                put("error", "Argument 'memory_ids' must contain at least 2 memory IDs to merge (e.g. '1, 2' or [1, 2]).")
-            }
-        }
-
-        val mergedContent = jsonStringArg(call, "merged_content")
-        if (mergedContent.isNullOrBlank()) {
-            return buildJsonObject {
-                put("error", "Argument 'merged_content' is required and must not be blank.")
-            }
-        }
-
-        val category = jsonStringArg(call, "category")
-        val importance = extractIntArg(call, "importance")
-        val tags = if (call.args.containsKey("tags")) extractTagsArg(call, "tags") else null
-
-        return try {
-            val mergedItem = repository.merge(
-                ids = ids,
-                mergedContent = mergedContent,
-                category = category,
-                importance = importance,
-                tags = tags,
+        if (!removed) {
+            return@safely error(
+                "Memory #$id was not found or has already been removed."
             )
-            buildJsonObject {
-                put("success", true)
-                put("action", "merged")
-                put("merged_into_id", mergedItem.id)
-                put("removed_ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
-                put("message", "Successfully merged ${ids.size} memories into new memory #${mergedItem.id}.")
-                put("memory", mergedItem.toJsonObject())
-            }
-        } catch (t: Throwable) {
-            buildJsonObject {
-                put("error", "Merge failed: ${t.message ?: t::class.simpleName}")
+        }
+
+        buildJsonObject {
+            put("success", true)
+            put("action", "removed")
+            put("id", id)
+            put("message", "Memory #$id was successfully removed.")
+
+            if (!reason.isNullOrBlank()) {
+                put("reason", reason)
             }
         }
     }
 
-    /**
-     * Executes `search_memories` to query stored memories by text keyword or category.
-     */
-    suspend fun executeSearchMemories(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val query = jsonStringArg(call, "query")
-        val category = jsonStringArg(call, "category")
-        val limit = extractIntArg(call, "limit") ?: 10
+    // ---------------------------------------------------------
+    // 4. MERGE MEMORIES
+    // ---------------------------------------------------------
 
-        val results = repository.search(query = query, category = category, limit = limit)
+    suspend fun executeMergeMemories(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("merge_memories") {
 
-        return buildJsonObject {
+        val ids = memoryIdsArg(call)
+            ?: return@safely error("Invalid 'memory_ids'.")
+
+        if (ids.size !in 2..MAX_MERGE_IDS) {
+            return@safely error(
+                "'memory_ids' must contain 2-$MAX_MERGE_IDS IDs."
+            )
+        }
+
+        if (ids.any { it <= 0 }) {
+            return@safely error("All memory IDs must be positive.")
+        }
+
+        if (ids.distinct().size != ids.size) {
+            return@safely error("Duplicate memory IDs are not allowed.")
+        }
+
+        val mergedContent = stringArg(call, "merged_content")?.trim()
+            ?: return@safely error("A non-empty 'merged_content' is required.")
+
+        if (
+            mergedContent.isBlank() ||
+            mergedContent.length > MAX_MERGED_CONTENT_LENGTH
+        ) {
+            return@safely error(
+                "'merged_content' must contain 1-$MAX_MERGED_CONTENT_LENGTH characters."
+            )
+        }
+
+        val category = if (call.args.containsKey("category")) {
+            stringArg(call, "category")
+                ?: return@safely error("Invalid 'category'.")
+        } else {
+            null
+        }
+
+        if (category != null && category !in categories) {
+            return@safely error("Invalid memory category: $category")
+        }
+
+        val importance = if (call.args.containsKey("importance")) {
+            intArg(call, "importance")
+                ?: return@safely error("Invalid 'importance'.")
+        } else {
+            null
+        }
+
+        if (importance != null && importance !in 1..5) {
+            return@safely error("'importance' must be between 1 and 5.")
+        }
+
+        val tags = if (call.args.containsKey("tags")) {
+            parseTags(call.args["tags"])
+                ?: return@safely error("Invalid 'tags'.")
+        } else {
+            null
+        }
+
+        // Must execute atomically inside the repository.
+        val mergedItem = repository.merge(
+            ids = ids,
+            mergedContent = mergedContent,
+            category = category,
+            importance = importance,
+            tags = tags
+        )
+
+        buildJsonObject {
+            put("success", true)
+            put("action", "merged")
+            put("merged_into_id", mergedItem.id)
+
+            put(
+                "removed_ids",
+                buildJsonArray {
+                    ids.forEach { add(JsonPrimitive(it)) }
+                }
+            )
+
+            put(
+                "message",
+                "Successfully merged ${ids.size} memories into #${mergedItem.id}."
+            )
+
+            put("memory", mergedItem.toJsonObject())
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 5. SEARCH MEMORIES
+    // ---------------------------------------------------------
+
+    suspend fun executeSearchMemories(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("search_memories") {
+
+        val query = if (call.args.containsKey("query")) {
+            stringArg(call, "query")
+                ?: return@safely error("Invalid 'query'.")
+        } else {
+            null
+        }
+
+        if (query != null && query.length > 200) {
+            return@safely error("'query' cannot exceed 200 characters.")
+        }
+
+        val category = if (call.args.containsKey("category")) {
+            stringArg(call, "category")
+                ?: return@safely error("Invalid 'category'.")
+        } else {
+            null
+        }
+
+        if (category != null && category !in categories) {
+            return@safely error("Invalid memory category: $category")
+        }
+
+        val limit = intArg(call, "limit") ?: DEFAULT_SEARCH_LIMIT
+
+        if (limit !in 1..50) {
+            return@safely error("'limit' must be between 1 and 50.")
+        }
+
+        val results = repository.search(
+            query = query?.takeIf { it.isNotBlank() },
+            category = category,
+            limit = limit
+        )
+
+        buildJsonObject {
             put("success", true)
             put("action", "search")
             put("query", query ?: "")
             put("category", category ?: "all")
             put("count", results.size)
-            put("memories", buildJsonArray {
-                for (item in results) {
-                    add(item.toJsonObject())
+
+            put(
+                "memories",
+                buildJsonArray {
+                    results.forEach { add(it.toJsonObject()) }
                 }
-            })
+            )
         }
     }
 
-    /**
-     * Executes `list_memories` to retrieve all or category-filtered memories.
-     */
-    suspend fun executeListMemories(call: FunctionCall, repository: MemoryRepository): JsonObject {
-        val category = jsonStringArg(call, "category")
-        val limit = extractIntArg(call, "limit") ?: 20
+    // ---------------------------------------------------------
+    // 6. LIST MEMORIES
+    // ---------------------------------------------------------
+
+    suspend fun executeListMemories(
+        call: FunctionCall,
+        repository: MemoryRepository
+    ): JsonObject = safely("list_memories") {
+
+        val requestedCategory = if (call.args.containsKey("category")) {
+            stringArg(call, "category")
+                ?: return@safely error("Invalid 'category'.")
+        } else {
+            "all"
+        }
+
+        if (
+            requestedCategory !in categories &&
+            requestedCategory != "all"
+        ) {
+            return@safely error(
+                "Invalid memory category: $requestedCategory"
+            )
+        }
+
+        val limit = intArg(call, "limit") ?: DEFAULT_LIST_LIMIT
+
+        if (limit !in 1..100) {
+            return@safely error("'limit' must be between 1 and 100.")
+        }
+
+        val category = requestedCategory.takeUnless { it == "all" }
 
         val total = repository.count()
-        val results = repository.getAll(category = category, limit = limit)
 
-        return buildJsonObject {
+        val results = repository.getAll(
+            category = category,
+            limit = limit
+        )
+
+        buildJsonObject {
             put("success", true)
             put("action", "list")
-            put("category", category ?: "all")
+            put("category", requestedCategory)
             put("total_stored", total)
             put("returned_count", results.size)
-            put("memories", buildJsonArray {
-                for (item in results) {
-                    add(item.toJsonObject())
+
+            put(
+                "memories",
+                buildJsonArray {
+                    results.forEach { add(it.toJsonObject()) }
                 }
-            })
+            )
         }
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
+    // ---------------------------------------------------------
+    // Argument Helpers
+    // ---------------------------------------------------------
 
-    private fun extractLongArg(call: FunctionCall, key: String): Long? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.longOrNull
-                ?: element.jsonPrimitive.content.trim().toLongOrNull()
-        }.getOrNull()
+    private fun stringArg(
+        call: FunctionCall,
+        key: String
+    ): String? {
+        val element = call.args[key] ?: return null
+        val primitive = element as? JsonPrimitive ?: return null
 
-    private fun extractIntArg(call: FunctionCall, key: String): Int? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.content.trim().toIntOrNull()
-        }.getOrNull()
-
-    private fun extractTagsArg(call: FunctionCall, key: String): List<String> =
-        runCatching {
-            val element = call.args[key] ?: return emptyList()
-            when (element) {
-                is JsonArray -> element.mapNotNull { it.jsonPrimitive.content.takeIf(String::isNotBlank) }
-                else -> {
-                    val raw = element.jsonPrimitive.content
-                    if (raw.isBlank()) emptyList()
-                    else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                }
-            }
-        }.getOrDefault(emptyList())
-
-    private fun extractLongListArg(call: FunctionCall, key: String): List<Long> =
-        runCatching {
-            val element = call.args[key] ?: return emptyList()
-            when (element) {
-                is JsonArray -> element.mapNotNull {
-                    it.jsonPrimitive.longOrNull ?: it.jsonPrimitive.content.trim().toLongOrNull()
-                }
-                else -> {
-                    val raw = element.jsonPrimitive.content
-                    raw.split(",")
-                        .mapNotNull { it.trim().toLongOrNull() }
-                        .filter { it > 0 }
-                }
-            }
-        }.getOrDefault(emptyList())
-
-    private fun MemoryItem.toJsonObject(): JsonObject = buildJsonObject {
-        put("id", id)
-        put("uuid", uuid)
-        put("content", content)
-        put("category", category)
-        put("importance", importance)
-        put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
-        put("updated_at", updatedAt)
+        return primitive.content.takeIf { primitive.isString }
     }
+
+    private fun longArg(
+        call: FunctionCall,
+        key: String
+    ): Long? {
+        val element = call.args[key] ?: return null
+        val primitive = element as? JsonPrimitive ?: return null
+
+        if (primitive.isString) return null
+
+        if (primitive.content == "true" || primitive.content == "false") {
+            return null
+        }
+
+        return primitive.longOrNull
+            ?: primitive.content.trim().toLongOrNull()
+    }
+
+    private fun intArg(
+        call: FunctionCall,
+        key: String
+    ): Int? {
+        val value = longArg(call, key) ?: return null
+
+        return value
+            .takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }
+            ?.toInt()
+    }
+
+    // ---------------------------------------------------------
+    // Tag Parsing
+    // ---------------------------------------------------------
+
+    private fun parseTags(
+        element: JsonElement?
+    ): List<String>? {
+        element ?: return null
+
+        val rawTags = when (element) {
+            is JsonArray -> {
+                element.map { item ->
+                    val primitive = item as? JsonPrimitive
+                        ?: return null
+
+                    if (!primitive.isString) return null
+
+                    primitive.content
+                }
+            }
+
+            is JsonPrimitive -> {
+                if (!element.isString) return null
+
+                element.content.split(",")
+            }
+
+            else -> return null
+        }
+
+        val tags = rawTags.map { it.trim() }
+
+        if (tags.size !in 1..MAX_TAGS) return null
+
+        if (tags.any { it.isBlank() || it.length > MAX_TAG_LENGTH }) {
+            return null
+        }
+
+        if (tags.distinct().size != tags.size) {
+            return null
+        }
+
+        return tags
+    }
+
+    // ---------------------------------------------------------
+    // Memory ID Parsing
+    // ---------------------------------------------------------
+
+    private fun memoryIdsArg(
+        call: FunctionCall
+    ): List<Long>? {
+        val element = call.args["memory_ids"] ?: return null
+
+        val values = when (element) {
+            is JsonArray -> {
+                element.map { item ->
+                    val primitive = item as? JsonPrimitive
+                        ?: return null
+
+                    if (primitive.isString) return null
+
+                    if (
+                        primitive.content == "true" ||
+                        primitive.content == "false"
+                    ) {
+                        return null
+                    }
+
+                    primitive.longOrNull
+                        ?: primitive.content.trim().toLongOrNull()
+                        ?: return null
+                }
+            }
+
+            is JsonPrimitive -> {
+                if (!element.isString) return null
+
+                val parts = element.content.split(",")
+
+                parts.map {
+                    it.trim().toLongOrNull() ?: return null
+                }
+            }
+
+            else -> return null
+        }
+
+        return values
+    }
+
+    // ---------------------------------------------------------
+    // Error Handling
+    // ---------------------------------------------------------
+
+    private fun error(message: String): JsonObject =
+        buildJsonObject {
+            put("success", false)
+            put("error", message)
+        }
+
+    private suspend fun safely(
+        operation: String,
+        block: suspend () -> JsonObject
+    ): JsonObject {
+        return try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            error("The $operation operation failed. Please try again.")
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Memory Serialization
+    // ---------------------------------------------------------
+
+    private fun MemoryItem.toJsonObject(): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            put("uuid", uuid)
+            put("content", content)
+            put("category", category)
+            put("importance", importance)
+
+            put(
+                "tags",
+                buildJsonArray {
+                    tags.forEach { add(JsonPrimitive(it)) }
+                }
+            )
+
+            put("updated_at", updatedAt)
+        }
 }

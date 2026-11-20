@@ -1,147 +1,310 @@
+
 package com.naira.assistant.core.tools.executor
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
 import com.naira.assistant.core.database.alarm.AlarmItem
 import com.naira.assistant.core.database.alarm.AlarmRepository
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.util.Calendar
+import java.util.Locale
 
 object AlarmToolExecutor {
 
-    /**
-     * Executes `create_alarm` — schedules alarm in device clock app and saves it in database.
-     */
+    // ------------------------------------------------------------
+    // CREATE ALARM
+    // ------------------------------------------------------------
+
     suspend fun executeCreateAlarm(
         call: FunctionCall,
         context: Context,
         repo: AlarmRepository,
     ): JsonObject {
         val hour = extractIntArg(call, "hour")
-            ?: return error("Argument 'hour' (0-23) is required.")
+            ?: return error("'hour' is required and must be an integer.")
+
         val minute = extractIntArg(call, "minute")
-            ?: return error("Argument 'minute' (0-59) is required.")
+            ?: return error("'minute' is required and must be an integer.")
 
-        if (hour !in 0..23) return error("'hour' must be between 0 and 23.")
-        if (minute !in 0..59) return error("'minute' must be between 0 and 59.")
+        if (hour !in 0..23) {
+            return error("'hour' must be between 0 and 23.")
+        }
 
-        val label = jsonStringArg(call, "label") ?: ""
-        val days = parseDaysArg(call, "days")
+        if (minute !in 0..59) {
+            return error("'minute' must be between 0 and 59.")
+        }
+
+        val label = if (call.args.containsKey("label")) {
+            extractStringArg(call, "label")
+                ?: return error("'label' must be a string.")
+        } else ""
+
+        val days = if (call.args.containsKey("days")) {
+            parseDaysArg(call, "days")
+                ?: return error(
+                    "Invalid 'days'. Use everyday, weekdays, weekends, " +
+                            "day names, or day numbers from 1 to 7."
+                )
+        } else emptyList()
+
         val vibrate = extractBooleanArg(call, "vibrate") ?: true
         val skipUi = extractBooleanArg(call, "skip_ui") ?: true
 
-        // 1. Persist alarm in local repository
-        val item = repo.insert(
+        // Save locally first.
+        val alarm = try {
+            repo.insert(
+                hour = hour,
+                minute = minute,
+                label = label,
+                days = days,
+                enabled = true,
+                vibrate = vibrate,
+            )
+        } catch (e: Exception) {
+            return error("Failed to save alarm: ${e.message ?: "Database error."}")
+        }
+
+        // Request scheduling through Android Clock.
+        val deviceScheduled = triggerDeviceAlarm(
+            context = context,
             hour = hour,
             minute = minute,
             label = label,
             days = days,
-            enabled = true,
             vibrate = vibrate,
+            skipUi = skipUi,
         )
 
-        // 2. Trigger native Android Clock app intent
-        val deviceScheduled = triggerDeviceAlarm(context, hour, minute, label, days, vibrate, skipUi)
-
-        val formattedTime = formatTime(hour, minute)
+        val time = formatTime(hour, minute)
 
         return buildJsonObject {
             put("success", true)
             put("action", "created")
-            put("id", item.id)
-            put("time", formattedTime)
+            put("id", alarm.id)
+            put("time", time)
             put("hour", hour)
             put("minute", minute)
             put("label", label)
-            put("device_intent_fired", deviceScheduled)
-            put("alarm", item.toJsonObject())
-            put("message", "Alarm set for $formattedTime" + if (label.isNotBlank()) " ('$label')." else ".")
+            put("repeat", days.isNotEmpty())
+            put("days", days.toJsonArray())
+            put("vibrate", vibrate)
+            put("local_saved", true)
+            put("device_scheduled", deviceScheduled)
+            put("alarm", alarm.toJsonObject())
+
+            put(
+                "message",
+                if (deviceScheduled) {
+                    "Alarm set for $time" +
+                            if (label.isNotBlank()) " ($label)." else "."
+                } else {
+                    "Alarm saved locally for $time, but Android Clock " +
+                            "could not be opened. Device scheduling is unconfirmed."
+                }
+            )
         }
     }
 
-    /**
-     * Executes `list_alarms` — lists all tracked alarms.
-     */
+    // ------------------------------------------------------------
+    // LIST ALARMS
+    // ------------------------------------------------------------
+
     suspend fun executeListAlarms(
         call: FunctionCall,
         repo: AlarmRepository,
     ): JsonObject {
-        val enabledOnly = extractBooleanArg(call, "enabled_only")
+        val enabledOnly = extractBooleanArg(call, "enabled_only") ?: false
         val limit = (extractIntArg(call, "limit") ?: 20).coerceIn(1, 100)
 
-        val alarms = repo.getAll(enabledOnly = enabledOnly, limit = limit)
-        val total = repo.count()
+        val alarms = try {
+            repo.getAll(
+                enabledOnly = enabledOnly,
+                limit = limit,
+            )
+        } catch (e: Exception) {
+            return error("Failed to retrieve alarms: ${e.message ?: "Database error."}")
+        }
+
+        val total = try {
+            repo.count()
+        } catch (e: Exception) {
+            return error("Failed to count alarms: ${e.message ?: "Database error."}")
+        }
 
         return buildJsonObject {
             put("success", true)
             put("action", "list_alarms")
             put("total_stored", total)
             put("count", alarms.size)
-            put("alarms", buildJsonArray { alarms.forEach { add(it.toJsonObject()) } })
+            put("enabled_only", enabledOnly)
+            put("alarms", buildJsonArray {
+                alarms.forEach {
+                    add(it.toJsonObject())
+                }
+            })
         }
     }
 
-    /**
-     * Executes `get_alarm` — fetch single alarm details by ID.
-     */
+    // ------------------------------------------------------------
+    // GET ALARM
+    // ------------------------------------------------------------
+
     suspend fun executeGetAlarm(
         call: FunctionCall,
         repo: AlarmRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("Argument 'id' is required.")
+            ?: return error("'id' is required and must be an integer.")
 
-        val alarm = repo.getById(id)
-            ?: return error("Alarm with ID #$id was not found.")
+        if (id <= 0) return error("'id' must be greater than zero.")
+
+        val alarm = try {
+            repo.getById(id)
+        } catch (e: Exception) {
+            return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
+        } ?: return error("Alarm with ID #$id was not found.")
 
         return buildJsonObject {
             put("success", true)
+            put("action", "get_alarm")
             put("alarm", alarm.toJsonObject())
         }
     }
 
-    /**
-     * Executes `update_alarm` — updates alarm time, label, days, or enabled status.
-     */
+    // ------------------------------------------------------------
+    // UPDATE ALARM
+    // ------------------------------------------------------------
+
     suspend fun executeUpdateAlarm(
         call: FunctionCall,
         context: Context,
         repo: AlarmRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("Argument 'id' is required.")
+            ?: return error("'id' is required and must be an integer.")
 
-        val hour = extractIntArg(call, "hour")
-        val minute = extractIntArg(call, "minute")
-        val label = jsonStringArg(call, "label")
-        val days = if (call.args.containsKey("days")) parseDaysArg(call, "days") else null
-        val enabled = if (call.args.containsKey("enabled")) extractBooleanArg(call, "enabled") else null
-        val vibrate = if (call.args.containsKey("vibrate")) extractBooleanArg(call, "vibrate") else null
+        if (id <= 0) return error("'id' must be greater than zero.")
 
-        val updated = repo.update(
-            id = id,
-            hour = hour,
-            minute = minute,
-            label = label,
-            days = days,
-            enabled = enabled,
-            vibrate = vibrate,
-        ) ?: return error("Alarm with ID #$id was not found.")
+        // Validate explicitly supplied fields.
+        val hour = if (call.args.containsKey("hour")) {
+            extractIntArg(call, "hour")
+                ?: return error("'hour' must be an integer.")
+        } else null
 
-        // If enabled and updated time/label, re-trigger device alarm intent
-        if (updated.enabled && (hour != null || minute != null || label != null)) {
-            triggerDeviceAlarm(context, updated.hour, updated.minute, updated.label, updated.days, updated.vibrate, skipUi = true)
+        val minute = if (call.args.containsKey("minute")) {
+            extractIntArg(call, "minute")
+                ?: return error("'minute' must be an integer.")
+        } else null
+
+        if (hour != null && hour !in 0..23) {
+            return error("'hour' must be between 0 and 23.")
+        }
+
+        if (minute != null && minute !in 0..59) {
+            return error("'minute' must be between 0 and 59.")
+        }
+
+        val label = if (call.args.containsKey("label")) {
+            extractStringArg(call, "label")
+                ?: return error("'label' must be a string.")
+        } else null
+
+        val days = if (call.args.containsKey("days")) {
+            parseDaysArg(call, "days")
+                ?: return error("Invalid repeat schedule in 'days'.")
+        } else null
+
+        val enabled = if (call.args.containsKey("enabled")) {
+            extractBooleanArg(call, "enabled")
+                ?: return error("'enabled' must be a boolean.")
+        } else null
+
+        val vibrate = if (call.args.containsKey("vibrate")) {
+            extractBooleanArg(call, "vibrate")
+                ?: return error("'vibrate' must be a boolean.")
+        } else null
+
+        if (
+            hour == null &&
+            minute == null &&
+            label == null &&
+            days == null &&
+            enabled == null &&
+            vibrate == null
+        ) {
+            return error("No valid fields provided to update.")
+        }
+
+        // Fetch original state to determine whether native scheduling
+        // might need another request.
+        val previous = try {
+            repo.getById(id)
+        } catch (e: Exception) {
+            return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
+        } ?: return error("Alarm with ID #$id was not found.")
+
+        val updated = try {
+            repo.update(
+                id = id,
+                hour = hour,
+                minute = minute,
+                label = label,
+                days = days,
+                enabled = enabled,
+                vibrate = vibrate,
+            )
+        } catch (e: Exception) {
+            return error("Failed to update alarm: ${e.message ?: "Database error."}")
+        } ?: return error("Alarm with ID #$id was not found.")
+
+        // Android's standard ACTION_SET_ALARM creates alarms.
+        // It does not update an existing native alarm by database ID.
+        val scheduleChanged =
+            hour != null || minute != null || days != null
+
+        val needsNewNativeAlarm =
+            updated.enabled && scheduleChanged
+
+        val nativeSchedulingRequested = if (needsNewNativeAlarm) {
+            triggerDeviceAlarm(
+                context = context,
+                hour = updated.hour,
+                minute = updated.minute,
+                label = updated.label,
+                days = updated.days,
+                vibrate = updated.vibrate,
+                skipUi = true,
+            )
+        } else false
+
+        val nativeWarning = when {
+            !updated.enabled ->
+                "The local alarm is disabled. An existing native Clock alarm " +
+                        "may still be active."
+
+            needsNewNativeAlarm && nativeSchedulingRequested ->
+                "A new native alarm was requested. The previous native alarm " +
+                        "may still exist, so duplicates are possible."
+
+            needsNewNativeAlarm ->
+                "Local alarm updated, but native Clock scheduling failed."
+
+            enabled == false ->
+                "The local alarm is disabled. Native Clock state was not changed."
+
+            else ->
+                "Local alarm updated. Native Clock state was not changed."
         }
 
         return buildJsonObject {
@@ -149,81 +312,118 @@ object AlarmToolExecutor {
             put("action", "updated")
             put("id", id)
             put("alarm", updated.toJsonObject())
-            put("message", "Alarm #$id updated successfully.")
+            put("native_scheduling_requested", nativeSchedulingRequested)
+            put("native_sync_warning", nativeWarning)
+            put("message", "Alarm #$id updated locally.")
         }
     }
 
-    /**
-     * Executes `delete_alarm` — deletes alarm from tracking.
-     */
+    // ------------------------------------------------------------
+    // DELETE ALARM
+    // ------------------------------------------------------------
+
     suspend fun executeDeleteAlarm(
         call: FunctionCall,
         repo: AlarmRepository,
     ): JsonObject {
         val id = extractLongArg(call, "id")
-            ?: return error("Argument 'id' is required.")
+            ?: return error("'id' is required and must be an integer.")
 
-        val deleted = repo.delete(id)
-        return if (deleted) {
-            buildJsonObject {
-                put("success", true)
-                put("action", "deleted")
-                put("id", id)
-                put("message", "Alarm #$id was deleted successfully.")
-            }
-        } else {
-            error("Alarm with ID #$id was not found or already deleted.")
+        if (id <= 0) return error("'id' must be greater than zero.")
+
+        val deleted = try {
+            repo.delete(id)
+        } catch (e: Exception) {
+            return error("Failed to delete alarm: ${e.message ?: "Database error."}")
+        }
+
+        if (!deleted) {
+            return error("Alarm with ID #$id was not found or already deleted.")
+        }
+
+        return buildJsonObject {
+            put("success", true)
+            put("action", "deleted")
+            put("id", id)
+            put("local_deleted", true)
+            put("native_deleted", false)
+            put(
+                "message",
+                "Alarm #$id was deleted from local storage. " +
+                        "Any previously created Android Clock alarm may still exist."
+            )
         }
     }
 
-    /**
-     * Executes `set_timer` — sets countdown timer using Android AlarmClock API.
-     */
+    // ------------------------------------------------------------
+    // SET TIMER
+    // ------------------------------------------------------------
+
     fun executeSetTimer(
         call: FunctionCall,
         context: Context,
     ): JsonObject {
         val lengthSeconds = extractIntArg(call, "length_seconds")
-            ?: return error("Argument 'length_seconds' is required.")
+            ?: return error("'length_seconds' is required and must be an integer.")
 
-        if (lengthSeconds <= 0) return error("'length_seconds' must be greater than 0.")
+        if (lengthSeconds <= 0) {
+            return error("'length_seconds' must be greater than zero.")
+        }
 
-        val label = jsonStringArg(call, "label") ?: ""
+        val label = if (call.args.containsKey("label")) {
+            extractStringArg(call, "label")
+                ?: return error("'label' must be a string.")
+        } else ""
+
         val skipUi = extractBooleanArg(call, "skip_ui") ?: true
 
         val triggered = try {
             val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
                 putExtra(AlarmClock.EXTRA_LENGTH, lengthSeconds)
-                if (label.isNotBlank()) putExtra(AlarmClock.EXTRA_MESSAGE, label)
+
+                if (label.isNotBlank()) {
+                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                }
+
                 putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
             context.startActivity(intent)
             true
-        } catch (_: Throwable) {
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
             false
         }
 
-        val minutes = lengthSeconds / 60
-        val seconds = lengthSeconds % 60
-        val durationText = buildString {
-            if (minutes > 0) append("$minutes min ")
-            if (seconds > 0 || minutes == 0) append("$seconds sec")
-        }.trim()
+        val duration = formatDuration(lengthSeconds)
 
         return buildJsonObject {
             put("success", triggered)
             put("action", "timer_set")
             put("length_seconds", lengthSeconds)
-            put("duration", durationText)
+            put("duration", duration)
             put("label", label)
-            put("message", "Timer for $durationText" + if (label.isNotBlank()) " ('$label')" else "" + " started.")
+            put("device_scheduled", triggered)
+            put(
+                "message",
+                if (triggered) {
+                    "Timer for $duration" +
+                            if (label.isNotBlank()) " ($label) started." else " started."
+                } else {
+                    "Could not start the timer. No compatible Clock activity was available."
+                }
+            )
         }
     }
 
-    /**
-     * Executes `show_alarms` — opens device clock app to alarms view.
-     */
+    // ------------------------------------------------------------
+    // SHOW CLOCK
+    // ------------------------------------------------------------
+
     fun executeShowAlarms(
         context: Context,
     ): JsonObject {
@@ -231,22 +431,34 @@ object AlarmToolExecutor {
             val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
             context.startActivity(intent)
             true
-        } catch (_: Throwable) {
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
             false
         }
 
         return buildJsonObject {
             put("success", opened)
             put("action", "show_alarms")
-            put("message", if (opened) "Clock app opened to alarms screen." else "Could not open clock app.")
+            put(
+                "message",
+                if (opened) {
+                    "Clock app opened."
+                } else {
+                    "Could not open the device Clock app."
+                }
+            )
         }
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
+    // ------------------------------------------------------------
+    // ANDROID CLOCK INTEGRATION
+    // ------------------------------------------------------------
 
     private fun triggerDeviceAlarm(
         context: Context,
@@ -261,60 +473,154 @@ object AlarmToolExecutor {
             val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                 putExtra(AlarmClock.EXTRA_HOUR, hour)
                 putExtra(AlarmClock.EXTRA_MINUTES, minute)
-                if (label.isNotBlank()) putExtra(AlarmClock.EXTRA_MESSAGE, label)
-                if (days.isNotEmpty()) {
-                    putExtra(AlarmClock.EXTRA_DAYS, ArrayList(days))
-                }
                 putExtra(AlarmClock.EXTRA_VIBRATE, vibrate)
                 putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+
+                if (label.isNotBlank()) {
+                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                }
+
+                if (days.isNotEmpty()) {
+                    putExtra(
+                        AlarmClock.EXTRA_DAYS,
+                        ArrayList(days)
+                    )
+                }
+
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
             context.startActivity(intent)
             true
-        } catch (_: Throwable) {
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
             false
         }
     }
 
-    private fun formatTime(hour: Int, minute: Int): String {
-        val amPm = if (hour < 12) "AM" else "PM"
-        val hour12 = when (hour) {
-            0 -> 12
-            in 1..12 -> hour
-            else -> hour - 12
-        }
-        val minStr = if (minute < 10) "0$minute" else "$minute"
-        return "$hour12:$minStr $amPm"
+    // ------------------------------------------------------------
+    // ARGUMENT PARSING
+    // ------------------------------------------------------------
+
+    private fun extractIntArg(
+        call: FunctionCall,
+        key: String,
+    ): Int? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+
+        return value.intOrNull
+            ?: value.content.toIntOrNull()
     }
 
-    fun parseDaysArg(call: FunctionCall, key: String): List<Int> {
+    private fun extractLongArg(
+        call: FunctionCall,
+        key: String,
+    ): Long? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+
+        return value.longOrNull
+            ?: value.content.toLongOrNull()
+    }
+
+    private fun extractBooleanArg(
+        call: FunctionCall,
+        key: String,
+    ): Boolean? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+
+        return value.booleanOrNull
+            ?: value.content.toBooleanStrictOrNull()
+    }
+
+    private fun extractStringArg(
+        call: FunctionCall,
+        key: String,
+    ): String? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+
+        return if (value.isString) value.content else null
+    }
+
+    // ------------------------------------------------------------
+    // REPEAT DAYS
+    // ------------------------------------------------------------
+
+    private fun parseDaysArg(
+        call: FunctionCall,
+        key: String,
+    ): List<Int>? {
         val element = call.args[key] ?: return emptyList()
-        val text = element.jsonPrimitive.content.trim().lowercase()
-        return when {
-            text == "everyday" || text == "daily" ->
-                listOf(Calendar.SUNDAY, Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY, Calendar.SATURDAY)
-            text == "weekdays" ->
-                listOf(Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY)
-            text == "weekends" ->
-                listOf(Calendar.SATURDAY, Calendar.SUNDAY)
+        val primitive = element as? JsonPrimitive ?: return null
+
+        if (!primitive.isString) return null
+
+        val text = primitive.content.trim().lowercase(Locale.ROOT)
+
+        if (text.isBlank()) return emptyList()
+
+        val weekdays = listOf(
+            Calendar.MONDAY,
+            Calendar.TUESDAY,
+            Calendar.WEDNESDAY,
+            Calendar.THURSDAY,
+            Calendar.FRIDAY,
+        )
+
+        val weekends = listOf(
+            Calendar.SATURDAY,
+            Calendar.SUNDAY,
+        )
+
+        val everyday = listOf(
+            Calendar.SUNDAY,
+            Calendar.MONDAY,
+            Calendar.TUESDAY,
+            Calendar.WEDNESDAY,
+            Calendar.THURSDAY,
+            Calendar.FRIDAY,
+            Calendar.SATURDAY,
+        )
+
+        return when (text) {
+            "everyday", "daily" -> everyday
+            "weekdays" -> weekdays
+            "weekends" -> weekends
+
             else -> {
-                text.split(",").mapNotNull { part ->
-                    val clean = part.trim()
+                val parts = text.split(",")
+
+                if (parts.any { it.isBlank() }) return null
+
+                val parsed = parts.map { part ->
+                    val value = part.trim()
+
                     when {
-                        clean.toIntOrNull() in 1..7 -> clean.toInt()
-                        clean.startsWith("sun") -> Calendar.SUNDAY
-                        clean.startsWith("mon") -> Calendar.MONDAY
-                        clean.startsWith("tue") -> Calendar.TUESDAY
-                        clean.startsWith("wed") -> Calendar.WEDNESDAY
-                        clean.startsWith("thu") -> Calendar.THURSDAY
-                        clean.startsWith("fri") -> Calendar.FRIDAY
-                        clean.startsWith("sat") -> Calendar.SATURDAY
-                        else -> null
+                        value.toIntOrNull() in 1..7 ->
+                            value.toInt()
+
+                        value.startsWith("sun") -> Calendar.SUNDAY
+                        value.startsWith("mon") -> Calendar.MONDAY
+                        value.startsWith("tue") -> Calendar.TUESDAY
+                        value.startsWith("wed") -> Calendar.WEDNESDAY
+                        value.startsWith("thu") -> Calendar.THURSDAY
+                        value.startsWith("fri") -> Calendar.FRIDAY
+                        value.startsWith("sat") -> Calendar.SATURDAY
+
+                        else -> return null
                     }
-                }.distinct().sorted()
+                }
+
+                parsed.distinct().sorted()
             }
         }
     }
+
+    // ------------------------------------------------------------
+    // SERIALIZATION
+    // ------------------------------------------------------------
 
     private fun AlarmItem.toJsonObject(): JsonObject = buildJsonObject {
         put("id", id)
@@ -323,36 +629,60 @@ object AlarmToolExecutor {
         put("minute", minute)
         put("formatted_time", formatTime(hour, minute))
         put("label", label)
-        put("days", buildJsonArray { days.forEach { add(JsonPrimitive(it)) } })
+        put("days", days.toJsonArray())
         put("enabled", enabled)
         put("vibrate", vibrate)
         put("created_at_ms", createdAt)
         put("updated_at_ms", updatedAt)
     }
 
+    private fun List<Int>.toJsonArray() = buildJsonArray {
+        forEach { add(it) }
+    }
+
+    // ------------------------------------------------------------
+    // FORMATTING
+    // ------------------------------------------------------------
+
+    private fun formatTime(
+        hour: Int,
+        minute: Int,
+    ): String {
+        val hour12 = when (hour) {
+            0 -> 12
+            in 1..12 -> hour
+            else -> hour - 12
+        }
+
+        val amPm = if (hour < 12) "AM" else "PM"
+
+        return String.format(
+            Locale.getDefault(),
+            "%d:%02d %s",
+            hour12,
+            minute,
+            amPm,
+        )
+    }
+
+    private fun formatDuration(seconds: Int): String {
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
+        val remainingSeconds = seconds % 60
+
+        return buildList {
+            if (hours > 0) add("$hours hr")
+            if (minutes > 0) add("$minutes min")
+            if (remainingSeconds > 0) add("$remainingSeconds sec")
+        }.joinToString(" ").ifBlank { "0 sec" }
+    }
+
+    // ------------------------------------------------------------
+    // ERROR RESPONSE
+    // ------------------------------------------------------------
+
     private fun error(message: String): JsonObject = buildJsonObject {
         put("success", false)
         put("error", message)
     }
-
-    private fun extractLongArg(call: FunctionCall, key: String): Long? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.longOrNull
-                ?: element.jsonPrimitive.content.trim().toLongOrNull()
-        }.getOrNull()
-
-    private fun extractIntArg(call: FunctionCall, key: String): Int? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.intOrNull
-                ?: element.jsonPrimitive.content.trim().toIntOrNull()
-        }.getOrNull()
-
-    private fun extractBooleanArg(call: FunctionCall, key: String): Boolean? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.booleanOrNull
-                ?: element.jsonPrimitive.content.trim().lowercase().toBooleanStrictOrNull()
-        }.getOrNull()
 }

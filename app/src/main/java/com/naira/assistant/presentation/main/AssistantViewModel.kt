@@ -14,9 +14,8 @@ import com.naira.assistant.core.prompt.InstructionsConfig
 import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor
+import com.naira.assistant.core.tools.executor.CommandExecution
 import com.naira.assistant.core.tools.ToolRegistry
-import com.naira.assistant.core.tools.executor.ImageToolExecutor
 import com.naira.assistant.core.tools.executor.ScreenToolExecutor
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider
@@ -202,7 +201,7 @@ class AssistantViewModel(
     private var activeLanguage: AssistantLanguage = assistantSettingsStorage.getLanguage()
 
     /** Tool executor with access to the Android context (needed for device/battery info). */
-    private val toolExecutor = BuiltinToolExecutor.executor(appContext)
+    private val toolExecutor = CommandExecution.executor(appContext)
 
     private val _messages = MutableStateFlow<List<UiMessage>>(emptyList())
     val messages: StateFlow<List<UiMessage>> = _messages.asStateFlow()
@@ -513,13 +512,6 @@ class AssistantViewModel(
                 }
             } else {
                 when (call.name) {
-                    "generate_image" -> com.naira.assistant.ai.AssistantToolResult(
-                        response = ImageToolExecutor.executeGenerateImage(
-                            call,
-                            appContext,
-                            context.attachedImage,
-                        ),
-                    )
                     "capture_screen" -> {
                         val response = ScreenToolExecutor.executeCaptureScreen(call, appContext)
                         com.naira.assistant.ai.AssistantToolResult(
@@ -543,7 +535,7 @@ class AssistantViewModel(
             apiKey = context.apiKey,
             messages = requestHistory,
             systemPrompt = buildInstructions(),
-            toolDefinitions = BuiltinToolExecutor.definitions,
+            toolDefinitions = CommandExecution.definitions,
             executeTool = executeTool,
             streaming = context.streaming,
             provider = context.provider,

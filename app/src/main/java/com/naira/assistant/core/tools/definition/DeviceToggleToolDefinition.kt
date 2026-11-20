@@ -1,84 +1,120 @@
+
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.*
 
-/** Function declarations for hardware feature toggles: flashlight, Bluetooth and Wi-Fi. */
+/**
+ * Function declarations for hardware feature controls:
+ * flashlight, Bluetooth, and Wi-Fi.
+ */
 
-fun flashlightControlTool() = ToolDefinition(
+private fun hardwareControlTool(
+    name: String,
+    feature: String,
+    description: String
+) = ToolDefinition(
+    name = name,
+    description = description.trimIndent(),
+    parameters = buildJsonObject {
+        put("type", "object")
+
+        putJsonObject("properties") {
+            putJsonObject("action") {
+                put("type", "string")
+                put("description", "Action to perform on $feature.")
+
+                putJsonArray("enum") {
+                    add("turn_on")
+                    add("turn_off")
+                    add("check_status")
+                }
+            }
+        }
+
+        putJsonArray("required") {
+            add("action")
+        }
+    }
+)
+
+fun flashlightControlTool() = hardwareControlTool(
     name = "control_flashlight",
-    description = "Turn the device flashlight (camera torch) on or off, or check whether it is currently lit. " +
-            "Use for requests like 'turn on the flashlight', 'turn off the torch' or 'is the flashlight on?'. " +
-            "Not for screen brightness.",
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("action") {
-                put("type", "string")
-                put("description", "What to do with the flashlight.")
-                putJsonArray("enum") {
-                    add("turn_on")
-                    add("turn_off")
-                    add("check_status")
-                }
-            }
-        }
-        putJsonArray("required") {
-            add("action")
-        }
-    },
+    feature = "the flashlight",
+    description = """
+        Control the device camera flashlight (torch).
+
+        Supported actions:
+        - turn_on: Turn on the flashlight.
+        - turn_off: Turn off the flashlight.
+        - check_status: Check whether the flashlight is currently on.
+
+        Use for requests involving the camera torch or flashlight.
+        Do not use for screen brightness or camera photo capture.
+
+        Important:
+        - Report success only after the flashlight state has been confirmed.
+        - If the device has no torch or camera access is unavailable,
+          report the actual error.
+        - Do not claim the flashlight is on merely because an operation
+          was requested.
+    """
 )
 
-fun bluetoothControlTool() = ToolDefinition(
+fun bluetoothControlTool() = hardwareControlTool(
     name = "control_bluetooth",
-    description = "Turn the device Bluetooth on or off, or check whether it is currently enabled. " +
-            "Use for requests like 'turn on Bluetooth' or 'is Bluetooth on?'. " +
-            "Newer Android versions may not let apps switch Bluetooth directly; " +
-            "in that case the tool opens the Bluetooth settings panel for the user to confirm.",
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("action") {
-                put("type", "string")
-                put("description", "What to do with Bluetooth.")
-                putJsonArray("enum") {
-                    add("turn_on")
-                    add("turn_off")
-                    add("check_status")
-                }
-            }
-        }
-        putJsonArray("required") {
-            add("action")
-        }
-    },
+    feature = "Bluetooth",
+    description = """
+        Control or inspect the device Bluetooth adapter.
+
+        Supported actions:
+        - turn_on: Request Bluetooth activation.
+        - turn_off: Request Bluetooth deactivation.
+        - check_status: Check whether Bluetooth is enabled.
+
+        Android compatibility:
+        - Android 12 and newer restrict Bluetooth operations through
+          runtime permissions and system policies.
+        - Android 13 and newer do not allow ordinary applications
+          to enable or disable Bluetooth using BluetoothAdapter.enable()
+          or BluetoothAdapter.disable().
+        - When direct control is unavailable, open the appropriate
+          system Bluetooth settings interface for user confirmation.
+
+        Important:
+        - Distinguish between an action being requested and completed.
+        - If system settings are opened, tell the user that confirmation
+          is required.
+        - Never claim Bluetooth changed state until verified.
+        - If permission is denied or Bluetooth is unsupported,
+          report that accurately.
+    """
 )
 
-fun wifiControlTool() = ToolDefinition(
+fun wifiControlTool() = hardwareControlTool(
     name = "control_wifi",
-    description = "Turn the device Wi-Fi on or off, or check whether it is currently enabled. " +
-            "Use for requests like 'turn off Wi-Fi' or 'is Wi-Fi on?'. " +
-            "On Android 10 and newer, apps cannot switch Wi-Fi directly; " +
-            "the tool then opens the Wi-Fi settings panel for the user to confirm.",
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("action") {
-                put("type", "string")
-                put("description", "What to do with Wi-Fi.")
-                putJsonArray("enum") {
-                    add("turn_on")
-                    add("turn_off")
-                    add("check_status")
-                }
-            }
-        }
-        putJsonArray("required") {
-            add("action")
-        }
-    },
+    feature = "Wi-Fi",
+    description = """
+        Control or inspect the device Wi-Fi adapter.
+
+        Supported actions:
+        - turn_on: Request Wi-Fi activation.
+        - turn_off: Request Wi-Fi deactivation.
+        - check_status: Check whether Wi-Fi is enabled.
+
+        Android compatibility:
+        - Android 10 (API 29) and newer generally prevent ordinary
+          applications from enabling or disabling Wi-Fi directly.
+        - Use the system Wi-Fi settings panel when direct control
+          is unavailable.
+        - Do not confuse opening the settings panel with successfully
+          changing the Wi-Fi state.
+
+        Important:
+        - Check the actual Wi-Fi state before reporting its status.
+        - If the settings panel opens, explain that the user must
+          complete the change.
+        - Never claim Wi-Fi was enabled or disabled without verification.
+        - Report permission failures and unsupported operations accurately.
+    """
 )

@@ -1,3 +1,4 @@
+
 package com.naira.assistant.core.tools.executor
 
 import android.content.Context
@@ -41,7 +42,6 @@ import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeGetMedia
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaPlaybackControl
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaVolumeControl
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executePhoneAlertControl
-import com.naira.assistant.core.tools.executor.ImageToolExecutor.executeGenerateImage
 import com.naira.assistant.core.tools.executor.NoteToolExecutor.executeCreateNote
 import com.naira.assistant.core.tools.executor.NoteToolExecutor.executeDeleteNote
 import com.naira.assistant.core.tools.executor.NoteToolExecutor.executeListNotes
@@ -68,59 +68,83 @@ import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeUpdateTod
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-object BuiltinToolExecutor {
-
-    /** Safe argument extraction. */
-    fun jsonStringArg(
-        call: FunctionCall,
-        key: String
-    ): String? =
-        runCatching {
-            call.args[key]?.jsonPrimitive?.content
-        }.getOrNull()?.takeIf {
-            it.isNotBlank() && it != "null"
-        }
-
-    val definitions = ToolRegistry.definitions
+object CommandExecution {
 
     /**
-     * Creates a tool executor that has access to an Android [Context],
-     * required by device/battery, applications, media playback/volume, device toggles, calendar, alarms, notes, and todo tools.
+     * Safely extracts a string argument from a tool call.
      *
-     * Memory and reminder tools are cloud-only: they read and write the
-     * Firestore user memories/reminders for the signed-in user.
+     * Rejects null, numbers, booleans, arrays, and objects.
      */
-    fun executor(context: Context): suspend (FunctionCall) -> JsonObject {
-        val memoryRepo: MemoryRepository = FirebaseMemoryRepository.getInstance()
-        val reminderRepo: ReminderRepository = FirebaseReminderRepository.getInstance()
+    internal fun jsonStringArg(
+        call: FunctionCall,
+        key: String,
+    ): String? {
+        val primitive = call.args[key] as? JsonPrimitive
+            ?: return null
 
-        val noteRepo = SqliteNoteDatabase.getInstance(context)
-        val todoRepo = SqliteTodoDatabase.getInstance(context)
-        val alarmRepo = SqliteAlarmDatabase.getInstance(context)
-        val cricketToolExecutor = CricketToolExecutor(context)
+        if (!primitive.isString) return null
+
+        return primitive.content.takeIf {
+            it.isNotBlank() && it != "null"
+        }
+    }
+
+    val definitions
+        get() = ToolRegistry.definitions
+
+    /**
+     * Creates a tool executor with application-scoped dependencies.
+     *
+     * Local database repositories are initialized once per executor.
+     * Firebase repositories are initialized lazily when required.
+     */
+    fun executor(
+        context: Context,
+    ): suspend (FunctionCall) -> JsonObject {
+
+        val appContext = context.applicationContext
+
+        val noteRepo = SqliteNoteDatabase.getInstance(appContext)
+        val todoRepo = SqliteTodoDatabase.getInstance(appContext)
+        val alarmRepo = SqliteAlarmDatabase.getInstance(appContext)
+
+        val cricketToolExecutor = CricketToolExecutor(appContext)
+
+        val memoryRepo: MemoryRepository by lazy {
+            FirebaseMemoryRepository.getInstance()
+        }
+
+        val reminderRepo: ReminderRepository by lazy {
+            FirebaseReminderRepository.getInstance()
+        }
 
         return { call ->
+
             try {
                 when (call.name) {
 
-                    // ── Time & Device ────────────────────────────────────────────
+                    // ── Time & Device ─────────────────────────────
+
                     "get_current_time" ->
                         executeGetCurrentTime(call)
 
                     "get_device_info" ->
-                        executeGetDeviceInfo(call, context)
+                        executeGetDeviceInfo(call, appContext)
+
+                    // ── Terminal ──────────────────────────────────
 
                     "terminal_find_tool" ->
-                        executeFindTerminalTool(call, context)
+                        executeFindTerminalTool(call, appContext)
 
                     "terminal_calculate" ->
-                        executeTerminalCalculation(call, context)
+                        executeTerminalCalculation(call, appContext)
 
-                    // ── Cricket ────────────────────────────────────────────────
+                    // ── Cricket ───────────────────────────────────
+
                     "get_live_cricket_scores" ->
                         cricketToolExecutor.getLiveScores()
 
@@ -130,71 +154,74 @@ object BuiltinToolExecutor {
                     "get_cricket_scorecard" ->
                         cricketToolExecutor.getScorecard(call)
 
-                    // ── Applications ─────────────────────────────────────────────
+                    // ── Applications ──────────────────────────────
+
                     "list_installed_apps" ->
-                        executeListInstalledApps(call, context)
+                        executeListInstalledApps(call, appContext)
 
                     "check_app_installed" ->
-                        executeCheckAppInstalled(call, context)
+                        executeCheckAppInstalled(call, appContext)
 
                     "open_app" ->
-                        executeOpenApp(call, context)
+                        executeOpenApp(call, appContext)
 
-                    // ── Communication drafts and sharing ──────────────────────
+                    // ── Communication ─────────────────────────────
+
                     "compose_email" ->
-                        executeComposeEmail(call, context)
+                        executeComposeEmail(call, appContext)
 
                     "compose_text_message" ->
-                        executeComposeTextMessage(call, context)
+                        executeComposeTextMessage(call, appContext)
 
                     "share_text" ->
-                        executeShareText(call, context)
+                        executeShareText(call, appContext)
 
-                    "generate_image" ->
-                        executeGenerateImage(call, context)
+                    // ── Media ──────────────────────────────────────
 
-                    // ── Media playback & volume ─────────────────────────────────
                     "media_playback_control" ->
-                        executeMediaPlaybackControl(call, context)
+                        executeMediaPlaybackControl(call, appContext)
 
                     "media_volume_control" ->
-                        executeMediaVolumeControl(call, context)
+                        executeMediaVolumeControl(call, appContext)
 
                     "get_media_status" ->
-                        executeGetMediaStatus(context)
+                        executeGetMediaStatus(appContext)
 
                     "phone_alert_control" ->
-                        executePhoneAlertControl(call, context)
+                        executePhoneAlertControl(call, appContext)
 
-                    // ── Device toggles (flashlight, Bluetooth, Wi-Fi) ───────────
+                    // ── Device Toggles ─────────────────────────────
+
                     "control_flashlight" ->
-                        executeFlashlightControl(call, context)
+                        executeFlashlightControl(call, appContext)
 
                     "control_bluetooth" ->
-                        executeBluetoothControl(call, context)
+                        executeBluetoothControl(call, appContext)
 
                     "control_wifi" ->
-                        executeWifiControl(call, context)
+                        executeWifiControl(call, appContext)
 
-                    // ── Calendar ─────────────────────────────────────────────────
+                    // ── Calendar ───────────────────────────────────
+
                     "create_calendar_event" ->
-                        executeCreateCalendarEvent(call, context)
+                        executeCreateCalendarEvent(call, appContext)
 
                     "list_calendar_events" ->
-                        executeListCalendarEvents(call, context)
+                        executeListCalendarEvents(call, appContext)
 
                     "get_calendar_event" ->
-                        executeGetCalendarEvent(call, context)
+                        executeGetCalendarEvent(call, appContext)
 
                     "update_calendar_event" ->
-                        executeUpdateCalendarEvent(call, context)
+                        executeUpdateCalendarEvent(call, appContext)
 
                     "delete_calendar_event" ->
-                        executeDeleteCalendarEvent(call, context)
+                        executeDeleteCalendarEvent(call, appContext)
 
-                    // ── Alarm & Timer ─────────────────────────────────────────────
+                    // ── Alarms & Timers ────────────────────────────
+
                     "create_alarm" ->
-                        executeCreateAlarm(call, context, alarmRepo)
+                        executeCreateAlarm(call, appContext, alarmRepo)
 
                     "list_alarms" ->
                         executeListAlarms(call, alarmRepo)
@@ -203,18 +230,19 @@ object BuiltinToolExecutor {
                         executeGetAlarm(call, alarmRepo)
 
                     "update_alarm" ->
-                        executeUpdateAlarm(call, context, alarmRepo)
+                        executeUpdateAlarm(call, appContext, alarmRepo)
 
                     "delete_alarm" ->
                         executeDeleteAlarm(call, alarmRepo)
 
                     "set_timer" ->
-                        executeSetTimer(call, context)
+                        executeSetTimer(call, appContext)
 
                     "show_alarms" ->
-                        executeShowAlarms(context)
+                        executeShowAlarms(appContext)
 
-                    // ── Long-term Memory ─────────────────────────────────────────
+                    // ── Long-term Memory ───────────────────────────
+
                     "insert_memory" ->
                         executeInsertMemory(call, memoryRepo)
 
@@ -233,7 +261,8 @@ object BuiltinToolExecutor {
                     "list_memories" ->
                         executeListMemories(call, memoryRepo)
 
-                    // ── Reminders ────────────────────────────────────────────────
+                    // ── Reminders ──────────────────────────────────
+
                     "create_reminder" ->
                         executeCreateReminder(call, reminderRepo)
 
@@ -255,7 +284,8 @@ object BuiltinToolExecutor {
                     "mark_reminder_done" ->
                         executeMarkReminderDone(call, reminderRepo)
 
-                    // ── Notes ────────────────────────────────────────────────────
+                    // ── Notes ──────────────────────────────────────
+
                     "create_note" ->
                         executeCreateNote(call, noteRepo)
 
@@ -271,7 +301,8 @@ object BuiltinToolExecutor {
                     "search_notes" ->
                         executeSearchNotes(call, noteRepo)
 
-                    // ── To-do ────────────────────────────────────────────────────
+                    // ── To-do ──────────────────────────────────────
+
                     "create_todo" ->
                         executeCreateTodo(call, todoRepo)
 
@@ -293,34 +324,43 @@ object BuiltinToolExecutor {
                     "mark_todo_undone" ->
                         executeMarkTodoUndone(call, todoRepo)
 
-                    // ── Screen access & automation (accessibility) ───────────────
+                    // ── Screen Access ──────────────────────────────
+
                     "capture_screen" ->
-                        executeCaptureScreen(call, context)
+                        executeCaptureScreen(call, appContext)
 
                     "read_screen_text" ->
-                        executeReadScreenText(call, context)
+                        executeReadScreenText(call, appContext)
 
                     "perform_screen_action" ->
-                        executePerformScreenAction(call, context)
+                        executePerformScreenAction(call, appContext)
+
+                    // ── Unknown Tool ───────────────────────────────
 
                     else -> buildJsonObject {
                         put(
                             "error",
                             "Unknown tool '${call.name}'. Available tools: " +
-                                    definitions.joinToString { it.name } + "."
+                                    definitions.joinToString { it.name } + ".",
                         )
                     }
                 }
-            } catch (c: CancellationException) {
-                // Never swallow coroutine cancellation — it must propagate so the
-                // caller's Job can finish promptly.
-                throw c
-            } catch (e: Exception) {
+
+            } catch (cancelled: CancellationException) {
+                // Preserve structured concurrency.
+                throw cancelled
+
+            } catch (exception: Exception) {
                 buildJsonObject {
+                    put("success", false)
                     put(
                         "error",
                         "Tool '${call.name}' failed: " +
-                                (e.message ?: e::class.simpleName.orEmpty())
+                                (
+                                        exception.message
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?: exception::class.simpleName.orEmpty()
+                                        ),
                     )
                 }
             }

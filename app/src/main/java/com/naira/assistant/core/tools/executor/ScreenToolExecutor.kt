@@ -1,20 +1,21 @@
+
 package com.naira.assistant.core.tools.executor
 
 import android.accessibilityservice.AccessibilityService
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.graphics.BitmapFactory
+import android.net.Uri
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.tools.executor.AppToolExecutor.executeOpenApp
-import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
+import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -22,41 +23,64 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Executes the AI screen-access tools on top of [ThrisaAccessibilityService]:
- * capture_screen (screenshot for the model + the chat bubble), read_screen_text
- * (accessibility tree) and perform_screen_action (gestures, navigation, typing).
+ * Executes AI screen-access tools using ThrisaAccessibilityService.
  *
- * Every tool degrades gracefully: when the service is off or the platform lacks
- * a capability, the model receives a structured error that tells it (and the
- * user) what to enable instead of failing the chat.
+ * Supports:
+ * - capture_screen
+ * - read_screen_text
+ * - perform_screen_action
+ * - Computer Use actions
+ *
+ * Screenshot bytes are consumed separately from screenshot dimensions.
+ * This allows the ViewModel to consume an image without invalidating
+ * the coordinates belonging to that screenshot.
  */
 object ScreenToolExecutor {
 
-    /**
-     * Screenshot bytes from the most recent capture_screen call. The ViewModel
-     * consumes them once per tool round and ships them to the model as an
-     * inline image turn right after the function responses.
-     */
-    private val lastCapture = AtomicReference<ByteArray?>(null)
-    private val lastCaptureDimensions = AtomicReference<Pair<Int, Int>?>(null)
+    private data class ScreenCapture(
+        val bytes: ByteArray?,
+        val width: Int,
+        val height: Int,
+    )
 
-    fun consumeLastCapture(): ByteArray? = lastCapture.getAndSet(null)
+    private val lastCapture = AtomicReference<ScreenCapture?>(null)
 
     /**
-     * Executes the `capture_screen` tool: screenshots the active display
-     * (API 30+) and falls back to the accessibility tree text when a bitmap
-     * is unavailable (older Android, rate limit, secure window).
+     * Returns screenshot bytes once.
+     * Screenshot dimensions remain available for coordinate conversion.
      */
-    suspend fun executeCaptureScreen(call: FunctionCall, context: Context): JsonObject {
+    fun consumeLastCapture(): ByteArray? {
+        while (true) {
+            val current = lastCapture.get() ?: return null
+            val bytes = current.bytes ?: return null
+
+            if (
+                lastCapture.compareAndSet(
+                    current,
+                    current.copy(bytes = null)
+                )
+            ) {
+                return bytes
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Capture screen
+    // ------------------------------------------------------------------
+
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun executeCaptureScreen(
+        call: FunctionCall,
+        context: Context,
+    ): JsonObject {
         val service = ThrisaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
-        // Let foreground transitions and animations settle so the capture
-        // reflects the screen after the previous action, not mid-animation.
-        // A freshly launched app especially needs this beat to draw its UI.
         delay(600)
+
+        // Invalidate coordinates from the previous screenshot.
         lastCapture.set(null)
-        lastCaptureDimensions.set(null)
 
         val screenText = try {
             service.readScreenText()
@@ -65,6 +89,7 @@ object ScreenToolExecutor {
         } catch (_: Exception) {
             null
         }
+
         val screenshot = try {
             service.takeScreenshot()
         } catch (cancelled: CancellationException) {
@@ -74,177 +99,402 @@ object ScreenToolExecutor {
         }
 
         if (screenshot == null) {
-            return if (!screenText.isNullOrBlank()) buildJsonObject {
-                put("success", true)
-                put("action", "capture_screen")
-                put("mode", "text_only")
-                put("note", "A screenshot is unavailable right now (Android version or system rate limit). Only the screen text is provided; base coordinate decisions on it cautiously.")
-                put("screen_text", screenText)
+            return if (!screenText.isNullOrBlank()) {
+                buildJsonObject {
+                    put("success", true)
+                    put("action", "capture_screen")
+                    put("mode", "text_only")
+                    put(
+                        "note",
+                        "A screenshot is unavailable. Only screen text is provided. " +
+                                "Do not use pixel coordinates without a fresh screenshot."
+                    )
+                    put("screen_text", screenText.take(12000))
+                }
             } else {
-                error("Could not capture the screen right now - the system rate-limits screenshots to about one per second. Wait a moment and try again, or use read_screen_text.")
+                error(
+                    "Could not capture the screen. Android may be rate-limiting " +
+                            "screenshots, or the current window may be secure. " +
+                            "Wait briefly and try again, or use read_screen_text."
+                )
             }
         }
 
-        val imageUri = saveForDisplay(context, screenshot)
-        lastCapture.set(screenshot)
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(screenshot, 0, screenshot.size, options)
-        if (options.outWidth > 0 && options.outHeight > 0) {
-            lastCaptureDimensions.set(options.outWidth to options.outHeight)
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
         }
+
+        BitmapFactory.decodeByteArray(
+            screenshot,
+            0,
+            screenshot.size,
+            options
+        )
+
+        val width = options.outWidth
+        val height = options.outHeight
+
+        lastCapture.set(
+            ScreenCapture(
+                bytes = screenshot,
+                width = width,
+                height = height,
+            )
+        )
+
+        val imageUri = saveForDisplay(context, screenshot)
 
         return buildJsonObject {
             put("success", true)
             put("action", "capture_screen")
-            if (imageUri != null) put("image_uri", imageUri)
-            put("note", "The screenshot is attached right after this result. Read it to decide the next action and exact tap coordinates.")
-            if (!screenText.isNullOrBlank()) put("screen_text", screenText.take(1500))
+
+            if (imageUri != null) {
+                put("image_uri", imageUri)
+            }
+
+            put(
+                "note",
+                "The screenshot is attached after this result. " +
+                        "Inspect it before deciding the next screen action."
+            )
+
+            if (!screenText.isNullOrBlank()) {
+                put("screen_text", screenText.take(12000))
+            }
         }
     }
 
-    /**
-     * Executes the `read_screen_text` tool: dumps the visible text of the
-     * active window from the accessibility tree.
-     */
-    suspend fun executeReadScreenText(call: FunctionCall, context: Context): JsonObject {
+    // ------------------------------------------------------------------
+    // Read screen text
+    // ------------------------------------------------------------------
+
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun executeReadScreenText(
+        call: FunctionCall,
+        context: Context,
+    ): JsonObject {
         val service = ThrisaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
-        val text = runCatching { service.readScreenText() }.getOrNull()
+        val text = try {
+            service.readScreenText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            return error(
+                exception.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Unable to read the current screen."
+            )
+        }
+
         return if (text.isNullOrBlank()) {
-            error("Could not read the screen content - the current window exposes no readable text (for example the launcher or a video player). Use capture_screen instead.")
+            error(
+                "The current window exposes no readable accessibility text. " +
+                        "Try capture_screen instead."
+            )
         } else {
             buildJsonObject {
                 put("success", true)
                 put("action", "read_screen_text")
-                put("screen_text", text)
+                put("screen_text", text.take(12000))
             }
         }
     }
 
-    /**
-     * Executes the `perform_screen_action` tool: taps, swipes, scrolls,
-     * system navigation and text entry via the accessibility service.
-     */
-    suspend fun executePerformScreenAction(call: FunctionCall, context: Context): JsonObject {
+    // ------------------------------------------------------------------
+    // Standard screen actions
+    // ------------------------------------------------------------------
+
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun executePerformScreenAction(
+        call: FunctionCall,
+        context: Context,
+    ): JsonObject {
         val service = ThrisaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
-        val action = jsonStringArg(call, "action")?.trim()?.lowercase()
-        return when (action) {
-            "tap" -> withPoint(call, service) { x, y ->
-                service.tap(x, y).toResult("tap", "Tapped the screen at (${x.toInt()}, ${y.toInt()}).")
+        val action = jsonStringArg(call, "action")
+            ?.trim()
+            ?.lowercase()
+            ?: return error("A screen action is required.")
+
+        return try {
+            when (action) {
+
+                "tap" -> withPoint(call, service) { x, y ->
+                    service.tap(x, y).toResult(
+                        "tap",
+                        "Tapped the screen at (${x.toInt()}, ${y.toInt()})."
+                    )
+                }
+
+                "double_tap" -> withPoint(call, service) { x, y ->
+                    service.doubleTap(x, y).toResult(
+                        "double_tap",
+                        "Double-tapped the screen at (${x.toInt()}, ${y.toInt()})."
+                    )
+                }
+
+                "long_press" -> withPoint(call, service) { x, y ->
+                    service.longPress(x, y).toResult(
+                        "long_press",
+                        "Long-pressed the screen at (${x.toInt()}, ${y.toInt()})."
+                    )
+                }
+
+                "click_element" -> {
+                    val target = jsonStringArg(call, "target")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: return error(
+                            "Provide the visible text or accessibility ID of the element to click."
+                        )
+
+                    service.clickElement(target).toResult(
+                        "click_element",
+                        "The click action was accepted for '$target'."
+                    )
+                }
+
+                "swipe" -> withSwipe(call, service) {
+                        x1, y1, x2, y2, durationMs ->
+
+                    service.swipe(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        durationMs
+                    ).toResult(
+                        "swipe",
+                        "Swiped from (${x1.toInt()}, ${y1.toInt()}) " +
+                                "to (${x2.toInt()}, ${y2.toInt()})."
+                    )
+                }
+
+                "scroll_element" -> scrollElement(service, call)
+
+                "scroll_up", "scroll_down" -> scroll(service, action)
+
+                "back" -> service.performGlobal(
+                    AccessibilityService.GLOBAL_ACTION_BACK
+                ).toResult("back", "Pressed Back.")
+
+                "home" -> service.performGlobal(
+                    AccessibilityService.GLOBAL_ACTION_HOME
+                ).toResult("home", "Requested the Home action.")
+
+                "recents" -> service.performGlobal(
+                    AccessibilityService.GLOBAL_ACTION_RECENTS
+                ).toResult("recents", "Requested the recent apps overview.")
+
+                "notifications" -> service.performGlobal(
+                    AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+                ).toResult("notifications", "Requested the notification shade.")
+
+                "type_text" -> executeTypeText(service, call)
+
+                else -> error(
+                    "Unknown screen action '$action'. Supported actions: " +
+                            "tap, double_tap, long_press, click_element, swipe, " +
+                            "scroll_element, scroll_up, scroll_down, back, home, " +
+                            "recents, notifications, type_text."
+                )
             }
-            "double_tap" -> withPoint(call, service) { x, y ->
-                service.doubleTap(x, y).toResult("double_tap", "Double-tapped the screen at (${x.toInt()}, ${y.toInt()}).")
-            }
-            "long_press" -> withPoint(call, service) { x, y ->
-                service.longPress(x, y).toResult("long_press", "Long-pressed the screen at (${x.toInt()}, ${y.toInt()}).")
-            }
-            "click_element" -> {
-                val target = jsonStringArg(call, "target")
-                    ?: return error("Provide the visible text or accessibility ID of the element to click.")
-                service.clickElement(target).toResult("click_element", "Clicked '$target'.")
-            }
-            "swipe" -> withSwipe(call, service) { x1, y1, x2, y2, durationMs ->
-                service.swipe(x1, y1, x2, y2, durationMs)
-                    .toResult("swipe", "Swiped from (${x1.toInt()}, ${y1.toInt()}) to (${x2.toInt()}, ${y2.toInt()}).")
-            }
-            "scroll_element" -> scrollElement(service, call)
-            "scroll_up", "scroll_down" -> scroll(service, action)
-            "back" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_BACK)
-                .toResult("back", "Pressed Back.")
-            "home" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_HOME)
-                .toResult("home", "Went to the home screen.")
-            "recents" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_RECENTS)
-                .toResult("recents", "Opened the recent apps overview.")
-            "notifications" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)
-                .toResult("notifications", "Opened the notification shade.")
-            "type_text" -> executeTypeText(service, call)
-            else -> error("Unknown screen action '${action ?: "<missing>"}'. Use one of: tap, double_tap, long_press, swipe, scroll_up, scroll_down, back, home, recents, notifications, type_text.")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            error(
+                exception.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "The screen action could not be completed."
+            )
         }
     }
 
-    suspend fun executeComputerUseAction(call: FunctionCall, context: Context): JsonObject {
+    // ------------------------------------------------------------------
+    // Computer Use actions
+    // ------------------------------------------------------------------
+
+    suspend fun executeComputerUseAction(
+        call: FunctionCall,
+        context: Context,
+    ): JsonObject {
         val service = ThrisaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
-        val actionResult = when (call.name.trim().lowercase()) {
-            "open_app" -> executeOpenApp(call, context)
-            "click" -> withNormalizedPoint(call, service) { x, y ->
-                service.tap(x, y).toResult("click", "Tapped the requested screen position.")
-            }
-            "double_click" -> withNormalizedPoint(call, service) { x, y ->
-                service.doubleTap(x, y).toResult("double_click", "Double-tapped the requested screen position.")
-            }
-            "triple_click" -> withNormalizedPoint(call, service) { x, y ->
-                repeat(3) { index ->
-                    if (index > 0) delay(100)
-                    if (!service.tap(x, y)) return@withNormalizedPoint error("The triple-click gesture was cancelled.")
+        val actionName = call.name.trim().lowercase()
+
+        val actionResult = try {
+            when (actionName) {
+
+                "open_app" -> executeOpenApp(call, context)
+
+                "click" -> withNormalizedPoint(call, service) { x, y ->
+                    service.tap(x, y).toResult(
+                        "click",
+                        "Tapped the requested screen position."
+                    )
                 }
-                buildJsonObject {
-                    put("success", true)
-                    put("action", "triple_click")
+
+                "double_click" -> withNormalizedPoint(call, service) { x, y ->
+                    service.doubleTap(x, y).toResult(
+                        "double_click",
+                        "Double-tapped the requested screen position."
+                    )
                 }
-            }
-            "long_press", "right_click" -> withNormalizedPoint(call, service) { x, y ->
-                service.longPress(x, y).toResult(call.name, "Long-pressed the requested screen position.")
-            }
-            "scroll" -> executeComputerUseScroll(call, service)
-            "swipe", "drag" -> executeComputerUseSwipe(call, service)
-            "type" -> executeComputerUseType(call, service)
-            "keypress", "press_key" -> executeComputerUseKeypress(call, service)
-            "navigate" -> executeComputerUseNavigate(call, context)
-            "go_back" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_BACK)
-                .toResult("go_back", "Went back.")
-            "wait" -> {
-                val seconds = (extractNumberArg(call, "seconds") ?: 1.0).coerceIn(0.1, 5.0)
-                delay((seconds * 1000).toLong())
-                buildJsonObject {
-                    put("success", true)
-                    put("action", "wait")
-                    put("seconds", seconds)
+
+                "triple_click" -> withNormalizedPoint(call, service) { x, y ->
+                    repeat(3) { index ->
+                        if (index > 0) delay(100)
+
+                        if (!service.tap(x, y)) {
+                            return@withNormalizedPoint error(
+                                "The triple-click gesture was interrupted."
+                            )
+                        }
+                    }
+
+                    buildJsonObject {
+                        put("success", true)
+                        put("action", "triple_click")
+                        put("message", "Dispatched three taps.")
+                    }
                 }
+
+                "long_press", "right_click" ->
+                    withNormalizedPoint(call, service) { x, y ->
+                        service.longPress(x, y).toResult(
+                            actionName,
+                            "Long-pressed the requested screen position."
+                        )
+                    }
+
+                "scroll" -> executeComputerUseScroll(call, service)
+
+                "swipe", "drag" -> executeComputerUseSwipe(call, service)
+
+                "type" -> executeComputerUseType(call, service)
+
+                "keypress", "press_key" ->
+                    executeComputerUseKeypress(call, service)
+
+                "navigate" -> executeComputerUseNavigate(call, context)
+
+                "go_back" -> service.performGlobal(
+                    AccessibilityService.GLOBAL_ACTION_BACK
+                ).toResult("go_back", "Requested the Back action.")
+
+                "wait" -> {
+                    val seconds = (
+                            extractNumberArg(call, "seconds") ?: 1.0
+                            ).coerceIn(0.1, 5.0)
+
+                    delay((seconds * 1000).toLong())
+
+                    buildJsonObject {
+                        put("success", true)
+                        put("action", "wait")
+                        put("seconds", seconds)
+                    }
+                }
+
+                "go_forward" -> error(
+                    "Forward navigation is not supported by Android accessibility."
+                )
+
+                else -> error(
+                    "Unsupported Computer Use action '$actionName'."
+                )
             }
-            "go_forward" -> error("Forward navigation is not supported by Android accessibility.")
-            else -> error("Unsupported Gemini Computer Use action '${call.name}'.")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            error(
+                exception.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "The Computer Use action failed."
+            )
         }
 
-        val captureResponse = executeCaptureScreen(
-            FunctionCall(name = "capture_screen"),
-            context,
-        )
+        // Capture the resulting screen even when the action failed.
+        // This gives the model useful information about the current state.
+        val captureResponse = try {
+            executeCaptureScreen(
+                FunctionCall(name = "capture_screen"),
+                context
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            error(
+                exception.message
+                    ?: "Unable to capture the resulting screen."
+            )
+        }
+
         return buildJsonObject {
-            actionResult.forEach { (key, value) -> put(key, value) }
-            captureResponse["image_uri"]?.let { put("image_uri", it) }
-            captureResponse["screen_text"]?.let { put("screen_text", it) }
-            captureResponse["error"]?.let { put("screen_capture_error", it) }
+            actionResult.forEach { (key, value) ->
+                put(key, value)
+            }
+
+            captureResponse["image_uri"]?.let {
+                put("image_uri", it)
+            }
+
+            captureResponse["screen_text"]?.let {
+                put("screen_text", it)
+            }
+
+            captureResponse["error"]?.let {
+                put("screen_capture_error", it)
+            }
+
+            captureResponse["mode"]?.let {
+                put("screen_capture_mode", it)
+            }
         }
     }
 
     // ------------------------------------------------------------------
-    // Helpers
+    // Text entry
     // ------------------------------------------------------------------
 
-    private suspend fun executeTypeText(service: ThrisaAccessibilityService, call: FunctionCall): JsonObject {
+    private suspend fun executeTypeText(
+        service: ThrisaAccessibilityService,
+        call: FunctionCall,
+    ): JsonObject {
         val text = jsonStringArg(call, "text")
-        if (text.isNullOrBlank()) {
-            return error("Please provide the 'text' to type.")
+            ?: return error("Provide the text to enter.")
+
+        if (text.isEmpty()) {
+            return error("The text to enter cannot be empty.")
         }
+
         val target = jsonStringArg(call, "target")
-        return if (service.typeText(text, target)) {
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        val entered = service.typeText(text, target)
+
+        return if (entered) {
             buildJsonObject {
                 put("success", true)
                 put("action", "type_text")
-                put("message", "Entered the text into ${target?.let { "'$it'" } ?: "the app's focused input field"}. It has NOT been sent or submitted - " +
-                        "capture the screen and tap the send/submit button if the task requires that.")
+                put(
+                    "message",
+                    "Entered the requested text. It has NOT been sent or submitted."
+                )
             }
         } else {
             error(
                 if (target == null) {
-                    "No text input on screen could receive the text. Inspect the screen, select the input, then try again."
+                    "No editable input field could receive the text. " +
+                            "Inspect the screen and focus the correct field."
                 } else {
-                    "Could not find an editable text field matching '$target'. Read the current screen and choose its exact label or accessibility ID."
+                    "Could not find an editable field matching '$target'. " +
+                            "Inspect the screen and use its exact label or accessibility ID."
                 }
             )
         }
@@ -256,28 +506,62 @@ object ScreenToolExecutor {
     ): JsonObject {
         val text = jsonStringArg(call, "text")
             ?: return error("The Computer Use type action did not include text.")
+
+        if (text.isEmpty()) {
+            return error("The text to enter cannot be empty.")
+        }
+
         val x = extractNumberArg(call, "x")
         val y = extractNumberArg(call, "y")
+
+        if ((x == null) != (y == null)) {
+            return error("Provide both x and y coordinates, or neither.")
+        }
+
         if (x != null && y != null) {
             val point = normalizedPoint(x, y, service)
-                ?: return error("The Computer Use type action included off-screen coordinates.")
+                ?: return error(
+                    "The Computer Use type action included off-screen coordinates."
+                )
+
             if (!service.tap(point.first, point.second)) {
-                return error("Could not focus the text field; the tap gesture was cancelled.")
+                return error("Could not focus the requested input field.")
             }
-            delay(100)
+
+            delay(150)
         }
+
         if (!service.typeText(text)) {
             return error("No editable text field could receive the requested text.")
         }
-        if (call.args["press_enter"]?.jsonPrimitive?.booleanOrNull == true && !service.pressImeEnter()) {
-            return error("The text was entered, but this field does not expose an Enter/submit accessibility action.")
+
+        val pressEnter = call.args["press_enter"]
+            ?.jsonPrimitive
+            ?.booleanOrNull == true
+
+        if (pressEnter && !service.pressImeEnter()) {
+            return error(
+                "The text was entered, but the field did not accept the Enter action."
+            )
         }
+
         return buildJsonObject {
             put("success", true)
             put("action", "type")
-            put("message", "Entered the requested text.")
+            put(
+                "message",
+                if (pressEnter) {
+                    "Entered the text and requested the Enter action."
+                } else {
+                    "Entered the requested text. It has not been submitted automatically."
+                }
+            )
         }
     }
+
+    // ------------------------------------------------------------------
+    // Computer Use keypress
+    // ------------------------------------------------------------------
 
     private suspend fun executeComputerUseKeypress(
         call: FunctionCall,
@@ -288,170 +572,359 @@ object ScreenToolExecutor {
             ?.trim()
             ?.uppercase()
             ?: return error("The Computer Use keypress action did not include a key.")
+
         return when (key) {
             "ENTER", "RETURN" -> service.pressImeEnter()
-                .toResult("keypress", "Pressed Enter.")
-            "BACK", "ESC", "ESCAPE" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_BACK)
-                .toResult("keypress", "Pressed Back.")
-            "HOME" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_HOME)
-                .toResult("keypress", "Went to the home screen.")
-            "RECENTS" -> service.performGlobal(AccessibilityService.GLOBAL_ACTION_RECENTS)
-                .toResult("keypress", "Opened recent apps.")
-            else -> error("Android accessibility cannot synthesize the '$key' key.")
+                .toResult("keypress", "Requested the Enter action.")
+
+            "BACK", "ESC", "ESCAPE" -> service.performGlobal(
+                AccessibilityService.GLOBAL_ACTION_BACK
+            ).toResult("keypress", "Requested the Back action.")
+
+            "HOME" -> service.performGlobal(
+                AccessibilityService.GLOBAL_ACTION_HOME
+            ).toResult("keypress", "Requested the Home action.")
+
+            "RECENTS" -> service.performGlobal(
+                AccessibilityService.GLOBAL_ACTION_RECENTS
+            ).toResult("keypress", "Requested the recent apps overview.")
+
+            else -> error(
+                "Android accessibility cannot synthesize the '$key' key."
+            )
         }
     }
 
-    private fun executeComputerUseNavigate(call: FunctionCall, context: Context): JsonObject {
+    // ------------------------------------------------------------------
+    // Computer Use navigation
+    // ------------------------------------------------------------------
+
+    private fun executeComputerUseNavigate(
+        call: FunctionCall,
+        context: Context,
+    ): JsonObject {
         val target = listOf("url", "uri")
             .firstNotNullOfOrNull { jsonStringArg(call, it) }
-            ?: return error("The Computer Use navigate action did not include a URL.")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return error("The Computer Use navigate action requires a URL.")
+
         val uri = Uri.parse(target)
-        if (uri.scheme !in setOf("http", "https")) {
-            return error("Only http and https URLs can be opened through the Computer Use navigate action.")
+
+        if (
+            uri.scheme?.lowercase() !in setOf("http", "https") ||
+            uri.host.isNullOrBlank()
+        ) {
+            return error("Only valid HTTP and HTTPS URLs are supported.")
         }
+
         return try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.applicationContext.startActivity(intent)
+
             buildJsonObject {
                 put("success", true)
                 put("action", "navigate")
                 put("url", uri.toString())
+                put("message", "Requested Android to open the URL.")
             }
-        } catch (failure: ActivityNotFoundException) {
-            error("No installed app can open '$target'.")
+        } catch (_: ActivityNotFoundException) {
+            error("No installed application can open this URL.")
+        } catch (_: SecurityException) {
+            error("Android denied permission to open this URL.")
+        } catch (exception: Exception) {
+            error(
+                exception.message
+                    ?: "Unable to open the requested URL."
+            )
         }
     }
+
+    // ------------------------------------------------------------------
+    // Computer Use scroll
+    // ------------------------------------------------------------------
 
     private suspend fun executeComputerUseScroll(
         call: FunctionCall,
         service: ThrisaAccessibilityService,
     ): JsonObject {
-        val direction = jsonStringArg(call, "direction")?.lowercase()
-            ?: return error("The Computer Use scroll action did not include a direction.")
+        val direction = jsonStringArg(call, "direction")
+            ?.trim()
+            ?.lowercase()
+            ?: return error("The Computer Use scroll action requires a direction.")
+
         val metrics = service.resources.displayMetrics
+
         val xArg = extractNumberArg(call, "x")
         val yArg = extractNumberArg(call, "y")
-        val x = if (xArg == null) metrics.widthPixels / 2f
-        else normalizedToScreen(xArg, metrics.widthPixels)
-            ?: return error("The Computer Use scroll action included an off-screen x coordinate.")
-        val y = if (yArg == null) metrics.heightPixels / 2f
-        else normalizedToScreen(yArg, metrics.heightPixels)
-            ?: return error("The Computer Use scroll action included an off-screen y coordinate.")
-        val amount = (extractNumberArg(call, "amount") ?: 0.5).coerceIn(0.15, 0.8).toFloat()
+
+        val x = if (xArg == null) {
+            metrics.widthPixels / 2f
+        } else {
+            normalizedToScreen(xArg, metrics.widthPixels)
+                ?: return error("The Computer Use scroll action has an invalid x coordinate.")
+        }
+
+        val y = if (yArg == null) {
+            metrics.heightPixels / 2f
+        } else {
+            normalizedToScreen(yArg, metrics.heightPixels)
+                ?: return error("The Computer Use scroll action has an invalid y coordinate.")
+        }
+
+        val amount = (
+                extractNumberArg(call, "amount") ?: 0.5
+                ).coerceIn(0.15, 0.8).toFloat()
+
         val halfDistanceX = metrics.widthPixels * amount / 2f
         val halfDistanceY = metrics.heightPixels * amount / 2f
+
         val (fromX, fromY, toX, toY) = when (direction) {
-            "down" -> listOf(x, y + halfDistanceY, x, y - halfDistanceY)
-            "up" -> listOf(x, y - halfDistanceY, x, y + halfDistanceY)
-            "left" -> listOf(x - halfDistanceX, y, x + halfDistanceX, y)
-            "right" -> listOf(x + halfDistanceX, y, x - halfDistanceX, y)
-            else -> return error("Unsupported scroll direction '$direction'.")
+            "down" -> listOf(
+                x,
+                y + halfDistanceY,
+                x,
+                y - halfDistanceY
+            )
+
+            "up" -> listOf(
+                x,
+                y - halfDistanceY,
+                x,
+                y + halfDistanceY
+            )
+
+            "left" -> listOf(
+                x - halfDistanceX,
+                y,
+                x + halfDistanceX,
+                y
+            )
+
+            "right" -> listOf(
+                x + halfDistanceX,
+                y,
+                x - halfDistanceX,
+                y
+            )
+
+            else -> return error(
+                "Unsupported scroll direction '$direction'. Use up, down, left, or right."
+            )
         }
+
         return service.swipe(
-            fromX.coerceIn(0f, metrics.widthPixels.toFloat()),
-            fromY.coerceIn(0f, metrics.heightPixels.toFloat()),
-            toX.coerceIn(0f, metrics.widthPixels.toFloat()),
-            toY.coerceIn(0f, metrics.heightPixels.toFloat()),
-            400,
-        ).toResult("scroll", "Scrolled $direction.")
+            fromX.coerceIn(0f, metrics.widthPixels.toFloat() - 1f),
+            fromY.coerceIn(0f, metrics.heightPixels.toFloat() - 1f),
+            toX.coerceIn(0f, metrics.widthPixels.toFloat() - 1f),
+            toY.coerceIn(0f, metrics.heightPixels.toFloat() - 1f),
+            400L,
+        ).toResult("scroll", "Dispatched a $direction scroll gesture.")
     }
 
     private suspend fun executeComputerUseSwipe(
         call: FunctionCall,
         service: ThrisaAccessibilityService,
     ): JsonObject {
-        val x1 = extractNumberArg(call, "x") ?: extractNumberArg(call, "start_x")
-        val y1 = extractNumberArg(call, "y") ?: extractNumberArg(call, "start_y")
+        val x1 = extractNumberArg(call, "x")
+            ?: extractNumberArg(call, "start_x")
+
+        val y1 = extractNumberArg(call, "y")
+            ?: extractNumberArg(call, "start_y")
+
         val x2 = extractNumberArg(call, "destination_x")
             ?: extractNumberArg(call, "x2")
             ?: extractNumberArg(call, "end_x")
+
         val y2 = extractNumberArg(call, "destination_y")
             ?: extractNumberArg(call, "y2")
             ?: extractNumberArg(call, "end_y")
+
         if (x1 == null || y1 == null || x2 == null || y2 == null) {
-            return error("The Computer Use drag action needs start and destination coordinates.")
+            return error(
+                "The Computer Use swipe action requires start and destination coordinates."
+            )
         }
+
         val start = normalizedPoint(x1, y1, service)
-            ?: return error("The Computer Use swipe action started off-screen.")
+            ?: return error("The Computer Use swipe start coordinates are invalid.")
+
         val end = normalizedPoint(x2, y2, service)
-            ?: return error("The Computer Use swipe action ended off-screen.")
-        val duration = (extractNumberArg(call, "duration_ms") ?: 400.0).toLong().coerceIn(50, 5000)
-        return service.swipe(start.first, start.second, end.first, end.second, duration)
-            .toResult(call.name, "Dragged across the screen.")
+            ?: return error("The Computer Use swipe end coordinates are invalid.")
+
+        val duration = (
+                extractNumberArg(call, "duration_ms") ?: 400.0
+                ).toLong().coerceIn(50L, 5000L)
+
+        return service.swipe(
+            start.first,
+            start.second,
+            end.first,
+            end.second,
+            duration,
+        ).toResult(call.name, "Dispatched the requested swipe gesture.")
     }
+
+    // ------------------------------------------------------------------
+    // Scroll element
+    // ------------------------------------------------------------------
 
     private suspend fun scrollElement(
         service: ThrisaAccessibilityService,
         call: FunctionCall,
     ): JsonObject {
-        val direction = jsonStringArg(call, "direction")?.trim()?.lowercase()
-            ?: return error("Provide 'direction' as 'forward' or 'backward' for scroll_element.")
+        val direction = jsonStringArg(call, "direction")
+            ?.trim()
+            ?.lowercase()
+            ?: return error(
+                "Provide direction as 'forward' or 'backward' for scroll_element."
+            )
+
         if (direction != "forward" && direction != "backward") {
-            return error("Invalid scroll direction '$direction'. Use 'forward' or 'backward'.")
+            return error(
+                "Invalid scroll direction '$direction'. Use forward or backward."
+            )
         }
+
         val target = jsonStringArg(call, "target")
-        return if (service.scrollElement(target, forward = direction == "forward")) {
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        return if (
+            service.scrollElement(
+                target,
+                forward = direction == "forward"
+            )
+        ) {
             buildJsonObject {
                 put("success", true)
                 put("action", "scroll_element")
-                put("message", "Scrolled ${target?.let { "'$it'" } ?: "the available scroll container"} $direction.")
+                put(
+                    "message",
+                    "Dispatched scrolling ${target?.let { "'$it'" } ?: "the available scroll container"} $direction."
+                )
             }
-        } else if (target.isNullOrBlank()) {
-            val action = if (direction == "forward") "scroll_down" else "scroll_up"
-            scroll(service, action)
+        } else if (target == null) {
+            val fallbackAction = if (direction == "forward") {
+                "scroll_down"
+            } else {
+                "scroll_up"
+            }
+
+            scroll(service, fallbackAction)
         } else {
-            error("Could not scroll '$target'. Inspect the current screen and select a visible scrollable container.")
+            error(
+                "Could not scroll '$target'. Inspect the screen and select a visible scrollable container."
+            )
         }
     }
 
-    /** Finger up = content scrolls down (more content below becomes visible). */
-    private suspend fun scroll(service: ThrisaAccessibilityService, action: String): JsonObject {
+    // ------------------------------------------------------------------
+    // Standard scrolling
+    // ------------------------------------------------------------------
+
+    private suspend fun scroll(
+        service: ThrisaAccessibilityService,
+        action: String,
+    ): JsonObject {
         val metrics = service.resources.displayMetrics
-        val centerX = metrics.widthPixels / 2f
-        val (fromY, toY) = if (action == "scroll_down") {
-            (metrics.heightPixels * 0.7f) to (metrics.heightPixels * 0.3f)
-        } else {
-            (metrics.heightPixels * 0.3f) to (metrics.heightPixels * 0.7f)
+
+        if (metrics.widthPixels <= 0 || metrics.heightPixels <= 0) {
+            return error("Could not determine the screen dimensions.")
         }
-        return service.swipe(centerX, fromY, centerX, toY, 400)
-            .toResult(action, if (action == "scroll_down") "Scrolled down." else "Scrolled up.")
+
+        val centerX = metrics.widthPixels / 2f
+
+        val (fromY, toY) = if (action == "scroll_down") {
+            metrics.heightPixels * 0.7f to metrics.heightPixels * 0.3f
+        } else {
+            metrics.heightPixels * 0.3f to metrics.heightPixels * 0.7f
+        }
+
+        return service.swipe(
+            centerX,
+            fromY,
+            centerX,
+            toY,
+            400L
+        ).toResult(
+            action,
+            if (action == "scroll_down") {
+                "Dispatched a scroll down gesture."
+            } else {
+                "Dispatched a scroll up gesture."
+            }
+        )
     }
 
-    private inline fun withPoint(
+    // ------------------------------------------------------------------
+    // Coordinate helpers
+    // ------------------------------------------------------------------
+
+    private suspend fun withPoint(
         call: FunctionCall,
         service: ThrisaAccessibilityService,
-        block: (x: Float, y: Float) -> JsonObject,
+        block: suspend (x: Float, y: Float) -> JsonObject,
     ): JsonObject {
         val x = extractNumberArg(call, "x")?.toFloat()
         val y = extractNumberArg(call, "y")?.toFloat()
+
         if (x == null || y == null) {
-            return error("Please provide integer 'x' and 'y' screen coordinates from the latest capture_screen screenshot.")
+            return error(
+                "Provide valid x and y coordinates from the latest screenshot."
+            )
         }
+
         val point = screenshotPointToScreen(x, y, service)
-            ?: return error("Coordinates must be within the latest screenshot, and a fresh screenshot must be available.")
+            ?: return error(
+                "Coordinates are outside the latest screenshot, or no fresh screenshot is available."
+            )
+
         return block(point.first, point.second)
     }
 
-    private inline fun withSwipe(
+    private suspend fun withSwipe(
         call: FunctionCall,
         service: ThrisaAccessibilityService,
-        block: (x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) -> JsonObject,
+        block: suspend (
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            durationMs: Long,
+        ) -> JsonObject,
     ): JsonObject {
         val x1 = extractNumberArg(call, "x")?.toFloat()
         val y1 = extractNumberArg(call, "y")?.toFloat()
         val x2 = extractNumberArg(call, "x2")?.toFloat()
         val y2 = extractNumberArg(call, "y2")?.toFloat()
+
         if (x1 == null || y1 == null || x2 == null || y2 == null) {
-            return error("Please provide 'x', 'y' (start) and 'x2', 'y2' (end) coordinates for the swipe.")
+            return error(
+                "Provide x, y, x2, and y2 coordinates for the swipe."
+            )
         }
-        val duration = (extractNumberArg(call, "duration_ms") ?: 300.0).toLong().coerceIn(50, 5000)
+
+        val duration = (
+                extractNumberArg(call, "duration_ms") ?: 300.0
+                ).toLong().coerceIn(50L, 5000L)
+
         val start = screenshotPointToScreen(x1, y1, service)
+            ?: return error("The swipe starting coordinates are invalid.")
+
         val end = screenshotPointToScreen(x2, y2, service)
-        if (start == null || end == null) {
-            return error("Swipe coordinates must be within the latest screenshot, and a fresh screenshot must be available.")
-        }
-        return block(start.first, start.second, end.first, end.second, duration)
+            ?: return error("The swipe ending coordinates are invalid.")
+
+        return block(
+            start.first,
+            start.second,
+            end.first,
+            end.second,
+            duration
+        )
     }
 
     private suspend fun withNormalizedPoint(
@@ -460,11 +933,16 @@ object ScreenToolExecutor {
         block: suspend (x: Float, y: Float) -> JsonObject,
     ): JsonObject {
         val x = extractNumberArg(call, "x")
-            ?: return error("The Computer Use action did not include an x coordinate.")
+            ?: return error("The Computer Use action requires an x coordinate.")
+
         val y = extractNumberArg(call, "y")
-            ?: return error("The Computer Use action did not include a y coordinate.")
+            ?: return error("The Computer Use action requires a y coordinate.")
+
         val point = normalizedPoint(x, y, service)
-            ?: return error("Computer Use coordinates must be normalized to the 0-1000 screen range.")
+            ?: return error(
+                "Computer Use coordinates must be within the normalized 0-1000 screen range."
+            )
+
         return block(point.first, point.second)
     }
 
@@ -474,8 +952,13 @@ object ScreenToolExecutor {
         service: ThrisaAccessibilityService,
     ): Pair<Float, Float>? {
         val metrics = service.resources.displayMetrics
-        val screenX = normalizedToScreen(x, metrics.widthPixels) ?: return null
-        val screenY = normalizedToScreen(y, metrics.heightPixels) ?: return null
+
+        val screenX = normalizedToScreen(x, metrics.widthPixels)
+            ?: return null
+
+        val screenY = normalizedToScreen(y, metrics.heightPixels)
+            ?: return null
+
         return screenX to screenY
     }
 
@@ -484,51 +967,134 @@ object ScreenToolExecutor {
         y: Float,
         service: ThrisaAccessibilityService,
     ): Pair<Float, Float>? {
-        val screenshot = lastCaptureDimensions.get() ?: return null
-        if (x < 0 || y < 0 || x >= screenshot.first || y >= screenshot.second) return null
+        if (!x.isFinite() || !y.isFinite()) return null
+
+        val capture = lastCapture.get() ?: return null
+
+        if (capture.width <= 0 || capture.height <= 0) return null
+
+        if (
+            x < 0f ||
+            y < 0f ||
+            x >= capture.width ||
+            y >= capture.height
+        ) {
+            return null
+        }
+
         val bounds = screenBounds(service)
-        return (x * bounds.first / screenshot.first) to (y * bounds.second / screenshot.second)
+
+        if (bounds.first <= 0f || bounds.second <= 0f) return null
+
+        return (
+                x * bounds.first / capture.width
+                ) to (
+                y * bounds.second / capture.height
+                )
     }
 
-    private fun screenBounds(service: ThrisaAccessibilityService): Pair<Float, Float> =
-        service.resources.displayMetrics.let { it.widthPixels.toFloat() to it.heightPixels.toFloat() }
+    private fun screenBounds(
+        service: ThrisaAccessibilityService,
+    ): Pair<Float, Float> {
+        val metrics = service.resources.displayMetrics
 
-    /** Saves the capture under cacheDir for the chat bubble; never user-visible storage. */
-    private fun saveForDisplay(context: Context, bytes: ByteArray): String? = runCatching {
-        val dir = File(context.cacheDir, "screen_captures").apply { mkdirs() }
-        val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-        file.writeBytes(bytes)
-        Uri.fromFile(file).toString()
-    }.getOrNull()
+        return metrics.widthPixels.toFloat() to
+                metrics.heightPixels.toFloat()
+    }
+
+    // ------------------------------------------------------------------
+    // File handling
+    // ------------------------------------------------------------------
+
+    private fun saveForDisplay(
+        context: Context,
+        bytes: ByteArray,
+    ): String? {
+        return try {
+            val directory = File(
+                context.cacheDir,
+                "screen_captures"
+            ).apply {
+                mkdirs()
+            }
+
+            val file = File(
+                directory,
+                "capture_${System.currentTimeMillis()}.jpg"
+            )
+
+            file.writeBytes(bytes)
+
+            Uri.fromFile(file).toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Result helpers
+    // ------------------------------------------------------------------
 
     private fun screenAccessDisabled(): JsonObject = error(
-        "Screen access is disabled. Ask the user to enable 'Thrisa AI Screen Access' for Thrisa " +
-                "in the Android accessibility settings (Thrisa Settings → Permissions → Screen access), then try again."
+        "Screen access is disabled. Ask the user to enable " +
+                "'Thrisa AI Screen Access' for Thrisa in Android accessibility settings."
     )
 
-    private fun Boolean.toResult(action: String, message: String): JsonObject = if (this) {
-        buildJsonObject {
-            put("success", true)
-            put("action", action)
-            put("message", message)
+    private fun Boolean.toResult(
+        action: String,
+        message: String,
+    ): JsonObject {
+        return if (this) {
+            buildJsonObject {
+                put("success", true)
+                put("action", action)
+                put("message", message)
+            }
+        } else {
+            error(
+                "Android did not accept the '$action' accessibility action. " +
+                        "The screen may have changed, or the target may no longer be available."
+            )
         }
-    } else {
-        error("The system cancelled the '$action' gesture (for example because another gesture or a secure window was active). Try again.")
     }
 
-    private fun extractNumberArg(call: FunctionCall, key: String): Double? =
-        runCatching {
-            val element = call.args[key] ?: return null
-            element.jsonPrimitive.doubleOrNull ?: element.jsonPrimitive.content.trim().toDoubleOrNull()
-        }.getOrNull()
+    private fun extractNumberArg(
+        call: FunctionCall,
+        key: String,
+    ): Double? {
+        val element = call.args[key] ?: return null
+        val primitive = element as? kotlinx.serialization.json.JsonPrimitive
+            ?: return null
 
-    private fun error(message: String): JsonObject = buildJsonObject {
-        put("success", false)
-        put("error", message)
+        if (primitive.isString) return null
+
+        return primitive.doubleOrNull
+            ?.takeIf { it.isFinite() }
+    }
+
+    private fun error(message: String): JsonObject {
+        return buildJsonObject {
+            put("success", false)
+            put("error", message)
+        }
     }
 }
 
-internal fun normalizedToScreen(value: Double, dimension: Int): Float? {
-    if (!value.isFinite() || value !in 0.0..1000.0 || dimension <= 0) return null
+// ----------------------------------------------------------------------
+// Normalized Computer Use coordinates: 0-1000
+// ----------------------------------------------------------------------
+
+internal fun normalizedToScreen(
+    value: Double,
+    dimension: Int,
+): Float? {
+    if (
+        !value.isFinite() ||
+        value !in 0.0..1000.0 ||
+        dimension <= 0
+    ) {
+        return null
+    }
+
     return (value * (dimension - 1) / 1000.0).toFloat()
 }

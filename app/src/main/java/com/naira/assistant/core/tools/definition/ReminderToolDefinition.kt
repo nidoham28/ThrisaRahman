@@ -1,280 +1,334 @@
+
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
 import kotlinx.serialization.json.*
 
-// ---------------------------------------------------------------------------
-// Reminder tool definitions — registered with the Gemini function-calling API
-// ---------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Reminder tools
+// -----------------------------------------------------------------------------
+
+private val recurrenceValues = listOf(
+    "none", "daily", "weekly", "monthly",
+    "yearly", "weekdays", "weekends", "custom"
+)
+
+private val priorityValues = listOf(
+    "low", "normal", "high", "urgent"
+)
+
+private val reminderStatusValues = listOf(
+    "active", "done", "snoozed", "cancelled", "all"
+)
+
+private fun enumProperty(
+    description: String,
+    values: List<String>,
+) = buildJsonObject {
+    put("type", "string")
+    put("description", description)
+    putJsonArray("enum") {
+        values.forEach { add(it) }
+    }
+}
+
+private fun stringProperty(description: String) = buildJsonObject {
+    put("type", "string")
+    put("description", description)
+}
+
+private fun integerProperty(description: String) = buildJsonObject {
+    put("type", "integer")
+    put("description", description)
+}
+
+private fun objectTool(
+    properties: JsonObject,
+    required: List<String> = emptyList(),
+) = buildJsonObject {
+    put("type", "object")
+    put("properties", properties)
+    putJsonArray("required") {
+        required.forEach { add(it) }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// CREATE REMINDER
+// -----------------------------------------------------------------------------
 
 fun createReminderTool() = ToolDefinition(
     name = "create_reminder",
     description = """
-        Create a new reminder for the user.
-        Use when the user says 'remind me', 'set a reminder', 'don't let me forget', 'alert me', 
-        'schedule a reminder', or any similar phrasing. Always confirm the reminder details 
-        (title, time, recurrence) back to the user after creation.
-        
-        Time must be provided as a Unix epoch in milliseconds (ms since 1970-01-01T00:00:00Z).
-        Call `get_current_time` first when you need to compute relative times like 
-        'in 30 minutes', 'tomorrow at 9am', or 'next Monday'.
+        Create and schedule a new reminder for the user.
+
+        Use for requests such as "remind me", "don't let me forget",
+        "alert me", or "schedule a reminder".
+
+        Rules:
+        - Always provide a clear title and trigger time.
+        - trigger_at_ms must be a Unix epoch timestamp in milliseconds.
+        - Use the user's local timezone when interpreting dates and times.
+        - Call get_current_time before calculating relative dates or times.
+        - Never guess an ambiguous date or time.
+        - Default recurrence to none and priority to normal.
+        - Use recurrence_interval only with custom recurrence.
+        - Do not invent recurrence or priority preferences.
+        - Confirm the saved reminder details after successful creation.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("title") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Short, clear label for the reminder, e.g. 'Call mom', 'Take medication'."
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put(
+                "title",
+                stringProperty("Required. Short, descriptive reminder title.")
+            )
+            put(
+                "description",
+                stringProperty("Optional additional details or notes.")
+            )
+            put(
+                "trigger_at_ms",
+                integerProperty(
+                    "Required. Future trigger time as Unix epoch milliseconds."
                 )
-            }
-            putJsonObject("description") {
-                put("type", "string")
-                put("description", "Optional longer note or context for the reminder.")
-            }
-            putJsonObject("trigger_at_ms") {
-                put("type", "integer")
-                put(
-                    "description",
-                    "Unix epoch milliseconds when the reminder should first fire. Must be in the future."
+            )
+            put(
+                "recurrence",
+                enumProperty(
+                    "Repeat pattern. Defaults to none.",
+                    recurrenceValues,
                 )
-            }
-            putJsonObject("recurrence") {
-                put("type", "string")
-                put(
-                    "description",
-                    "How often the reminder repeats: 'none' (one-time, default), 'daily', 'weekly', " +
-                            "'monthly', 'yearly', 'weekdays' (Mon–Fri), 'weekends' (Sat–Sun), " +
-                            "or 'custom' (repeat every N minutes — set recurrence_interval too)."
+            )
+            put(
+                "recurrence_interval",
+                integerProperty(
+                    "Repeat interval in minutes. Required for custom recurrence."
                 )
-                putJsonArray("enum") {
-                    add("none"); add("daily"); add("weekly"); add("monthly")
-                    add("yearly"); add("weekdays"); add("weekends"); add("custom")
-                }
-            }
-            putJsonObject("recurrence_interval") {
-                put("type", "integer")
-                put(
-                    "description",
-                    "Interval in minutes for 'custom' recurrence. Ignored for other recurrence types."
+            )
+            put(
+                "priority",
+                enumProperty(
+                    "Reminder priority. Defaults to normal.",
+                    priorityValues,
                 )
-            }
-            putJsonObject("priority") {
-                put("type", "string")
-                put("description", "Urgency level: 'low', 'normal' (default), 'high', or 'urgent'.")
-                putJsonArray("enum") { add("low"); add("normal"); add("high"); add("urgent") }
-            }
-            putJsonObject("tags") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Optional comma-separated tags for filtering, e.g. 'health, medication, morning'."
+            )
+            put(
+                "tags",
+                stringProperty(
+                    "Optional comma-separated tags for categorization and search."
                 )
-            }
-        }
-        putJsonArray("required") { add("title"); add("trigger_at_ms") }
-    },
+            )
+        },
+        required = listOf("title", "trigger_at_ms"),
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// UPDATE REMINDER
+// -----------------------------------------------------------------------------
 
 fun updateReminderTool() = ToolDefinition(
     name = "update_reminder",
     description = """
-        Update an existing reminder by its numeric ID.
-        Use when the user wants to change the time, title, description, recurrence, priority, 
-        or status of an existing reminder. Only the fields you provide are changed; omitted 
-        fields keep their current values.
-        
-        Call `list_reminders` or `search_reminders` first if you don't know the reminder ID.
+        Update selected fields of an existing reminder.
+
+        Supported fields: title, description, trigger time, recurrence,
+        recurrence interval, priority, and tags.
+
+        Rules:
+        - Always provide the reminder ID.
+        - Only modify fields explicitly supplied.
+        - Preserve all omitted fields.
+        - An empty description or tags value may be used to clear it.
+        - Validate the new trigger time and recurrence configuration.
+        - Call list_reminders or search_reminders first if the ID is unknown.
+        - Never create a new reminder when the user requests an update.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the reminder to update.")
-            }
-            putJsonObject("title") {
-                put("type", "string")
-                put("description", "New title for the reminder.")
-            }
-            putJsonObject("description") {
-                put("type", "string")
-                put("description", "New description/note for the reminder.")
-            }
-            putJsonObject("trigger_at_ms") {
-                put("type", "integer")
-                put("description", "New trigger time as Unix epoch milliseconds.")
-            }
-            putJsonObject("recurrence") {
-                put("type", "string")
-                put(
-                    "description",
-                    "New recurrence pattern: 'none', 'daily', 'weekly', 'monthly', 'yearly', 'weekdays', 'weekends', 'custom'."
-                )
-                putJsonArray("enum") {
-                    add("none"); add("daily"); add("weekly"); add("monthly")
-                    add("yearly"); add("weekdays"); add("weekends"); add("custom")
-                }
-            }
-            putJsonObject("recurrence_interval") {
-                put("type", "integer")
-                put("description", "New interval in minutes (for 'custom' recurrence only).")
-            }
-            putJsonObject("priority") {
-                put("type", "string")
-                put("description", "New priority: 'low', 'normal', 'high', or 'urgent'.")
-                putJsonArray("enum") { add("low"); add("normal"); add("high"); add("urgent") }
-            }
-            putJsonObject("tags") {
-                put("type", "string")
-                put("description", "New comma-separated tags.")
-            }
-        }
-        putJsonArray("required") { add("id") }
-    },
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put("id", integerProperty("Required. ID of the existing reminder."))
+            put("title", stringProperty("New reminder title."))
+            put("description", stringProperty("New description or empty string to clear it."))
+            put(
+                "trigger_at_ms",
+                integerProperty("New trigger time in Unix epoch milliseconds.")
+            )
+            put("recurrence", enumProperty("New repeat pattern.", recurrenceValues))
+            put(
+                "recurrence_interval",
+                integerProperty("New custom repeat interval in minutes.")
+            )
+            put("priority", enumProperty("New priority level.", priorityValues))
+            put("tags", stringProperty("New comma-separated tags or empty string to clear."))
+        },
+        required = listOf("id"),
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// DELETE REMINDER
+// -----------------------------------------------------------------------------
 
 fun deleteReminderTool() = ToolDefinition(
     name = "delete_reminder",
     description = """
-        Permanently delete a reminder by its numeric ID.
-        Use only when the user explicitly asks to delete or remove a reminder entirely. 
-        If the user just wants to stop a reminder from recurring without losing history, 
-        use `update_reminder` to set its status or recurrence instead.
-        
-        Call `list_reminders` or `search_reminders` first if you don't know the reminder ID.
+        Permanently delete an existing reminder.
+
+        Use only when the user explicitly requests permanent removal.
+
+        Rules:
+        - Always provide the exact reminder ID.
+        - Call list_reminders or search_reminders if the ID is unknown.
+        - Do not use for snoozing, completing, or cancelling a reminder.
+        - Do not delete an ambiguous reminder.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the reminder to permanently delete.")
-            }
-        }
-        putJsonArray("required") { add("id") }
-    },
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put("id", integerProperty("Required. ID of the reminder to delete."))
+        },
+        required = listOf("id"),
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// LIST REMINDERS
+// -----------------------------------------------------------------------------
 
 fun listRemindersTool() = ToolDefinition(
     name = "list_reminders",
     description = """
-        List the user's reminders, optionally filtered by status or priority.
-        Use when the user asks 'what reminders do I have?', 'show my upcoming reminders', 
-        'what did I ask you to remind me about?', or similar queries.
+        Retrieve the user's saved reminders.
+
+        Use when the user asks to view, list, or check their reminders.
+
+        Rules:
+        - Use status to filter reminder states.
+        - Use priority when the user requests a specific urgency level.
+        - Use limit to control the number of returned reminders.
+        - Use search_reminders when looking for a specific topic or keyword.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("status") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Filter by status: 'active', 'done', 'snoozed', 'cancelled', or 'all' (default all active)."
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put(
+                "status",
+                enumProperty(
+                    "Filter: active, done, snoozed, cancelled, or all. Defaults to active.",
+                    reminderStatusValues,
                 )
-                putJsonArray("enum") {
-                    add("active"); add("done"); add("snoozed"); add("cancelled"); add(
-                    "all"
+            )
+            put(
+                "priority",
+                enumProperty(
+                    "Optional priority filter. Use all for no priority filtering.",
+                    priorityValues + "all",
                 )
-                }
-            }
-            putJsonObject("priority") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Optional filter by priority: 'low', 'normal', 'high', 'urgent', or 'all'."
-                )
-                putJsonArray("enum") { add("low"); add("normal"); add("high"); add("urgent"); add("all") }
-            }
-            putJsonObject("limit") {
-                put("type", "integer")
-                put("description", "Maximum number of reminders to return (1–100, default 20).")
-            }
-        }
-        putJsonArray("required") {}
-    },
+            )
+            put(
+                "limit",
+                integerProperty("Maximum results (1-100). Defaults to 20.")
+            )
+        },
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// SEARCH REMINDERS
+// -----------------------------------------------------------------------------
 
 fun searchRemindersTool() = ToolDefinition(
     name = "search_reminders",
     description = """
-        Search reminders by keyword in title, description, or tags, with an optional status filter.
-        Use when the user refers to a reminder by keyword or topic and you need to find its ID 
-        before updating, deleting, or acting on it.
+        Search reminders by keyword or phrase.
+
+        Searches reminder titles, descriptions, and tags.
+
+        Use when the user refers to a reminder by its topic or description,
+        especially before updating, deleting, snoozing, or completing it.
+
+        Rules:
+        - Always provide a meaningful search query.
+        - Use status to narrow the results when appropriate.
+        - Inspect returned IDs before performing another operation.
+        - If multiple reminders match, do not arbitrarily select one.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("query") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Keyword or phrase to search in reminder title, description, and tags."
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put(
+                "query",
+                stringProperty("Required. Keyword or phrase to search.")
+            )
+            put(
+                "status",
+                enumProperty(
+                    "Optional status filter. Defaults to active.",
+                    reminderStatusValues,
                 )
-            }
-            putJsonObject("status") {
-                put("type", "string")
-                put(
-                    "description",
-                    "Optional status filter: 'active', 'done', 'snoozed', 'cancelled', or 'all'."
-                )
-                putJsonArray("enum") {
-                    add("active"); add("done"); add("snoozed"); add("cancelled"); add(
-                    "all"
-                )
-                }
-            }
-            putJsonObject("limit") {
-                put("type", "integer")
-                put("description", "Maximum number of results to return (1–50, default 10).")
-            }
-        }
-        putJsonArray("required") {}
-    },
+            )
+            put(
+                "limit",
+                integerProperty("Maximum results (1-50). Defaults to 10.")
+            )
+        },
+        required = listOf("query"),
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// SNOOZE REMINDER
+// -----------------------------------------------------------------------------
 
 fun snoozeReminderTool() = ToolDefinition(
     name = "snooze_reminder",
     description = """
-        Snooze a reminder until a specified time, temporarily pausing it.
-        Use when the user says 'snooze this reminder', 'remind me again later', or 
-        'postpone this reminder'. The reminder will become active again at the snooze time.
-        
-        Call `get_current_time` first when computing relative snooze times like 'in 10 minutes'.
+        Temporarily postpone an existing reminder until a specified time.
+
+        Use for requests such as "snooze this", "remind me later",
+        or "postpone this reminder".
+
+        Rules:
+        - Always provide the reminder ID and snooze time.
+        - snooze_until_ms must be a future Unix epoch timestamp in milliseconds.
+        - Call get_current_time before calculating relative snooze times.
+        - Preserve the original reminder and its recurrence.
+        - Do not permanently delete or complete the reminder.
+        - Confirm the new snooze time after success.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the reminder to snooze.")
-            }
-            putJsonObject("snooze_until_ms") {
-                put("type", "integer")
-                put("description", "Unix epoch milliseconds at which the reminder should re-fire.")
-            }
-        }
-        putJsonArray("required") { add("id"); add("snooze_until_ms") }
-    },
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put("id", integerProperty("Required. ID of the reminder to snooze."))
+            put(
+                "snooze_until_ms",
+                integerProperty("Required. Future snooze time in Unix epoch milliseconds.")
+            )
+        },
+        required = listOf("id", "snooze_until_ms"),
+    ),
 )
+
+// -----------------------------------------------------------------------------
+// MARK REMINDER DONE
+// -----------------------------------------------------------------------------
 
 fun markReminderDoneTool() = ToolDefinition(
     name = "mark_reminder_done",
     description = """
-        Mark a reminder as completed (done). For one-time reminders this closes it; 
-        for recurring reminders it advances the next trigger to the following occurrence 
-        and keeps the reminder active.
-        Use when the user says 'I did it', 'done', 'completed', or checks off a reminder.
+        Mark an existing reminder as completed.
+
+        Use when the user confirms that a reminder has been fulfilled,
+        completed, or checked off.
+
+        Rules:
+        - Always provide the reminder ID.
+        - One-time reminders become done.
+        - Recurring reminders advance to their next occurrence according
+          to the recurrence schedule.
+        - Do not delete the reminder or its history.
+        - Do not mark a reminder complete without user confirmation.
     """.trimIndent(),
-    parameters = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("id") {
-                put("type", "integer")
-                put("description", "Numeric ID of the reminder to mark as done.")
-            }
-        }
-        putJsonArray("required") { add("id") }
-    },
+    parameters = objectTool(
+        properties = buildJsonObject {
+            put("id", integerProperty("Required. ID of the completed reminder."))
+        },
+        required = listOf("id"),
+    ),
 )
