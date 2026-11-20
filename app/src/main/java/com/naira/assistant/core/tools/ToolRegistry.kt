@@ -64,6 +64,26 @@ import com.naira.assistant.core.tools.definition.terminalCalculationTool
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
 
+    private val approvalRequiredNames = setOf(
+        "capture_screen",
+        "read_screen_text",
+        "perform_screen_action",
+        "update_calendar_event",
+        "delete_calendar_event",
+        "update_alarm",
+        "delete_alarm",
+        "insert_memory",
+        "update_memory",
+        "remove_memory",
+        "merge_memories",
+        "update_reminder",
+        "delete_reminder",
+        "update_note",
+        "delete_note",
+        "update_todo",
+        "delete_todo",
+    )
+
     val definitions: List<ToolDefinition> = listOf(
         // Time & device
         timeTool(),
@@ -150,5 +170,14 @@ object ToolRegistry {
         searchTodosTool(),
         markTodoDoneTool(),
         markTodoUndoneTool(),
-    )
+    ).let { registered ->
+        check(approvalRequiredNames.all { required ->
+            registered.any { it.name == required }
+        }) {
+            "An approval-required tool is missing from the registry."
+        }
+        registered.map { definition ->
+            definition.copy(requiresApproval = definition.name in approvalRequiredNames)
+        }
+    }
 }

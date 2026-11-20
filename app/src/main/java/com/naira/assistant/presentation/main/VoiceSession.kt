@@ -1,73 +1,126 @@
 package com.naira.assistant.presentation.main
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.IBinder
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.naira.assistant.core.sound.AssistantReply
-import com.naira.assistant.core.sound.isActive
-import com.naira.assistant.core.sound.VoiceChatController
-import com.naira.assistant.core.sound.VoiceConversation
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.core.sound.VoiceState
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** One mic-driven session exposed to the UI: the current voice state + the mic tap handler. */
 class VoiceSession(val state: VoiceState, val onMicClick: () -> Unit)
 
-/** Adapts the chat ViewModel to the [VoiceChatController] seam the sound layer depends on. */
-private fun AssistantViewModel.asVoiceChatController(): VoiceChatController =
-    object : VoiceChatController {
-        override val replies: Flow<AssistantReply?> =
-            messages.map { list ->
-                list.lastOrNull { !it.isUser }?.let { AssistantReply(it.text, it.isError) }
-            }
-        override val busyStatus = this@asVoiceChatController.busyStatus
-        override fun send(text: String) = this@asVoiceChatController.sendMessageStream(text)
-        override fun cancelCurrent() = this@asVoiceChatController.cancelCurrent()
-    }
-
-/** Creates the controller, handles RECORD_AUDIO permission, and stops everything when the app leaves the foreground. */
+/** Binds the UI to the user-started microphone foreground service. */
 @Composable
-fun rememberVoiceSession(assistant: AssistantViewModel, language: String): VoiceSession {
+fun rememberVoiceSession(): VoiceSession {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope() // Main dispatcher
-    val conversation = remember(assistant, language) {
-        VoiceConversation(context, assistant.asVoiceChatController(), scope, language)
-    }
-    val state by conversation.state.collectAsState()
+    var service by remember { mutableStateOf<WakeWordForegroundService?>(null) }
+    val fallbackState = remember { MutableStateFlow<VoiceState>(VoiceState.Idle) }
+    val fallbackMonitoring = remember { MutableStateFlow(false) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) conversation.start()
-        else conversation.reportError("Microphone permission is required for voice chat.")
-    }
+    DisposableEffect(context) {
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                service = (binder as? WakeWordForegroundService.LocalBinder)?.service
+            }
 
-    DisposableEffect(conversation) { onDispose { conversation.close() } }
-
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, conversation) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) conversation.stop()
+            override fun onServiceDisconnected(name: ComponentName?) {
+                service = null
+            }
         }
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        val bound = context.bindService(
+            Intent(context, WakeWordForegroundService::class.java),
+            connection,
+            Context.BIND_AUTO_CREATE,
+        )
+        if (!bound) {
+            fallbackState.value = VoiceState.Error("Couldn't connect to background voice.")
+        }
+        onDispose {
+            if (bound) context.unbindService(connection)
+            service = null
+        }
+    }
+
+    val stateFlow = service?.state ?: fallbackState
+    val monitoringFlow = service?.isMonitoring ?: fallbackMonitoring
+    val state by stateFlow.collectAsStateWithLifecycle()
+    val monitoring by monitoringFlow.collectAsStateWithLifecycle()
+
+    fun reportError(message: String) {
+        val errorState = VoiceState.Error(message)
+        val activeService = service
+        if (activeService != null) activeService.reportUiError(message)
+        else fallbackState.value = errorState
+    }
+
+    fun startService() {
+        fallbackState.value = VoiceState.Preparing
+        try {
+            WakeWordForegroundService.start(context)
+        } catch (error: Exception) {
+            reportError(error.message ?: "Couldn't start background voice.")
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        if (hasRequiredVoicePermissions(context)) {
+            startService()
+        } else {
+            reportError("Microphone and notification permissions are needed for background voice.")
+        }
     }
 
     return VoiceSession(state) {
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-        if (!granted && !state.isActive) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        else conversation.onMicTap()
+        if (monitoring) {
+            try {
+                WakeWordForegroundService.stop(context)
+                fallbackState.value = VoiceState.Idle
+            } catch (error: Exception) {
+                reportError(error.message ?: "Couldn't stop background voice.")
+            }
+        } else {
+            val missingPermissions = missingVoicePermissions(context)
+            if (missingPermissions.isEmpty()) startService()
+            else permissionLauncher.launch(missingPermissions)
+        }
     }
 }
+
+private fun hasRequiredVoicePermissions(context: Context): Boolean =
+    missingVoicePermissions(context).isEmpty()
+
+private fun missingVoicePermissions(context: Context): Array<String> = buildList {
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        add(Manifest.permission.RECORD_AUDIO)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}.toTypedArray()

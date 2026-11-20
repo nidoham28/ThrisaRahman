@@ -134,6 +134,8 @@ import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.domain.AccountSettingsStorage
+import com.naira.assistant.domain.AsrProvider
+import com.naira.assistant.domain.AsrProviderSettingsStorage
 import com.naira.assistant.domain.ApiKeyStorage
 import com.naira.assistant.domain.AssistantCharacter
 import com.naira.assistant.domain.AssistantLanguage
@@ -271,6 +273,7 @@ private class SettingsState(
     )
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
     private val speechStorage = SpeechSettingsStorage(context)
+    private val asrSettingsStorage = AsrProviderSettingsStorage(context.applicationContext)
     private val accountStorage = AccountSettingsStorage(context)
     private val assistantStorage = AssistantSettingsStorage(context)
     var assistantLanguage by mutableStateOf(assistantStorage.getLanguage())
@@ -284,6 +287,16 @@ private class SettingsState(
         runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
     )
+    var asrProvider by mutableStateOf(AsrProvider.SYSTEM)
+        private set
+    var asrApiKeyConfigured by mutableStateOf(false)
+        private set
+    var asrSettingsError by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        refreshAsrSettings()
+    }
 
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
@@ -321,6 +334,36 @@ private class SettingsState(
     fun saveSpeechEngine(engine: SpeechEngine) {
         speechEngine = engine
         speechStorage.setEngine(engine.name)
+    }
+
+    fun saveAsrProvider(provider: AsrProvider) {
+        asrSettingsStorage.setProvider(provider)
+        asrProvider = provider
+        refreshAsrSettings()
+    }
+
+    fun saveAsrApiKey(provider: AsrProvider, key: String) {
+        asrSettingsStorage.setApiKey(provider, key)
+        refreshAsrSettings()
+    }
+
+    fun clearAsrSettings() {
+        asrSettingsStorage.clear()
+        asrSettingsError = null
+        asrProvider = AsrProvider.SYSTEM
+        asrApiKeyConfigured = false
+    }
+
+    private fun refreshAsrSettings() {
+        try {
+            val settings = asrSettingsStorage.load()
+            asrProvider = settings.provider
+            asrApiKeyConfigured = settings.apiKey(settings.provider) != null
+            asrSettingsError = null
+        } catch (e: Exception) {
+            asrSettingsError =
+                e.message ?: "Saved speech recognition settings are unavailable."
+        }
     }
 
     fun saveAssistantLanguage(value: AssistantLanguage) {
@@ -409,6 +452,7 @@ fun SettingsScreen(
         AssistantProvider.entries.firstOrNull { it.name == name }
     }
     var editingCricketApiKey by rememberSaveable { mutableStateOf(false) }
+    var editingAsrApiKey by rememberSaveable { mutableStateOf(false) }
     var editingFieldName by rememberSaveable { mutableStateOf<String?>(null) }
     val editingField = editingFieldName?.let { name ->
         EditField.entries.firstOrNull { it.name == name }
@@ -514,6 +558,29 @@ fun SettingsScreen(
             editingCricketApiKey = false
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "Couldn't save the CricAPI key.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun saveAsrCredential(key: String) {
+        val provider = state.asrProvider
+        if (provider == AsrProvider.SYSTEM) return
+        try {
+            state.saveAsrApiKey(provider, key)
+            editingAsrApiKey = false
+            Toast.makeText(context, "Speech key saved encrypted on this device.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, e.message ?: "Couldn't save the speech provider key.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun removeAsrCredential() {
+        val provider = state.asrProvider
+        if (provider == AsrProvider.SYSTEM) return
+        try {
+            state.saveAsrApiKey(provider, "")
+            editingAsrApiKey = false
+        } catch (e: Exception) {
+            Toast.makeText(context, e.message ?: "Couldn't remove the speech provider key.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -695,6 +762,14 @@ fun SettingsScreen(
             cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
             synchronizeCloudSettings()
         },
+        onSaveAsrProvider = { value ->
+            try {
+                state.saveAsrProvider(value)
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "Couldn't save the speech provider.", Toast.LENGTH_LONG).show()
+            }
+        },
+        onEditAsrApiKey = { editingAsrApiKey = true },
     )
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
@@ -714,6 +789,22 @@ fun SettingsScreen(
         ) {
             cloudSyncError?.let { message ->
                 SettingsCloudSyncErrorCard(message, ::synchronizeCloudSettings)
+            }
+            state.asrSettingsError?.let { message ->
+                SettingsAsrStorageErrorCard(
+                    message = message,
+                    onReset = {
+                        try {
+                            state.clearAsrSettings()
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                e.message ?: "Couldn't clear the saved speech settings.",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    },
+                )
             }
             if (isRoot) {
                 RootList(current.children) { id -> pathIds = pathIds + id }
@@ -744,6 +835,16 @@ fun SettingsScreen(
             onSave = ::saveCricketCredential,
             onRemove = { saveCricketCredential("") },
             onDismiss = { editingCricketApiKey = false },
+        )
+    }
+
+    if (editingAsrApiKey && state.asrProvider != AsrProvider.SYSTEM) {
+        AsrApiKeyDialog(
+            provider = state.asrProvider,
+            hasSavedKey = state.asrApiKeyConfigured,
+            onSave = ::saveAsrCredential,
+            onRemove = ::removeAsrCredential,
+            onDismiss = { editingAsrApiKey = false },
         )
     }
 
@@ -992,6 +1093,8 @@ private fun buildTree(
     onSaveRelationship: (RelationType) -> Unit,
     onSaveLanguage: (AssistantLanguage) -> Unit,
     onSaveSpeechEngine: (SpeechEngine) -> Unit,
+    onSaveAsrProvider: (AsrProvider) -> Unit,
+    onEditAsrApiKey: () -> Unit,
 ): SettingsNode.Category = SettingsNode.Category(
     id = "root",
     title = "Settings",
@@ -1076,6 +1179,31 @@ private fun buildTree(
                     else "Gemini TTS · uses your saved Gemini API key",
                     icon = Icons.Outlined.GraphicEq,
                     trailing = { SpeechEngineDropdown(state.speechEngine, onSaveSpeechEngine) }
+                ),
+                SettingsNode.Item(
+                    id = "asr-provider", title = "Speech recognition",
+                    subtitle = when {
+                        state.asrProvider == AsrProvider.SYSTEM ->
+                            "Android speech recognition · default"
+                        state.asrApiKeyConfigured ->
+                            "${state.asrProvider.displayName} · provider key saved on this device"
+                        else ->
+                            "${state.asrProvider.displayName} · API key required"
+                    },
+                    icon = Icons.Outlined.Mic,
+                    trailing = { AsrProviderDropdown(state.asrProvider, onSaveAsrProvider) },
+                ),
+                SettingsNode.Item(
+                    id = "asr-api-key",
+                    title = "${state.asrProvider.displayName} API key",
+                    subtitle = when {
+                        state.asrProvider == AsrProvider.SYSTEM -> "No provider key required"
+                        state.asrApiKeyConfigured -> "Encrypted on this device · not synced"
+                        else -> "Required for ${state.asrProvider.displayName}"
+                    },
+                    icon = Icons.Outlined.Lock,
+                    enabled = state.asrProvider != AsrProvider.SYSTEM,
+                    onClick = onEditAsrApiKey.takeIf { state.asrProvider != AsrProvider.SYSTEM },
                 ),
             )
         ),
@@ -1408,6 +1536,31 @@ private fun SettingsCloudSyncErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
+private fun SettingsAsrStorageErrorCard(message: String, onReset: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF171C2C))
+            .border(1.dp, CardStroke, RoundedCornerShape(18.dp))
+            .padding(16.dp)
+    ) {
+        Text(
+            "Speech settings unavailable",
+            color = TextHigh,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(message, color = TextSoft, fontSize = 12.sp)
+        TextButton(onClick = onReset, modifier = Modifier.align(Alignment.End)) {
+            Text("Clear speech settings", color = Danger)
+        }
+    }
+}
+
+@Composable
 private fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         nodes.forEach { node ->
@@ -1706,6 +1859,66 @@ private fun SpeechEngineDropdown(
 }
 
 @Composable
+private fun AsrProviderDropdown(
+    selected: AsrProvider,
+    onSelect: (AsrProvider) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.displayName, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Choose speech recognition provider",
+                tint = TextSoft,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            AsrProvider.entries.forEach { provider ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                provider.displayName,
+                                color = TextHigh,
+                                fontSize = 14.sp,
+                                fontWeight = if (provider == selected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            if (provider == selected) {
+                                Spacer(Modifier.width(10.dp))
+                                Icon(
+                                    Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    tint = Aqua,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onSelect(provider)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AssistantNameDropdown(selected: String, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -1910,6 +2123,67 @@ private fun ApiKeyDialog(
                 TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
             }
         }
+    )
+}
+
+@Composable
+private fun AsrApiKeyDialog(
+    provider: AsrProvider,
+    hasSavedKey: Boolean,
+    onSave: (String) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var key by remember(provider) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = RowSurface,
+        title = {
+            Text(
+                "${provider.displayName} API Key",
+                color = TextHigh,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    "Stored encrypted on this device and never synced. Enter a new key to replace the saved key.",
+                    color = TextSoft,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    placeholder = { Text("Enter API key", color = TextSoft.copy(alpha = 0.5f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(key) },
+                enabled = key.isNotBlank(),
+            ) {
+                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            Row {
+                if (hasSavedKey) {
+                    TextButton(onClick = onRemove) {
+                        Text("Remove", color = Danger)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = TextSoft)
+                }
+            }
+        },
     )
 }
 

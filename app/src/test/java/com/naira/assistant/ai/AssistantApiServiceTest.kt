@@ -1,6 +1,7 @@
 package com.naira.assistant.ai
 
 import com.naira.assistant.core.tools.ToolDefinition
+import com.naira.assistant.core.tools.ToolRegistry
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -16,6 +17,7 @@ import com.naira.assistant.domain.AssistantProvider
 import okhttp3.Request
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AssistantApiServiceTest {
@@ -179,17 +181,18 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `allows high impact app tools without in-app approval`() {
+    fun `requires approval for high impact app tools`() {
         val definition = ToolDefinition(
             name = "perform_screen_action",
             description = "Interact with the current screen",
             parameters = buildJsonObject { put("type", "object") },
+            requiresApproval = true,
         )
         val tool = definition.toAgentTool {
             error("Execution must not be needed to evaluate approval.")
         }
 
-        assertEquals(false, tool.needsApproval(buildJsonObject {}))
+        assertEquals(true, tool.needsApproval(buildJsonObject {}))
     }
 
     @Test
@@ -204,6 +207,23 @@ class AssistantApiServiceTest {
         }
 
         assertEquals(false, tool.needsApproval(buildJsonObject {}))
+    }
+
+    @Test
+    fun `registered privacy and destructive tools require approval`() {
+        val definitions = ToolRegistry.definitions.associateBy { it.name }
+        val protectedTools = setOf(
+            "capture_screen",
+            "read_screen_text",
+            "perform_screen_action",
+            "insert_memory",
+            "delete_note",
+            "delete_todo",
+        )
+
+        assertTrue(protectedTools.all { definitions[it]?.requiresApproval == true })
+        assertFalse(definitions.getValue("get_current_time").requiresApproval)
+        assertFalse(definitions.getValue("create_note").requiresApproval)
     }
 
     @Test

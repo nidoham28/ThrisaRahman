@@ -2,9 +2,11 @@ package com.naira.assistant.core.sound
 
 import android.content.Context
 import android.speech.SpeechRecognizer
+import com.naira.assistant.domain.AsrProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -14,6 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.naira.assistant.domain.AsrProviderSettingsStorage
 import java.io.Closeable
 
 // ───────────────────────── State ─────────────────────────
@@ -21,7 +25,11 @@ import java.io.Closeable
 sealed interface VoiceState {
     data object Idle : VoiceState
     data object Preparing : VoiceState
-    data class Listening(val partial: String = "") : VoiceState
+    data object WakeWordListening : VoiceState
+    data class Listening(
+        val partial: String = "",
+        val requiresManualTurnEnd: Boolean = false,
+    ) : VoiceState
     data object Transcribing : VoiceState
     data object Thinking : VoiceState
     data object Speaking : VoiceState
@@ -29,7 +37,8 @@ sealed interface VoiceState {
 }
 
 val VoiceState.isActive: Boolean
-    get() = this is VoiceState.Preparing || this is VoiceState.Listening || this is VoiceState.Transcribing ||
+    get() = this is VoiceState.Preparing || this is VoiceState.WakeWordListening ||
+            this is VoiceState.Listening || this is VoiceState.Transcribing ||
             this is VoiceState.Thinking || this is VoiceState.Speaking
 
 // ───────────────────────── Controller ─────────────────────────
@@ -40,7 +49,8 @@ val VoiceState.isActive: Boolean
  * - Speech starts as soon as the first sentence of the streamed answer is complete; text that
  *   arrives while a chunk is being spoken is batched into the next chunk, so playback stays
  *   continuous without one TTS request per word.
- * - Tapping the mic while Listening/Transcribing ends the session; during Thinking/Speaking it interrupts the reply.
+ * - Tapping the mic ends the session for Android/server-VAD recognition, or finishes a batch-ASR utterance.
+ * - During Thinking/Speaking it interrupts the reply; while approval is pending it stops voice capture.
  * - Two silent rounds in a row end the conversation.
  *
  * [scope] must run on the Main dispatcher (SpeechRecognizer requires the main thread).
@@ -49,12 +59,12 @@ class VoiceConversation(
     context: Context,
     private val chat: VoiceChatController,
     private val scope: CoroutineScope,
-    language: String = "bn-BD",
+    private val language: String = "bn-BD",
 ) : Closeable {
 
     private val appContext = context.applicationContext
-    private val stt = SpeechToTextFactory.create(appContext, language)
     private val tts = TextToSpeech(appContext, language)
+    private var stt: SpeechToText? = null
 
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state.asStateFlow()
@@ -70,21 +80,42 @@ class VoiceConversation(
     fun onMicTap() {
         when (_state.value) {
             is VoiceState.Idle, is VoiceState.Error -> start()
-            is VoiceState.Preparing, is VoiceState.Listening, is VoiceState.Transcribing -> stop()
-            is VoiceState.Thinking, is VoiceState.Speaking -> interrupt()
+            is VoiceState.Listening -> {
+                if (stt?.requiresManualTurnEnd == true) {
+                    _state.value = VoiceState.Transcribing
+                    stt?.finishListening()
+                } else {
+                    stop()
+                }
+            }
+            is VoiceState.Preparing, is VoiceState.Transcribing -> stop()
+            is VoiceState.WakeWordListening -> stop()
+            is VoiceState.Thinking -> {
+                if (chat.awaitingApproval.value) stop() else interrupt()
+            }
+            is VoiceState.Speaking -> interrupt()
         }
     }
 
     fun start() {
         if (running) return
-        if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
-            reportError("Speech recognition isn't available on this device.")
-            return
-        }
         val gen = ++generation
         loop = scope.launch {
+            var sessionStt: SpeechToText? = null
             try {
-                stt.prepare()
+                val settings = withContext(Dispatchers.IO) {
+                    AsrProviderSettingsStorage(appContext).load()
+                }
+                if (settings.provider == AsrProvider.SYSTEM &&
+                    !SpeechRecognizer.isRecognitionAvailable(appContext)
+                ) {
+                    reportError("Speech recognition isn't available on this device.")
+                    return@launch
+                }
+                val recognizer = SpeechToTextFactory.create(appContext, language, settings)
+                sessionStt = recognizer
+                stt = recognizer
+                recognizer.prepare()
                 converse()
             } catch (e: SpeechToText.SttException) {
                 if (gen == generation) reportError(sttErrorMessage(e.code))
@@ -93,6 +124,8 @@ class VoiceConversation(
                     reportError(e.message ?: "Voice chat couldn't start.")
                 }
             } finally {
+                sessionStt?.close()
+                if (stt === sessionStt) stt = null
                 if (gen == generation) {
                     tts.stop()
                     if (_state.value !is VoiceState.Error) _state.value = VoiceState.Idle
@@ -125,7 +158,8 @@ class VoiceConversation(
     override fun close() {
         stop()
         tts.close()
-        stt.close()
+        stt?.close()
+        stt = null
     }
 
     // ---- the loop ----
@@ -174,11 +208,19 @@ class VoiceConversation(
     }
 
     private suspend fun listenOnce(): String? {
-        _state.value = VoiceState.Listening()
         var final: String? = null
-        stt.listen().collect { event ->
+        val recognizer = checkNotNull(stt) { "Speech recognition has not been prepared." }
+        _state.value = VoiceState.Preparing
+        recognizer.listen().collect { event ->
             when (event) {
-                is SpeechToText.Event.Partial -> _state.value = VoiceState.Listening(event.text)
+                SpeechToText.Event.Preparing -> _state.value = VoiceState.Preparing
+                SpeechToText.Event.Ready -> _state.value = VoiceState.Listening(
+                    requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
+                )
+                is SpeechToText.Event.Partial -> _state.value = VoiceState.Listening(
+                    partial = event.text,
+                    requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
+                )
                 SpeechToText.Event.Processing -> _state.value = VoiceState.Transcribing
                 is SpeechToText.Event.Final -> final = event.text
             }
@@ -186,17 +228,28 @@ class VoiceConversation(
         return final
     }
 
-    private data class Snapshot(val text: String, val isError: Boolean, val done: Boolean)
+    private data class Snapshot(
+        val text: String,
+        val isError: Boolean,
+        val done: Boolean,
+        val awaitingApproval: Boolean,
+    )
 
     /** Speaks the streaming answer sentence by sentence. Returns false when the conversation should end. */
     private suspend fun speakReply(): Boolean {
-        val snapshots = combine(chat.replies, chat.busyStatus) { reply, busy ->
-            Snapshot(reply?.text.orEmpty(), reply?.isError == true, busy == null)
+        val snapshots = combine(chat.replies, chat.busyStatus, chat.awaitingApproval) { reply, busy, awaitingApproval ->
+            Snapshot(
+                text = reply?.text.orEmpty(),
+                isError = reply?.isError == true,
+                done = busy == null && !awaitingApproval,
+                awaitingApproval = awaitingApproval,
+            )
         }
         var spoken = 0
         while (true) {
             val s = snapshots.first { it.done || sentenceEnd(it.text, spoken) > spoken }
             if (interrupted) return true
+            if (s.awaitingApproval) _state.value = VoiceState.Thinking
 
             if (s.isError) {
                 reportError(s.text.trim().ifBlank { "Something went wrong." })

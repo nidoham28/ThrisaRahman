@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -138,8 +139,30 @@ private fun StatusLabel(voice: VoiceState) {
     when (voice) {
         is VoiceState.Idle -> Unit
 
-        is VoiceState.Preparing -> StatusChip("PREPARING")
-        is VoiceState.Listening -> StatusChip("LISTENING")
+        is VoiceState.Preparing -> StatusChip("GETTING READY")
+        is VoiceState.WakeWordListening -> StatusChip("SAY HEY ASSISTANT")
+        is VoiceState.Listening -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            StatusChip(
+                when {
+                    voice.requiresManualTurnEnd && voice.partial.isNotBlank() ->
+                        "HEARING YOU · TAP TO FINISH"
+                    voice.requiresManualTurnEnd -> "SPEAK NOW · TAP TO FINISH"
+                    voice.partial.isNotBlank() -> "HEARING YOU"
+                    else -> "SPEAK NOW"
+                }
+            )
+            if (voice.partial.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = voice.partial,
+                    color = TextHigh,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         is VoiceState.Transcribing -> StatusChip("TRANSCRIBING")
         is VoiceState.Thinking -> StatusChip("THINKING")
         is VoiceState.Speaking -> StatusChip("SPEAKING")
@@ -173,6 +196,7 @@ private fun StatusChip(label: String) {
 /** Maps the app's voice state to the orb's visual mode. */
 private fun VoiceState.toOrbState(): OrbState = when (this) {
     is VoiceState.Preparing -> OrbState.Thinking
+    is VoiceState.WakeWordListening -> OrbState.Listening
     is VoiceState.Listening -> OrbState.Listening
     is VoiceState.Transcribing -> OrbState.Thinking
     is VoiceState.Thinking -> OrbState.Thinking

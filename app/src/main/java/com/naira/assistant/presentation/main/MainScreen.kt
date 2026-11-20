@@ -27,9 +27,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
+import com.naira.assistant.ThrisaApp
 import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
@@ -130,7 +128,7 @@ fun MainScreen(
     }
 
     // --- Voice + chat -------------------------------------------------------
-    val voice = rememberVoiceSession(viewModel, voiceLanguage)
+    val voice = rememberVoiceSession()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
     val awaitingApproval by viewModel.awaitingApproval.collectAsStateWithLifecycle()
@@ -244,14 +242,7 @@ fun MainScreen(
 
 @Composable
 private fun defaultAssistantViewModel(context: Context): AssistantViewModel {
-    val appContext = context.applicationContext
-    // Remember the factory so it isn't reallocated on every recomposition.
-    val factory = remember(appContext) {
-        viewModelFactory {
-            initializer { AssistantViewModel(appContext) }
-        }
-    }
-    return viewModel(factory = factory)
+    return (context.applicationContext as ThrisaApp).assistantViewModel()
 }
 
 private fun loadDisplayName(storage: AccountSettingsStorage): String =

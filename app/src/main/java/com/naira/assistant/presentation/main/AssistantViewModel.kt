@@ -360,10 +360,7 @@ class AssistantViewModel(
         _busyStatus.value = null
     }
 
-    /**
-     * Call from `DisposableEffect { onDispose { ... } }` - `remember { ... }`
-     * ViewModels never reach [onCleared].
-     */
+    /** Releases API resources if the process-scoped owner explicitly disposes this ViewModel. */
     fun dispose() {
         assistantApi.close()
         activeApiKey = null
@@ -482,9 +479,9 @@ class AssistantViewModel(
         if (!changed) return
 
         pendingAgentRun = pending.copy(assistantMessage = updated)
+        _busyStatus.value = if (approved) "Resuming approved action..." else "Applying your decision..."
         _awaitingApproval.value = false
         renderAgentMessage(pending.context, updated, isFinal = false)
-        _busyStatus.value = if (approved) "Resuming approved action..." else "Applying your decision..."
         currentJob = viewModelScope.launch {
             try {
                 collectAgentRun(pending.context, updated)

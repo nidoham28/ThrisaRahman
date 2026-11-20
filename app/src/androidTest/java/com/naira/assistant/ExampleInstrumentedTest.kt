@@ -2,6 +2,7 @@ package com.naira.assistant
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.naira.assistant.core.sound.WakeWordDetector
 
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,5 +21,21 @@ class ExampleInstrumentedTest {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("com.naira.assistant", appContext.packageName)
+    }
+
+    @Test
+    fun bundledWakeWordModelLoads() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val spotter = WakeWordDetector(context).createKeywordSpotter()
+        try {
+            val stream = spotter.createStream()
+            try {
+                assertNotEquals(0L, stream.ptr)
+            } finally {
+                stream.release()
+            }
+        } finally {
+            spotter.release()
+        }
     }
 }

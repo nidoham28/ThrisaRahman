@@ -86,6 +86,12 @@ fun AssistantNavigation(
                     MicButton(
                         modifier = Modifier.weight(1f),
                         active = voice.isActive,
+                        accessibilityDescription = when {
+                            voice is VoiceState.WakeWordListening -> "Stop background Hey Assistant"
+                            voice is VoiceState.Listening && voice.requiresManualTurnEnd -> "Finish speaking"
+                            voice.isActive -> "Stop background voice session"
+                            else -> "Enable background Hey Assistant"
+                        },
                         onClick = onMicClick,
                     )
                 } else {
@@ -161,6 +167,7 @@ fun NavItem(
 fun MicButton(
     modifier: Modifier,
     active: Boolean,
+    accessibilityDescription: String,
     onClick: () -> Unit,
 ) {
     val lift = (-16).dp
@@ -181,8 +188,7 @@ fun MicButton(
                     onClick = onClick,
                 )
                 .semantics {
-                    contentDescription =
-                        if (active) "Stop voice conversation" else "Start voice conversation"
+                    contentDescription = accessibilityDescription
                 },
             contentAlignment = Alignment.Center,
         ) {

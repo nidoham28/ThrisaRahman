@@ -14,8 +14,8 @@ class AssistantVoiceTest {
             characters.map { it.displayName },
         )
         assertEquals(4, characters.map { it.voice.geminiVoiceName }.distinct().size)
-        assertEquals(4, characters.map { it.gender }.distinct().size)
-        assertTrue(characters.all { it.instructions.isNotBlank() })
+        assertEquals(2, characters.map { it.gender }.distinct().size)
+        assertTrue(characters.all { it.persona.isNotBlank() })
     }
 
     @Test

@@ -2,7 +2,13 @@ package com.naira.assistant
 
 import android.app.Application
 import android.util.Log
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.naira.assistant.domain.LegacySettingsCleanup
+import com.naira.assistant.presentation.main.AssistantViewModel
 import com.naira.service.util.NewPipeExtractorInstance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -10,7 +16,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class ThrisaApp : Application() {
+class ThrisaApp : Application(), ViewModelStoreOwner {
+
+    override val viewModelStore = ViewModelStore()
+
+    private val assistantViewModelFactory = viewModelFactory {
+        initializer { AssistantViewModel(this@ThrisaApp) }
+    }
+
+    fun assistantViewModel(): AssistantViewModel =
+        ViewModelProvider(this, assistantViewModelFactory)[AssistantViewModel::class.java]
 
     /**
      * Process-lifetime scope for fire-and-forget startup work.
@@ -22,6 +37,11 @@ class ThrisaApp : Application() {
         super.onCreate()
         cleanUpLegacySettings()
         NewPipeExtractorInstance.init()
+    }
+
+    override fun onTerminate() {
+        viewModelStore.clear()
+        super.onTerminate()
     }
 
     /**

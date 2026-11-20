@@ -1,11 +1,14 @@
 package com.naira.assistant.core.sound
 
 import android.content.Context
+import android.media.AudioFocusRequest
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech as AndroidTextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.naira.assistant.ai.AssistantApiService
@@ -31,6 +34,7 @@ import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.UUID
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 
 enum class SpeechEngine(val label: String, val description: String) {
@@ -55,6 +59,7 @@ class TextToSpeech(
 ) : Closeable {
 
     private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val speechSettings = SpeechSettingsStorage(appContext)
     private val assistantApi = AssistantApiService(appContext)
 
@@ -391,6 +396,9 @@ class TextToSpeech(
      */
     private inner class PcmPlayback(private val pcm: ByteArray) {
         val done = CompletableDeferred<Unit>()
+        private val focusLost = AtomicBoolean(false)
+        private var focusRequest: AudioFocusRequest? = null
+        @Volatile
         private var track: AudioTrack? = null
 
         fun start() {
@@ -398,20 +406,43 @@ class TextToSpeech(
                 SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
             )
             check(minBuf > 0) { "Audio playback is unavailable on this device." }
-            track = AudioTrack(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-                AudioFormat.Builder()
-                    .setSampleRate(SAMPLE_RATE)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-                maxOf(minBuf, WRITE_CHUNK_BYTES) * 2,
-                AudioTrack.MODE_STREAM,
-                AudioManager.AUDIO_SESSION_ID_GENERATE,
-            ).apply { play() } // starts at once; plays silence until the first write lands
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(audioAttributes)
+                .setWillPauseWhenDucked(true)
+                .setOnAudioFocusChangeListener({ change ->
+                    if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                        change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+                        change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+                    ) {
+                        focusLost.set(true)
+                        synchronized(playbackLock) {
+                            track?.pause()
+                        }
+                    }
+                }, Handler(Looper.getMainLooper()))
+                .build()
+            check(audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                "Audio focus is unavailable for speech playback."
+            }
+            focusRequest = request
+            synchronized(playbackLock) {
+                check(!focusLost.get()) { "Audio focus was lost before speech playback started." }
+                track = AudioTrack(
+                    audioAttributes,
+                    AudioFormat.Builder()
+                        .setSampleRate(SAMPLE_RATE)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                    maxOf(minBuf, WRITE_CHUNK_BYTES) * 2,
+                    AudioTrack.MODE_STREAM,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE,
+                ).apply { play() } // starts at once; plays silence until the first write lands
+            }
         }
 
         suspend fun await(onPlaybackStarted: () -> Unit) = withContext(Dispatchers.IO) {
@@ -420,6 +451,7 @@ class TextToSpeech(
             var notifiedPlaybackStarted = false
             while (offset < pcm.size) {
                 currentCoroutineContext().ensureActive()
+                check(!focusLost.get()) { "Speech playback stopped because audio focus was lost." }
                 val written = t.write(
                     pcm, offset, minOf(WRITE_CHUNK_BYTES, pcm.size - offset), AudioTrack.WRITE_NON_BLOCKING
                 )
@@ -446,6 +478,7 @@ class TextToSpeech(
             val deadlineMs = System.currentTimeMillis() + (totalFrames * 1000L / SAMPLE_RATE) + 2_000
             while (System.currentTimeMillis() < deadlineMs) {
                 currentCoroutineContext().ensureActive()
+                check(!focusLost.get()) { "Speech playback stopped because audio focus was lost." }
                 val head = runCatching { t.playbackHeadPosition }.getOrDefault(totalFrames)
                 if (head >= totalFrames) break
                 delay(20)
@@ -454,12 +487,17 @@ class TextToSpeech(
         }
 
         fun release() {
-            track?.runCatching {
-                pause()
-                flush()
-                release()
+            synchronized(playbackLock) {
+                val activeTrack = track
+                track = null
+                activeTrack?.runCatching {
+                    pause()
+                    flush()
+                    release()
+                }
+                focusRequest?.let(audioManager::abandonAudioFocusRequest)
+                focusRequest = null
             }
-            track = null
         }
     }
 }

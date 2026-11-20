@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.naira.assistant.domain.AsrProviderSettings
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -20,11 +21,19 @@ import java.io.Closeable
  * - Closes exceptionally with [SttException] on error.
  * - Cancelling the collector stops the underlying engine.
  *
- * The current implementation is [SystemSpeechToText], Android's speech recognizer.
+ * The implementations are [SystemSpeechToText] and the provider-backed
+ * adapter for the app's selected speech-module ASR provider.
  */
 interface SpeechToText : Closeable {
 
     fun listen(): Flow<Event>
+
+    /** True when the caller must explicitly stop capture to finish a transcript. */
+    val requiresManualTurnEnd: Boolean
+        get() = false
+
+    /** Requests the current utterance to finish for providers without server-side turn detection. */
+    fun finishListening() = Unit
 
     /** Prepare expensive local engines before the first utterance. */
     suspend fun prepare() {}
@@ -34,6 +43,8 @@ interface SpeechToText : Closeable {
     // ---- Nested types ----
 
     sealed interface Event {
+        data object Preparing : Event
+        data object Ready : Event
         data class Partial(val text: String) : Event
         data object Processing : Event
         data class Final(val text: String) : Event
@@ -43,10 +54,18 @@ interface SpeechToText : Closeable {
     class SttException(val code: Int) : RuntimeException("SpeechRecognizer error=$code")
 }
 
-/** Creates the currently supported speech-to-text engine. */
+/** Creates the selected ASR engine, using Android recognition by default. */
 object SpeechToTextFactory {
-    fun create(context: Context, language: String = "bn-BD"): SpeechToText =
-        SystemSpeechToText(context.applicationContext, language)
+    fun create(
+        context: Context,
+        language: String = "bn-BD",
+        settings: AsrProviderSettings = AsrProviderSettings(),
+    ): SpeechToText =
+        if (settings.provider == com.naira.assistant.domain.AsrProvider.SYSTEM) {
+            SystemSpeechToText(context.applicationContext, language)
+        } else {
+            ModuleSpeechToText(context.applicationContext, settings)
+        }
 }
 
 /**
@@ -59,15 +78,22 @@ class SystemSpeechToText(
 ) : SpeechToText {
 
     private val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+    @Volatile
+    private var closed = false
 
     override fun listen(): Flow<SpeechToText.Event> = callbackFlow {
+        var latestPartial = ""
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onPartialResults(partialResults: Bundle?) {
-                partialResults?.bestText()?.let { trySend(SpeechToText.Event.Partial(it)) }
+                partialResults?.bestText()?.takeIf(String::isNotBlank)?.let {
+                    latestPartial = it
+                    trySend(SpeechToText.Event.Partial(it))
+                }
             }
 
             override fun onResults(results: Bundle?) {
-                trySend(SpeechToText.Event.Final(results?.bestText().orEmpty()))
+                val finalText = results?.bestText().orEmpty().ifBlank { latestPartial }
+                trySend(SpeechToText.Event.Final(finalText))
                 close()
             }
 
@@ -75,7 +101,9 @@ class SystemSpeechToText(
                 close(SpeechToText.SttException(error))
             }
 
-            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                trySend(SpeechToText.Event.Ready)
+            }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -88,18 +116,17 @@ class SystemSpeechToText(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            // End the utterance shortly after the user stops talking instead of
-            // the multi-second device default. Honored by most recognizers,
-            // ignored (harmlessly) by the rest.
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
         }
         recognizer.startListening(intent)
 
         awaitClose { runCatching { recognizer.cancel() } }
     }
 
-    override fun close() = recognizer.destroy()
+    override fun close() {
+        if (closed) return
+        closed = true
+        recognizer.destroy()
+    }
 
     private fun Bundle.bestText(): String? =
         getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
