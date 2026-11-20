@@ -22,15 +22,17 @@ plugins {
 android {
     namespace = "com.naira.assistant"
     compileSdk {
-        version = release(37)
+        version = release(37) {
+            minorApiLevel = 1
+        }
     }
 
     defaultConfig {
         applicationId = "com.naira.assistant"
         minSdk = 26
         targetSdk = 37
-        versionCode = 102
-        versionName = "0.0.2-shiuli"
+        versionCode = 103
+        versionName = "0.0.3-meghdoot"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -2,6 +2,7 @@ package com.naira.assistant.ai
 
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.core.tools.ToolRegistry
+import com.naira.assistant.domain.AssistantThinkingMode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -11,7 +12,9 @@ import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.InputSchema
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessagePart
 import com.naira.assistant.domain.AssistantProvider
 import okhttp3.Request
@@ -21,6 +24,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AssistantApiServiceTest {
+    @Test
+    fun `maps assistant thinking settings to provider reasoning levels`() {
+        assertEquals(ReasoningLevel.AUTO, AssistantThinkingMode.AUTO.toReasoningLevel())
+        assertEquals(ReasoningLevel.OFF, AssistantThinkingMode.OFF.toReasoningLevel())
+    }
+
+    @Test
+    fun `adds reasoning ability only for models that support it`() {
+        val reasoningModel = createAssistantModel("gemini-3.5-flash-lite")
+        val nonReasoningModel = createAssistantModel("gemini-2.0-flash")
+
+        assertTrue(ModelAbility.REASONING in reasoningModel.abilities)
+        assertFalse(ModelAbility.REASONING in nonReasoningModel.abilities)
+        assertTrue(ModelAbility.TOOL in reasoningModel.abilities)
+        assertTrue(ModelAbility.TOOL in nonReasoningModel.abilities)
+    }
+
     @Test
     fun `normalizes OpenRouter authorization to one bearer header`() {
         val request = Request.Builder()

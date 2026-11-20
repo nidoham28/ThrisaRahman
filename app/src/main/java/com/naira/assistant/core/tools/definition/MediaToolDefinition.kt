@@ -7,7 +7,49 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-/** Function declarations for media playback and volume-control tools. */
+/** Function declarations for media playback, volume-control, and phone-alert tools. */
+
+fun phoneAlertControlTool() = ToolDefinition(
+    name = "phone_alert_control",
+    description = "Play a short repeating alert on this phone to help the user find it, " +
+            "or stop an alert that is already playing. Use only when the user asks to find " +
+            "this phone, play an alert, or stop the phone alert. The alert stops automatically " +
+            "after at most 60 seconds and can also be stopped with the 'stop' action. " +
+            "It follows the device alarm volume and Do Not Disturb settings.",
+    parameters = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("action") {
+                put("type", "string")
+                put("description", "Start or stop the phone alert.")
+                putJsonArray("enum") {
+                    add("start")
+                    add("stop")
+                }
+            }
+            putJsonObject("sound") {
+                put("type", "string")
+                put("description", "Alert sound pattern for 'start'. Defaults to 'beep'.")
+                putJsonArray("enum") {
+                    add("beep")
+                    add("ring")
+                    add("urgent")
+                }
+            }
+            putJsonObject("duration_seconds") {
+                put("type", "integer")
+                put(
+                    "description",
+                    "How long to repeat the sound, from 5 to 60 seconds. Defaults to 30. " +
+                            "Ignored for 'stop'."
+                )
+            }
+        }
+        putJsonArray("required") {
+            add("action")
+        }
+    },
+)
 
 fun mediaPlaybackControlTool() = ToolDefinition(
     name = "media_playback_control",

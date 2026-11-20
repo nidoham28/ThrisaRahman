@@ -40,6 +40,7 @@ import com.naira.assistant.core.tools.executor.MemoryToolExecutor.executeUpdateM
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeGetMediaStatus
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaPlaybackControl
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaVolumeControl
+import com.naira.assistant.core.tools.executor.MediaToolExecutor.executePhoneAlertControl
 import com.naira.assistant.core.tools.executor.ImageToolExecutor.executeGenerateImage
 import com.naira.assistant.core.tools.executor.NoteToolExecutor.executeCreateNote
 import com.naira.assistant.core.tools.executor.NoteToolExecutor.executeDeleteNote
@@ -161,6 +162,9 @@ object BuiltinToolExecutor {
 
                     "get_media_status" ->
                         executeGetMediaStatus(context)
+
+                    "phone_alert_control" ->
+                        executePhoneAlertControl(call, context)
 
                     // ── Device toggles (flashlight, Bluetooth, Wi-Fi) ───────────
                     "control_flashlight" ->

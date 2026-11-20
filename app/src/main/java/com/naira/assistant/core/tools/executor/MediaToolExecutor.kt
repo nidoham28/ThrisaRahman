@@ -5,6 +5,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.view.KeyEvent
 import com.naira.assistant.core.tools.executor.BuiltinToolExecutor.jsonStringArg
+import com.naira.assistant.presentation.main.WakeWordForegroundService
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -39,6 +40,64 @@ object MediaToolExecutor {
     private const val MAX_SEEK_SECONDS = 120
 
     private const val MAX_VOLUME_STEPS = 15
+    private const val DEFAULT_PHONE_ALERT_DURATION_SECONDS = 30
+    private const val MIN_PHONE_ALERT_DURATION_SECONDS = 5
+    private const val MAX_PHONE_ALERT_DURATION_SECONDS = 60
+
+    suspend fun executePhoneAlertControl(call: FunctionCall, context: Context): JsonObject {
+        val action = jsonStringArg(call, "action")?.trim()?.lowercase()
+            ?: return error("Please provide an 'action': 'start' or 'stop'.")
+
+        return when (action) {
+            "start" -> {
+                val durationArg = call.args["duration_seconds"]
+                val requestedDuration = extractIntArg(call, "duration_seconds")
+                if (durationArg != null && requestedDuration == null) {
+                    return error("'duration_seconds' must be an integer.")
+                }
+                val duration = resolvePhoneAlertDuration(requestedDuration)
+                    ?: return error(
+                        "'duration_seconds' must be between " +
+                                "$MIN_PHONE_ALERT_DURATION_SECONDS and " +
+                                "$MAX_PHONE_ALERT_DURATION_SECONDS."
+                    )
+                if (call.args["sound"] != null && jsonStringArg(call, "sound") == null) {
+                    return error("'sound' must be 'beep', 'ring', or 'urgent'.")
+                }
+                val sound = resolvePhoneAlertSound(jsonStringArg(call, "sound"))
+                    ?: return error("Unknown sound. Choose 'beep', 'ring', or 'urgent'.")
+                val message = WakeWordForegroundService.controlPhoneAlert(
+                    context = context,
+                    action = WakeWordForegroundService.ACTION_PLAY_ALERT,
+                    sound = sound,
+                    durationSeconds = duration,
+                )
+                buildJsonObject {
+                    put("success", true)
+                    put("action", action)
+                    put("sound", sound)
+                    put("duration_seconds", duration)
+                    put("message", message)
+                }
+            }
+
+            "stop" -> {
+                val message = WakeWordForegroundService.controlPhoneAlert(
+                    context = context,
+                    action = WakeWordForegroundService.ACTION_STOP_ALERT,
+                    sound = DEFAULT_PHONE_ALERT_SOUND,
+                    durationSeconds = DEFAULT_PHONE_ALERT_DURATION_SECONDS,
+                )
+                buildJsonObject {
+                    put("success", true)
+                    put("action", action)
+                    put("message", message)
+                }
+            }
+
+            else -> error("Unknown action '$action'. Use 'start' or 'stop'.")
+        }
+    }
 
     /**
      * Executes the `media_playback_control` tool.
@@ -222,6 +281,15 @@ object MediaToolExecutor {
     internal fun resolveSeekSeconds(requested: Int?): Int =
         (requested ?: DEFAULT_SEEK_SECONDS).coerceIn(MIN_SEEK_SECONDS, MAX_SEEK_SECONDS)
 
+    internal fun resolvePhoneAlertDuration(requested: Int?): Int? =
+        (requested ?: DEFAULT_PHONE_ALERT_DURATION_SECONDS)
+            .takeIf { it in MIN_PHONE_ALERT_DURATION_SECONDS..MAX_PHONE_ALERT_DURATION_SECONDS }
+
+    internal fun resolvePhoneAlertSound(requested: String?): String? {
+        val sound = requested?.trim()?.lowercase() ?: DEFAULT_PHONE_ALERT_SOUND
+        return sound.takeIf { it in PHONE_ALERT_SOUNDS }
+    }
+
     /**
      * Number of fast-forward/rewind key presses needed for a requested
      * duration, assuming media apps seek [SEEK_STEP_SECONDS] per press.
@@ -290,4 +358,7 @@ object MediaToolExecutor {
             element.jsonPrimitive.intOrNull
                 ?: element.jsonPrimitive.content.trim().toIntOrNull()
         }.getOrNull()
+
+    private const val DEFAULT_PHONE_ALERT_SOUND = "beep"
+    private val PHONE_ALERT_SOUNDS = setOf("beep", "ring", "urgent")
 }

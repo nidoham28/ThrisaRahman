@@ -36,6 +36,7 @@ import com.naira.assistant.core.tools.definition.markTodoDoneTool
 import com.naira.assistant.core.tools.definition.markTodoUndoneTool
 import com.naira.assistant.core.tools.definition.mediaPlaybackControlTool
 import com.naira.assistant.core.tools.definition.mediaVolumeControlTool
+import com.naira.assistant.core.tools.definition.phoneAlertControlTool
 import com.naira.assistant.core.tools.definition.mergeMemoriesTool
 import com.naira.assistant.core.tools.definition.openAppTool
 import com.naira.assistant.core.tools.definition.removeMemoryTool
@@ -116,6 +117,7 @@ object ToolRegistry {
         mediaPlaybackControlTool(),
         mediaVolumeControlTool(),
         getMediaStatusTool(),
+        phoneAlertControlTool(),
 
         // Device toggles (flashlight, Bluetooth, Wi-Fi)
         flashlightControlTool(),

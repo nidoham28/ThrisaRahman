@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AudioEffect
+import android.media.audiofx.AutomaticGainControl
 import androidx.core.content.ContextCompat
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.KeywordSpotter
@@ -32,6 +34,7 @@ internal class WakeWordDetector(context: Context) {
         }
         val keywordSpotter = createKeywordSpotter()
         var recorder: AudioRecord? = null
+        var automaticGainControl: AutomaticGainControl? = null
         var stream: OnlineStream? = null
         try {
             val activeStream = keywordSpotter.createStream()
@@ -59,6 +62,16 @@ internal class WakeWordDetector(context: Context) {
             recorder = activeRecorder
             check(activeRecorder.state == AudioRecord.STATE_INITIALIZED) {
                 "Microphone could not be initialized for wake-word detection."
+            }
+
+            automaticGainControl =
+                AutomaticGainControl.create(activeRecorder.audioSessionId)
+            automaticGainControl?.let { agc ->
+                if (!agc.getEnabled()) {
+                    check(agc.setEnabled(true) == AudioEffect.SUCCESS) {
+                        "Microphone automatic gain control could not be enabled."
+                    }
+                }
             }
 
             activeRecorder.startRecording()
@@ -94,20 +107,24 @@ internal class WakeWordDetector(context: Context) {
             }
         } finally {
             try {
-                recorder?.let { activeRecorder ->
-                    try {
-                        if (activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                            activeRecorder.stop()
-                        }
-                    } finally {
-                        activeRecorder.release()
-                    }
-                }
+                automaticGainControl?.release()
             } finally {
                 try {
-                    stream?.release()
+                    recorder?.let { activeRecorder ->
+                        try {
+                            if (activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                                activeRecorder.stop()
+                            }
+                        } finally {
+                            activeRecorder.release()
+                        }
+                    }
                 } finally {
-                    keywordSpotter.release()
+                    try {
+                        stream?.release()
+                    } finally {
+                        keywordSpotter.release()
+                    }
                 }
             }
         }
@@ -151,8 +168,8 @@ internal class WakeWordDetector(context: Context) {
             "wake-word/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         const val MODEL_TOKENS = "wake-word/tokens.txt"
         const val KEYWORDS_FILE = "wake-word/keywords.txt"
-        const val KEYWORD_SCORE = 1.5f
-        const val KEYWORD_THRESHOLD = 0.25f
+        const val KEYWORD_SCORE = 2.0f
+        const val KEYWORD_THRESHOLD = 0.20f
         const val NUM_TRAILING_BLANKS = 2
         const val SAMPLES_PER_READ = SAMPLE_RATE / 10
         const val BYTES_PER_SAMPLE = 2

@@ -6,20 +6,20 @@ junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 ktorClientAndroid = "3.6.1"
-lifecycleRuntimeKtx = "2.11.0"
+lifecycleRuntimeKtx = "2.11.1"
 activityCompose = "1.13.0"
 kotlin = "2.4.21"
-composeBom = "2026.09.00"
+composeBom = "2026.11.01"
 
 # ai / common modules
 navigationCompose = "2.10.2"
 newpipeextractor = "v0.27.1"
 okhttp = "5.5.1"
-serializationJson = "1.12.0"
+serializationJson = "1.13.0"
 kotlinxCoroutines = "1.11.0"
 kotlinxDatetime = "0.8.0"
 commonsText = "1.15.0"
-quickjs = "1.0.15"
+quickjs = "1.0.18"
 coil = "3.6.3"
 
 # speech module
@@ -27,8 +27,8 @@ media3 = "1.11.1"
 
 # search module
 jsoup = "1.24.1"
-appcompat = "1.6.1"
-material = "1.10.0"
+appcompat = "1.8.0"
+material = "1.14.0"
 
 [libraries]
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }

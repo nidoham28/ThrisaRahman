@@ -1,12 +1,14 @@
 package com.naira.assistant.presentation.main
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.naira.assistant.ai.AgentOrchestrator
 import com.naira.assistant.ai.DELEGATE_TOOL_NAME
 import com.naira.assistant.ai.DelegationProgress
 import com.naira.assistant.ai.AssistantApiService
+import com.naira.assistant.ai.toReasoningLevel
 import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.InstructionsConfig
 import com.naira.assistant.core.service.image.InlineImage
@@ -42,6 +44,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.agent.AgentEvent
 import me.rerere.ai.agent.AgentFinishReason
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
 import me.rerere.ai.ui.ToolApprovalState
@@ -77,6 +80,7 @@ private data class AgentRunContext(
     val provider: AssistantProvider,
     val modelId: String,
     val apiKey: String,
+    val reasoningLevel: ReasoningLevel,
     val streaming: Boolean,
     val requestGeneration: Long,
     val attachedImage: InlineImage.Loaded?,
@@ -283,9 +287,15 @@ class AssistantViewModel(
 
     /** Reload the saved key after returning from provider settings. */
     fun refreshApiKey() {
-        val accountUserId = authService.currentUser()?.id
-        loadLocalProviderSettings(accountUserId)
-        pullCloudApiKeys()
+        viewModelScope.launch {
+            try {
+                reloadProviderSettings(syncCloud = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("AssistantViewModel", "Failed to refresh saved provider settings", e)
+            }
+        }
     }
 
     private fun loadLocalProviderSettings(userId: String?) {
@@ -308,19 +318,24 @@ class AssistantViewModel(
      * The cloud (`user_provider_keys`) is the source of truth for API keys:
      * pull keys saved on other devices into the local cache, then reload.
      */
-    private fun pullCloudApiKeys() {
-        viewModelScope.launch {
-            val userId = authService.currentUser()?.id ?: return@launch
-            val cloudKeys = apiKeySync.fetchAll()
-            if (cloudKeys.isEmpty()) return@launch
-            var changed = false
-            for ((provider, key) in cloudKeys) {
-                if (apiKeyStorage.getApiKey(provider.name, userId) != key) {
-                    apiKeyStorage.saveApiKey(provider.name, userId, key)
-                    changed = true
-                }
+    private suspend fun reloadProviderSettings(syncCloud: Boolean): String? {
+        authService.awaitInitialization()
+        val userId = authService.currentUser()?.id
+        loadLocalProviderSettings(userId)
+        if (userId != null && (syncCloud || activeApiKey.isNullOrBlank())) {
+            pullCloudApiKeys(userId)
+            loadLocalProviderSettings(userId)
+        }
+        return userId
+    }
+
+    private suspend fun pullCloudApiKeys(userId: String) {
+        val cloudKeys = apiKeySync.fetchAll()
+        if (authService.currentUser()?.id != userId) return
+        for ((provider, key) in cloudKeys) {
+            if (apiKeyStorage.getApiKey(provider.name, userId) != key) {
+                apiKeyStorage.saveApiKey(provider.name, userId, key)
             }
-            if (changed) refreshApiKey()
         }
     }
 
@@ -378,8 +393,6 @@ class AssistantViewModel(
         if (message.isBlank() && imageUri == null) return
         if (_busyStatus.value != null || pendingAgentRun != null) return
 
-        val accountUserId = authService.currentUser()?.id
-        loadLocalProviderSettings(accountUserId)
         val userId = nextMessageId()
         _messages.update { it + UiMessage(userId, message, isUser = true, imageUri = imageUri) }
 
@@ -388,11 +401,14 @@ class AssistantViewModel(
 
         _busyStatus.value = "Thinking..."
         val requestGeneration = chatGeneration
-        val provider = activeProvider
-        val modelId = activeModelId
-        val apiKey = activeApiKey
         currentJob = viewModelScope.launch {
+            var provider = activeProvider
             try {
+                val accountUserId = reloadProviderSettings(syncCloud = false)
+                provider = activeProvider
+                val modelId = activeModelId
+                val apiKey = activeApiKey
+                val reasoningLevel = assistantSettingsStorage.getThinkingMode().toReasoningLevel()
                 if (apiKey.isNullOrBlank()) {
                     val message = when {
                         accountUserId == null ->
@@ -431,6 +447,7 @@ class AssistantViewModel(
                         provider = provider,
                         modelId = modelId,
                         apiKey = apiKey,
+                        reasoningLevel = reasoningLevel,
                         streaming = streaming,
                         requestGeneration = requestGeneration,
                         attachedImage = attachedImage,
@@ -537,6 +554,7 @@ class AssistantViewModel(
                         tasks = delegation,
                         provider = context.provider,
                         modelId = context.modelId,
+                        reasoningLevel = context.reasoningLevel,
                         onProgress = { progress: DelegationProgress ->
                             if (context.requestGeneration == chatGeneration) {
                                 val completed = if (progress.completed) {
@@ -594,6 +612,7 @@ class AssistantViewModel(
             streaming = context.streaming,
             provider = context.provider,
             modelId = context.modelId,
+            reasoningLevel = context.reasoningLevel,
         ).collect { event ->
             val assistantMessage = when (event) {
                 is AgentEvent.MessageUpdated -> event.message

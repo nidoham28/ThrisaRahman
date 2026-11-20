@@ -141,6 +141,7 @@ import com.naira.assistant.domain.AssistantCharacter
 import com.naira.assistant.domain.AssistantLanguage
 import com.naira.assistant.domain.AssistantProvider
 import com.naira.assistant.domain.AssistantSettingsStorage
+import com.naira.assistant.domain.AssistantThinkingMode
 import com.naira.assistant.domain.Gender
 import com.naira.assistant.domain.RelationType
 import com.naira.assistant.domain.SpeechSettingsStorage
@@ -277,6 +278,7 @@ private class SettingsState(
     private val accountStorage = AccountSettingsStorage(context)
     private val assistantStorage = AssistantSettingsStorage(context)
     var assistantLanguage by mutableStateOf(assistantStorage.getLanguage())
+    var assistantThinkingMode by mutableStateOf(assistantStorage.getThinkingMode())
     var username by mutableStateOf(accountStorage.getUserName())
     var displayName by mutableStateOf(accountStorage.getDisplayName())
     var phone by mutableStateOf(accountStorage.getPhoneNumber())
@@ -371,6 +373,11 @@ private class SettingsState(
         assistantStorage.setLanguage(value)
     }
 
+    fun saveAssistantThinkingMode(value: AssistantThinkingMode) {
+        assistantThinkingMode = value
+        assistantStorage.setThinkingMode(value)
+    }
+
     fun saveProfileField(field: EditField, value: String) {
         val trimmed = value.trim()
         when (field) {
@@ -402,6 +409,7 @@ private class SettingsState(
         selectedProvider = storage.getSelectedProvider(userId)
         openRouterModelId = storage.getOpenRouterModelId(userId)
         assistantLanguage = assistantStorage.getLanguage()
+        assistantThinkingMode = assistantStorage.getThinkingMode()
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
         username = accountStorage.getUserName()
@@ -757,6 +765,7 @@ fun SettingsScreen(
             cloudSettingsRepository.recordChange(CloudSettingsPatch(assistantLanguage = value))
             synchronizeCloudSettings()
         },
+        onSaveAssistantThinkingMode = state::saveAssistantThinkingMode,
         onSaveSpeechEngine = { value ->
             state.saveSpeechEngine(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
@@ -1092,6 +1101,7 @@ private fun buildTree(
     onSaveAssistantName: (String) -> Unit,
     onSaveRelationship: (RelationType) -> Unit,
     onSaveLanguage: (AssistantLanguage) -> Unit,
+    onSaveAssistantThinkingMode: (AssistantThinkingMode) -> Unit,
     onSaveSpeechEngine: (SpeechEngine) -> Unit,
     onSaveAsrProvider: (AsrProvider) -> Unit,
     onEditAsrApiKey: () -> Unit,
@@ -1143,7 +1153,7 @@ private fun buildTree(
             )
         ),
         SettingsNode.Category(
-            id = "assistant", title = "Assistant", subtitle = "Language",
+            id = "assistant", title = "Assistant", subtitle = "Language & thinking",
             icon = Icons.Outlined.AutoAwesome,
             children = listOf(
                 SettingsNode.Item(
@@ -1165,6 +1175,18 @@ private fun buildTree(
                     subtitle = "Personalize the assistant's tone",
                     icon = Icons.Outlined.People,
                     trailing = { RelationTypeDropdown(state.relationship, onSaveRelationship) },
+                ),
+                SettingsNode.Item(
+                    id = "assistant-thinking",
+                    title = "Model thinking",
+                    subtitle = state.assistantThinkingMode.description,
+                    icon = Icons.Outlined.AutoAwesome,
+                    trailing = {
+                        AssistantThinkingDropdown(
+                            selected = state.assistantThinkingMode,
+                            onSelect = onSaveAssistantThinkingMode,
+                        )
+                    },
                 ),
             )
         ),
@@ -2069,6 +2091,63 @@ private fun LanguageDropdown(selected: AssistantLanguage, onSelect: (AssistantLa
                         }
                     },
                     onClick = { onSelect(language); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantThinkingDropdown(
+    selected: AssistantThinkingMode,
+    onSelect: (AssistantThinkingMode) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(selected.title, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Choose model thinking mode",
+                tint = TextSoft,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            AssistantThinkingMode.entries.forEach { mode ->
+                val isSelected = mode == selected
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                mode.title,
+                                color = TextHigh,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    tint = Aqua,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    },
+                    onClick = { onSelect(mode); expanded = false },
                 )
             }
         }

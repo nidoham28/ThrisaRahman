@@ -13,6 +13,20 @@ enum class CharacterVoice(
     RAIHAN("Charon", AssistantVoice.MALE),
 }
 
+enum class AssistantThinkingMode(
+    val title: String,
+    val description: String,
+) {
+    AUTO(
+        title = "Auto",
+        description = "Use the selected model's default thinking level.",
+    ),
+    OFF(
+        title = "Off",
+        description = "Disable thinking where supported; some models may use their minimum level.",
+    ),
+}
+
 enum class AssistantCharacter(
     val displayName: String,
     val gender: String,
@@ -66,6 +80,10 @@ class AssistantSettingsStorage(context: Context) {
     fun getVoice(): AssistantVoice = readEnum(KEY_VOICE, AssistantVoice.FEMALE)
     fun setVoice(value: AssistantVoice) = writeEnum(KEY_VOICE, value)
 
+    fun getThinkingMode(): AssistantThinkingMode =
+        readEnum(KEY_THINKING_MODE, AssistantThinkingMode.AUTO)
+    fun setThinkingMode(value: AssistantThinkingMode) = writeEnum(KEY_THINKING_MODE, value)
+
     private inline fun <reified T : Enum<T>> readEnum(key: String, default: T): T {
         val raw = prefs.getString(key, null) ?: return default
         return runCatching { enumValueOf<T>(raw) }.getOrDefault(default)
@@ -81,6 +99,7 @@ class AssistantSettingsStorage(context: Context) {
         const val KEY_LANGUAGE = "language"
         const val KEY_RELATIONSHIP = "relationship"
         const val KEY_VOICE = "voice"
+        const val KEY_THINKING_MODE = "thinking_mode"
         const val DEFAULT_NAME = "Assistant"
     }
 }

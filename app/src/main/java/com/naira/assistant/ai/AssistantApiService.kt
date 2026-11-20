@@ -35,9 +35,12 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.domain.AssistantProvider
+import com.naira.assistant.domain.AssistantThinkingMode
 import com.naira.assistant.domain.AssistantVoice
 import com.naira.assistant.domain.FunctionCall
 import me.rerere.ai.agent.AgentRequest
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.registry.ModelRegistry
 import okhttp3.Request
 
 data class AssistantToolResult(
@@ -96,16 +99,13 @@ class AssistantApiService(context: Context) : AutoCloseable {
         streaming: Boolean = true,
         provider: AssistantProvider = AssistantProvider.GEMINI,
         modelId: String = provider.defaultModelId,
+        reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
     ): Flow<AgentEvent> {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
         val setting = createAssistantProviderSetting(provider, apiKey)
-        val model = Model(
-            modelId = modelId,
-            displayName = modelId,
-            abilities = listOf(ModelAbility.TOOL),
-        )
+        val model = createAssistantModel(modelId)
         val tools = (toolDefinitions + AgentOrchestrator.toolDefinition())
             .map { it.toAgentTool(executeTool) }
         val provider = providerManager.getProviderByType(setting)
@@ -120,7 +120,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>) = StepRequest(
                 messages = messages,
-                params = TextGenerationParams(model = model),
+                params = TextGenerationParams(model = model, reasoningLevel = reasoningLevel),
             )
         }
         return runAgent(request, hooks)
@@ -132,6 +132,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         tasks: DelegationRequest,
         provider: AssistantProvider,
         modelId: String,
+        reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
         onProgress: suspend (DelegationProgress) -> Unit,
     ): JsonObject {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
@@ -142,11 +143,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
 
         val setting = createAssistantProviderSetting(provider, apiKey)
         val selectedProvider = providerManager.getProviderByType(setting)
-        val model = Model(
-            modelId = modelId,
-            displayName = modelId,
-            abilities = listOf(ModelAbility.TOOL),
-        )
+        val model = createAssistantModel(modelId)
         val context = specialistContext(messages)
 
         suspend fun runTask(
@@ -203,6 +200,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
                             params = TextGenerationParams(
                                 model = model,
                                 maxTokens = AgentOrchestrator.SPECIALIST_MAX_TOKENS,
+                                reasoningLevel = reasoningLevel,
                             ),
                         )
                     }
@@ -359,6 +357,23 @@ internal fun createAssistantProviderSetting(
         apiKey = apiKey.trim(),
         baseUrl = AssistantApiService.GROQ_BASE_URL,
         useResponseApi = false,
+    )
+}
+
+internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (this) {
+    AssistantThinkingMode.AUTO -> ReasoningLevel.AUTO
+    AssistantThinkingMode.OFF -> ReasoningLevel.OFF
+}
+
+internal fun createAssistantModel(modelId: String): Model {
+    val modelAbilities = ModelRegistry.MODEL_ABILITIES.getData(modelId)
+    return Model(
+        modelId = modelId,
+        displayName = modelId,
+        abilities = buildList {
+            add(ModelAbility.TOOL)
+            if (ModelAbility.REASONING in modelAbilities) add(ModelAbility.REASONING)
+        },
     )
 }
 
