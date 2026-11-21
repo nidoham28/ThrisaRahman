@@ -1,5 +1,10 @@
 package com.naira.assistant.presentation.main.pages
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -7,6 +12,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,12 +46,14 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -65,13 +73,16 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -584,14 +595,11 @@ private fun MessageBubble(
                 }
             }
             if (message.text.isNotBlank()) {
-                SelectionContainer {
-                    Text(
-                        text = message.text,
-                        color = if (message.isError) ErrorText else TextHigh,
-                        fontSize = BodySize,
-                        lineHeight = BodyLineHeight
-                    )
-                }
+                MessageText(
+                    text = message.text,
+                    color = if (message.isError) ErrorText else TextHigh,
+                    isReceiver = !message.isUser,
+                )
             }
             message.imageUri?.let { imageUri ->
                 MessageImage(
@@ -603,6 +611,296 @@ private fun MessageBubble(
                 )
             }
         }
+    }
+}
+
+private data class MarkdownCodeBlock(
+    val start: Int,
+    val endExclusive: Int,
+    val code: String,
+    val language: String,
+)
+
+private data class MarkdownLine(
+    val start: Int,
+    val end: Int,
+    val nextStart: Int,
+)
+
+private data class MarkdownFence(
+    val marker: Char,
+    val length: Int,
+    val indent: Int,
+    val info: String,
+)
+
+private val CodeLanguageLabels = mapOf(
+    "java" to "Java",
+    "kotlin" to "Kotlin",
+    "kt" to "Kotlin",
+    "kts" to "Kotlin DSL",
+    "javascript" to "JavaScript",
+    "js" to "JavaScript",
+    "typescript" to "TypeScript",
+    "ts" to "TypeScript",
+    "python" to "Python",
+    "py" to "Python",
+    "ruby" to "Ruby",
+    "rb" to "Ruby",
+    "php" to "PHP",
+    "r" to "R",
+    "scala" to "Scala",
+    "lua" to "Lua",
+    "perl" to "Perl",
+    "powershell" to "PowerShell",
+    "ps1" to "PowerShell",
+    "dart" to "Dart",
+    "c" to "C",
+    "cpp" to "C++",
+    "c++" to "C++",
+    "csharp" to "C#",
+    "cs" to "C#",
+    "c#" to "C#",
+    "objective-c" to "Objective-C",
+    "objective-c++" to "Objective-C++",
+    "go" to "Go",
+    "rust" to "Rust",
+    "rs" to "Rust",
+    "swift" to "Swift",
+    "sql" to "SQL",
+    "html" to "HTML",
+    "css" to "CSS",
+    "bash" to "Bash",
+    "sh" to "Shell",
+    "shell" to "Shell",
+    "json" to "JSON",
+    "xml" to "XML",
+    "yaml" to "YAML",
+    "yml" to "YAML",
+    "toml" to "TOML",
+    "ini" to "INI",
+    "dockerfile" to "Dockerfile",
+    "makefile" to "Makefile",
+    "graphql" to "GraphQL",
+    "protobuf" to "Protocol Buffers",
+    "gradle" to "Gradle",
+)
+
+private fun displayCodeLanguage(language: String): String? {
+    val key = language.trim().lowercase().substringBefore(' ')
+    if (key.isBlank()) return "Code"
+    if (key == "text" || key == "plaintext" || key == "markdown" || key == "md") return null
+    return CodeLanguageLabels[key]
+}
+
+private fun parseMarkdownCodeBlocks(markdown: String): List<MarkdownCodeBlock> {
+    val lines = mutableListOf<MarkdownLine>()
+    var lineStart = 0
+    while (lineStart <= markdown.length) {
+        val newline = markdown.indexOf('\n', startIndex = lineStart)
+        val rawEnd = if (newline == -1) markdown.length else newline
+        val lineEnd = if (rawEnd > lineStart && markdown[rawEnd - 1] == '\r') rawEnd - 1 else rawEnd
+        val nextStart = if (newline == -1) markdown.length else newline + 1
+        lines += MarkdownLine(lineStart, lineEnd, nextStart)
+        if (newline == -1) break
+        lineStart = nextStart
+    }
+
+    val blocks = mutableListOf<MarkdownCodeBlock>()
+    var index = 0
+    while (index < lines.size) {
+        val openingLine = lines[index]
+        val opening = markdownFence(markdown.substring(openingLine.start, openingLine.end))
+        if (opening == null ||
+            (opening.marker == '`' && opening.info.contains('`'))
+        ) {
+            index++
+            continue
+        }
+
+        val contentStart = openingLine.nextStart
+        var closingIndex = index + 1
+        while (closingIndex < lines.size) {
+            val line = lines[closingIndex]
+            val candidate = markdownFence(markdown.substring(line.start, line.end))
+            if (candidate != null && candidate.marker == opening.marker &&
+                candidate.length >= opening.length && candidate.info.isBlank()
+            ) break
+            closingIndex++
+        }
+
+        val hasClosingFence = closingIndex < lines.size
+        val closingLine = lines.getOrNull(closingIndex)
+        val contentEnd = closingLine?.start ?: markdown.length
+        var code = markdown.substring(contentStart.coerceAtMost(contentEnd), contentEnd)
+        if (hasClosingFence) {
+            code = code.removeSuffix("\n").removeSuffix("\r")
+        }
+        if (opening.indent > 0) {
+            code = code.lineSequence()
+                .map { line -> line.dropWhileIndexedSpaces(opening.indent) }
+                .joinToString("\n")
+        }
+
+        val language = opening.info.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        val blockEnd = closingLine?.nextStart ?: markdown.length
+        blocks += MarkdownCodeBlock(openingLine.start, blockEnd, code, language)
+        index = if (hasClosingFence) closingIndex + 1 else lines.size
+    }
+    return blocks
+}
+
+private fun markdownFence(line: String): MarkdownFence? {
+    val indent = line.takeWhile { it == ' ' }.length
+    if (indent > 3 || indent == line.length) return null
+    val marker = line[indent]
+    if (marker != '`' && marker != '~') return null
+    var fenceEnd = indent
+    while (fenceEnd < line.length && line[fenceEnd] == marker) fenceEnd++
+    val length = fenceEnd - indent
+    if (length < 3) return null
+    return MarkdownFence(marker, length, indent, line.substring(fenceEnd).trim())
+}
+
+private fun String.dropWhileIndexedSpaces(maxSpaces: Int): String {
+    var spaces = 0
+    while (spaces < length && spaces < maxSpaces && this[spaces] == ' ') spaces++
+    return drop(spaces)
+}
+
+@Composable
+private fun MessageText(text: String, color: Color, isReceiver: Boolean) {
+    val blocks = remember(text, isReceiver) {
+        if (isReceiver) {
+            parseMarkdownCodeBlocks(text)
+                .filter { displayCodeLanguage(it.language) != null }
+                .toList()
+        } else emptyList()
+    }
+    if (blocks.isEmpty()) {
+        SelectionContainer {
+            Text(text = text, color = color, fontSize = BodySize, lineHeight = BodyLineHeight)
+        }
+        return
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        var cursor = 0
+        blocks.forEach { block ->
+            val before = text.substring(cursor, block.start)
+            if (before.isNotBlank()) {
+                SelectionContainer {
+                    Text(text = before, color = color, fontSize = BodySize, lineHeight = BodyLineHeight)
+                }
+            }
+            CodePanel(
+                code = block.code,
+                language = displayCodeLanguage(block.language) ?: "Code",
+            )
+            cursor = block.endExclusive
+        }
+        val trailing = text.substring(cursor)
+        if (trailing.isNotBlank()) {
+            SelectionContainer {
+                Text(text = trailing, color = color, fontSize = BodySize, lineHeight = BodyLineHeight)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CodePanel(
+    code: String,
+    language: String,
+) {
+    val context = LocalContext.current
+    val horizontalState = rememberScrollState()
+    val verticalState = rememberScrollState()
+    val lineCount = remember(code) { code.count { it == '\n' } + 1 }
+    val lineNumbers = remember(code, lineCount) {
+        (1..lineCount).joinToString("\n") { it.toString().padStart(lineCount.toString().length) }
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ToolChipSurface)
+            .border(1.dp, CardStroke, RoundedCornerShape(12.dp))
+            .padding(8.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = language,
+                    color = Aqua,
+                    fontSize = CaptionSize,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Aqua.copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+                Text("$lineCount lines", color = TextSoft, fontSize = 10.sp, maxLines = 1)
+            }
+            IconButton(
+                onClick = { copyText(context, code, language) },
+                modifier = Modifier.size(MinTouchTarget),
+            ) {
+                Icon(
+                    Icons.Outlined.ContentCopy,
+                    contentDescription = "Copy code",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 260.dp)
+                .verticalScroll(verticalState),
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    text = lineNumbers,
+                    color = TextSoft.copy(alpha = 0.7f),
+                    fontSize = CaptionSize,
+                    lineHeight = 18.sp,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.End,
+                    softWrap = false,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                SelectionContainer {
+                    Text(
+                        text = code,
+                        color = TextHigh,
+                        fontSize = CaptionSize,
+                        lineHeight = 18.sp,
+                        fontFamily = FontFamily.Monospace,
+                        softWrap = false,
+                        modifier = Modifier.horizontalScroll(horizontalState),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun copyText(context: Context, text: String, label: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -696,7 +994,7 @@ private fun ToolCallDetail(label: String, value: String, isError: Boolean = fals
             text = value,
             color = if (isError) ErrorText else TextSoft,
             fontSize = CaptionSize,
-            lineHeight = 16.sp
+            lineHeight = 16.sp,
         )
     }
 }
