@@ -8,6 +8,7 @@ import com.naira.assistant.core.database.memory.MemoryRepository
 import com.naira.assistant.core.database.note.SqliteNoteDatabase
 import com.naira.assistant.core.database.reminder.ReminderRepository
 import com.naira.assistant.core.database.todo.SqliteTodoDatabase
+import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseMemoryRepository
 import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.tools.executor.AlarmToolExecutor.executeCreateAlarm
@@ -72,6 +73,7 @@ import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeSearchTod
 import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeUpdateTodo
 import com.naira.assistant.core.tools.executor.executeWeatherReport
 import com.naira.assistant.domain.FunctionCall
+import com.naira.assistant.domain.settings.ApiKeyStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonObject
@@ -154,6 +156,8 @@ object CommandExecution {
     ): suspend (FunctionCall) -> JsonObject {
 
         val appContext = context.applicationContext
+        val weatherApiKeyStorage = ApiKeyStorage(appContext)
+        val authService = FirebaseAuthService()
 
         val noteRepo = SqliteNoteDatabase.getInstance(appContext)
         val todoRepo = SqliteTodoDatabase.getInstance(appContext)
@@ -180,7 +184,12 @@ object CommandExecution {
                         executeGetCurrentTime(call)
 
                     "get_weather_report" ->
-                        executeWeatherReport(call)
+                        executeWeatherReport(
+                            call,
+                            authService.currentUser()?.uid
+                                ?.let(weatherApiKeyStorage::getWeatherApiKey)
+                                .orEmpty(),
+                        )
 
                     "get_device_info" ->
                         executeGetDeviceInfo(call, appContext)

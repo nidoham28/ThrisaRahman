@@ -47,6 +47,7 @@ import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.util.GreetingProvider
 import com.naira.assistant.domain.settings.AccountSettingsStorage
+import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.sttLanguageTag
 import com.naira.assistant.presentation.main.component.AppDrawer
@@ -92,6 +93,7 @@ fun MainScreen(
 
     // --- Stable singletons --------------------------------------------------
     val accountStorage = remember(appContext) { AccountSettingsStorage(appContext) }
+    val apiKeyStorage = remember(appContext) { ApiKeyStorage(appContext) }
     val assistantSettingsStorage = remember(appContext) { AssistantSettingsStorage(appContext) }
     val authService = remember { FirebaseAuthService() }
     val reminderRepository = remember { FirebaseReminderRepository.getInstance() }
@@ -116,19 +118,32 @@ fun MainScreen(
     }
     var greetingText by remember { mutableStateOf(GreetingProvider().currentMessage()) }
     var weather by remember { mutableStateOf<WeatherSummary?>(null) }
+    var weatherStatus by remember { mutableStateOf<String?>(null) }
 
     suspend fun refreshWeather() {
+        val userId = authService.currentUser()?.uid
+        val weatherApiKey = userId?.let(apiKeyStorage::getWeatherApiKey).orEmpty()
+        if (weatherApiKey.isBlank()) {
+            weather = null
+            weatherStatus = "Set up a free WeatherAPI key in Settings"
+            return
+        }
         try {
-            val report = withContext(Dispatchers.IO) { WeatherService.currentForDhaka() }
+            weatherStatus = "Refreshing weather"
+            val report = withContext(Dispatchers.IO) {
+                WeatherService.currentForDhaka(weatherApiKey)
+            }
             weather = WeatherSummary(
                 location = report.location,
                 condition = report.condition,
                 temperatureC = report.temperatureC.toInt(),
             )
+            weatherStatus = null
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // Keep the last successful conditions visible during network loss.
+            if (weather == null) weatherStatus = "Weather unavailable"
         }
     }
 
@@ -258,6 +273,7 @@ fun MainScreen(
                             voice = voice.state,
                             displayName = displayName,
                             weather = weather,
+                            weatherStatus = weatherStatus,
                             mood = currentSessionMood,
                         )
                     }

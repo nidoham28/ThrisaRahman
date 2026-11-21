@@ -113,6 +113,7 @@ fun SettingsScreen(
         AssistantProvider.entries.firstOrNull { it.name == name }
     }
     var editingCricketApiKey by rememberSaveable { mutableStateOf(false) }
+    var editingWeatherApiKey by rememberSaveable { mutableStateOf(false) }
     var editingAsrApiKey by rememberSaveable { mutableStateOf(false) }
     var editingFieldName by rememberSaveable { mutableStateOf<String?>(null) }
     val editingField = editingFieldName?.let { name ->
@@ -211,6 +212,19 @@ fun SettingsScreen(
             editingCricketApiKey = false
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "Couldn't save the CricAPI key.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun saveWeatherCredential(key: String) {
+        if (userId == null) {
+            Toast.makeText(context, "Sign in before saving an API key.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            state.saveWeatherApiKey(key)
+            editingWeatherApiKey = false
+        } catch (e: Exception) {
+            Toast.makeText(context, e.message ?: "Couldn't save the WeatherAPI key.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -381,6 +395,7 @@ fun SettingsScreen(
         onSaveActiveProvider = ::chooseActiveProvider,
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
+        onEditWeatherApiKey = { editingWeatherApiKey = true },
         onEditField = { editingFieldName = it.name },
         onSaveGender = { value ->
             state.saveGender(value)
@@ -489,6 +504,18 @@ fun SettingsScreen(
             onSave = ::saveCricketCredential,
             onRemove = { saveCricketCredential("") },
             onDismiss = { editingCricketApiKey = false },
+        )
+    }
+
+    if (editingWeatherApiKey) {
+        ApiKeyDialog(
+            title = "WeatherAPI Key",
+            placeholder = "Enter your free WeatherAPI key",
+            description = "Get a free key at weatherapi.com. Stored on this device for your signed-in account and not synced.",
+            initialKey = state.weatherApiKey,
+            onSave = ::saveWeatherCredential,
+            onRemove = { saveWeatherCredential("") },
+            onDismiss = { editingWeatherApiKey = false },
         )
     }
 

@@ -65,6 +65,17 @@ class ApiKeyStorage(context: Context) {
         }
     }
 
+    fun getWeatherApiKey(userId: String): String? =
+        prefs.getString(weatherApiKeyKey(userId), null)?.takeIf(String::isNotBlank)
+
+    fun saveWeatherApiKey(userId: String, key: String) {
+        val cleaned = key.trim()
+        prefs.edit {
+            if (cleaned.isBlank()) remove(weatherApiKeyKey(userId))
+            else putString(weatherApiKeyKey(userId), cleaned)
+        }
+    }
+
     fun getSelectedProvider(userId: String? = null): AssistantProvider {
         val accountValue = userId?.let { prefs.getString(selectedProviderKey(it), null) }
         val deviceValue = prefs.getString(SELECTED_PROVIDER_KEY, null)
@@ -105,6 +116,9 @@ class ApiKeyStorage(context: Context) {
 
         fun cricApiKeyKey(userId: String) =
             "key_cricapi_${userId.lowercase(Locale.ROOT)}"
+
+        fun weatherApiKeyKey(userId: String) =
+            "key_weatherapi_${userId.lowercase(Locale.ROOT)}"
 
         fun openRouterModelKey(userId: String?) =
             userId?.let { "openrouter_model_${it.lowercase(Locale.ROOT)}" } ?: "openrouter_model"

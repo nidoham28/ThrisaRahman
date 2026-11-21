@@ -77,6 +77,7 @@ fun HomePage(
     modifier: Modifier = Modifier,
     displayName: String = "User",
     weather: WeatherSummary? = null,
+    weatherStatus: String? = null,
     mood: String? = null,
     /** Live mic/TTS amplitude 0f..1f, forwarded to the orb. Null = simulated. */
     level: Float? = null,
@@ -144,7 +145,8 @@ fun HomePage(
             CardRow {
                 InfoCard(
                     title = "Weather",
-                    caption = weather?.let { "${it.location} · ${it.condition}" } ?: "Loading weather",
+                    caption = weather?.let { "${it.location} · ${it.condition}" }
+                        ?: weatherStatus ?: "Loading weather",
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(

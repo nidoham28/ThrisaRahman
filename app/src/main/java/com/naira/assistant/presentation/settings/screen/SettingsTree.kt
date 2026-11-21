@@ -71,6 +71,7 @@ internal fun buildTree(
     onSaveActiveProvider: (AssistantProvider) -> Unit,
     onEditKey: (AssistantProvider) -> Unit,
     onEditCricketApiKey: () -> Unit,
+    onEditWeatherApiKey: () -> Unit,
     onEditField: (EditField) -> Unit,
     onSaveGender: (Gender) -> Unit,
     onSaveAssistantName: (String) -> Unit,
@@ -239,6 +240,21 @@ internal fun buildTree(
                                     TrailingBadge(
                                         if (state.cricketApiKey.isBlank()) "SET UP" else "SAVED",
                                         if (state.cricketApiKey.isBlank()) Aqua else Success,
+                                    )
+                                },
+                            )
+                        )
+                        add(
+                            SettingsNode.Item(
+                                id = "weatherapi-key",
+                                title = "WeatherAPI Key",
+                                subtitle = if (state.weatherApiKey.isBlank()) "Not configured" else "Configured · stored on this device",
+                                icon = Icons.Outlined.Key,
+                                onClick = onEditWeatherApiKey,
+                                trailing = {
+                                    TrailingBadge(
+                                        if (state.weatherApiKey.isBlank()) "SET UP" else "SAVED",
+                                        if (state.weatherApiKey.isBlank()) Aqua else Success,
                                     )
                                 },
                             )

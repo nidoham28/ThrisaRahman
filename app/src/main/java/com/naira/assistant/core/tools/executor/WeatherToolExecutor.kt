@@ -6,12 +6,12 @@ import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-suspend fun executeWeatherReport(call: FunctionCall) = try {
+suspend fun executeWeatherReport(call: FunctionCall, apiKey: String) = try {
     val location = CommandExecution.jsonStringArg(call, "location")
         ?: throw IllegalArgumentException("A city or place name is required.")
     buildJsonObject {
         put("success", true)
-        put("report", WeatherService.describe(WeatherService.forPlace(location)))
+        put("report", WeatherService.describe(WeatherService.forPlace(location, apiKey)))
     }
 } catch (e: kotlinx.coroutines.CancellationException) {
     throw e

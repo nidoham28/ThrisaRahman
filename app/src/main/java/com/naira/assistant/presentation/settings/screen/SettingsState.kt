@@ -49,6 +49,9 @@ internal class SettingsState(
     var cricketApiKey by mutableStateOf(
         currentUserId()?.let(storage::getCricApiKey).orEmpty()
     )
+    var weatherApiKey by mutableStateOf(
+        currentUserId()?.let(storage::getWeatherApiKey).orEmpty()
+    )
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
     private val speechStorage = SpeechSettingsStorage(context)
     private val asrSettingsStorage = AsrProviderSettingsStorage(context.applicationContext)
@@ -97,6 +100,12 @@ internal class SettingsState(
         val cleaned = value.trim()
         cricketApiKey = cleaned
         currentUserId()?.let { storage.saveCricApiKey(it, cleaned) }
+    }
+
+    fun saveWeatherApiKey(value: String) {
+        val cleaned = value.trim()
+        weatherApiKey = cleaned
+        currentUserId()?.let { storage.saveWeatherApiKey(it, cleaned) }
     }
 
     fun saveProvider(provider: AssistantProvider, userId: String?) {
