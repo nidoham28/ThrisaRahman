@@ -41,8 +41,8 @@ android {
         applicationId = "com.naira.assistant"
         minSdk = 26
         targetSdk = 37
-        versionCode = 103
-        versionName = "0.0.4-brishti"
+        versionCode = 105
+        versionName = "0.0.5-shonali"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

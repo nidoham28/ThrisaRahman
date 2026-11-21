@@ -2,7 +2,7 @@
 0.0.2-shiuli [x]       0.0.27-shuktara      0.0.52-ashwin        0.0.77-rajanigandha
 0.0.3-meghdoot [x]     0.0.28-purnima       0.0.53-kartik        0.0.78-kathgolap
 0.0.4-brishti [x]      0.0.29-amaboshya     0.0.54-agrahayon     0.0.79-polash
-0.0.5-shonali       0.0.30-usha          0.0.55-poush         0.0.80-shimul
+0.0.5-shonali [x]      0.0.30-usha          0.0.55-poush         0.0.80-shimul
 0.0.6-tara          0.0.31-godhuli       0.0.56-magh          0.0.81-kashful
 0.0.7-chand         0.0.32-bhor          0.0.57-falgun        0.0.82-jhau
 0.0.8-surjo         0.0.33-shondha       0.0.58-choitro       0.0.83-tamal
