@@ -5,7 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.Build
 import android.view.KeyEvent
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import com.naira.assistant.presentation.main.WakeWordForegroundService
 import kotlinx.serialization.json.JsonObject

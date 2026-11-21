@@ -2,6 +2,7 @@
 package com.naira.assistant.core.tools.executor
 
 import android.content.Context
+import com.naira.assistant.core.tools.CommandExecution
 import com.naira.assistant.domain.FunctionCall
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient

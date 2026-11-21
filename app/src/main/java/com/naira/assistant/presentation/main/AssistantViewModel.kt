@@ -13,7 +13,7 @@ import com.naira.assistant.core.prompt.InstructionsConfig
 import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
-import com.naira.assistant.core.tools.executor.CommandExecution
+import com.naira.assistant.core.tools.CommandExecution
 import com.naira.assistant.core.tools.ToolCallDispatcher
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider

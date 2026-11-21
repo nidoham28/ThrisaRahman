@@ -9,7 +9,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.tools.executor.AppToolExecutor.executeOpenApp
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay

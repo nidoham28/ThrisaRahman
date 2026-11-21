@@ -242,6 +242,8 @@ class AssistantApiServiceTest {
         assertTrue(protectedTools.all { it in ToolRegistry.settingsPermissionRequiredNames })
         assertFalse("get_current_time" in ToolRegistry.settingsPermissionRequiredNames)
         assertFalse("create_note" in ToolRegistry.settingsPermissionRequiredNames)
+        assertFalse("get_naira_info" in ToolRegistry.settingsPermissionRequiredNames)
+        assertTrue(ToolRegistry.find("get_naira_info") != null)
     }
 
     @Test

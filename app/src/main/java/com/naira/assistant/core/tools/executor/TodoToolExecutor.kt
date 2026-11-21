@@ -4,7 +4,7 @@ package com.naira.assistant.core.tools.executor
 import com.naira.assistant.core.database.todo.TodoItem
 import com.naira.assistant.core.database.todo.TodoPriority
 import com.naira.assistant.core.database.todo.TodoRepository
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.*
 

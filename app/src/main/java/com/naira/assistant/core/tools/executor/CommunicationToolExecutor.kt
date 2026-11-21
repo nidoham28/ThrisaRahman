@@ -5,7 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject

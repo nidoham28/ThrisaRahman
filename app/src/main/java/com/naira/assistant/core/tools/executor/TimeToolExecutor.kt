@@ -1,7 +1,7 @@
 
 package com.naira.assistant.core.tools.executor
 
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.IllegalTimeZoneException

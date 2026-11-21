@@ -3,7 +3,7 @@ package com.naira.assistant.core.tools.executor
 
 import android.content.Context
 import com.naira.assistant.core.service.cricket.CricApiService
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

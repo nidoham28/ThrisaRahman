@@ -13,7 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.provider.Settings
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject

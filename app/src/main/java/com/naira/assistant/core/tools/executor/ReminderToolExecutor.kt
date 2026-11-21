@@ -5,7 +5,7 @@ import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderPriority
 import com.naira.assistant.core.database.reminder.ReminderRepository
 import com.naira.assistant.core.database.reminder.ReminderStatus
-import com.naira.assistant.core.tools.executor.CommandExecution.jsonStringArg
+import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.*
 

@@ -60,6 +60,7 @@ import com.naira.assistant.core.tools.definition.updateNoteTool
 import com.naira.assistant.core.tools.definition.wifiControlTool
 import com.naira.assistant.core.tools.definition.updateReminderTool
 import com.naira.assistant.core.tools.definition.updateTodoTool
+import com.naira.assistant.core.tools.definition.nairaDeveloperInfoTool
 
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
@@ -153,6 +154,7 @@ object ToolRegistry {
          */
         "terminal_find_tool",
         "terminal_calculate",
+
     )
 
     val definitions: List<ToolDefinition> = listOf(
@@ -268,6 +270,11 @@ object ToolRegistry {
          */
         findTerminalTool(),
         terminalCalculationTool(),
+
+        /**
+         * Naira Assistant developer information
+         */
+        nairaDeveloperInfoTool(),
 
     ).let { registered ->
         val duplicateNames = registered.groupingBy(ToolDefinition::name)
