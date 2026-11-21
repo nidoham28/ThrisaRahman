@@ -10,6 +10,7 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.naira.assistant.core.database.memory.MemoryItem
 import com.naira.assistant.core.database.memory.MemoryRepository
+import com.naira.assistant.core.database.memory.MemoryTagging
 import com.naira.assistant.core.sync.model.FirebaseMemoryRecord
 import com.naira.assistant.core.sync.model.toFirebaseId
 import kotlinx.coroutines.CancellationException
@@ -110,13 +111,15 @@ class FirebaseMemoryRepository private constructor(
         val uid = requireUserId()
         val uuid = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
+        val normalizedContent = content.trim()
+        val normalizedCategory = category.trim().lowercase().ifBlank { "general" }
         val item = MemoryItem(
             id = uuid.toFirebaseId(),
             uuid = uuid,
-            content = content.trim(),
-            category = category.trim().lowercase().ifBlank { "general" },
+            content = normalizedContent,
+            category = normalizedCategory,
             importance = importance.coerceIn(1, 5),
-            tags = tags.map(String::trim).filter(String::isNotBlank),
+            tags = MemoryTagging.enrich(normalizedCategory, normalizedContent, tags),
             createdAt = now,
             updatedAt = now,
             source = source,
@@ -136,11 +139,13 @@ class FirebaseMemoryRepository private constructor(
         val existing = getById(id) ?: return null
         if (firebaseAuth.currentUser?.uid != uid) return null
         val now = System.currentTimeMillis()
+        val normalizedContent = content.trim()
+        val normalizedCategory = category?.trim()?.lowercase()?.ifBlank { existing.category } ?: existing.category
         val updated = existing.copy(
-            content = content.trim(),
-            category = category?.trim()?.lowercase()?.ifBlank { existing.category } ?: existing.category,
+            content = normalizedContent,
+            category = normalizedCategory,
             importance = importance?.coerceIn(1, 5) ?: existing.importance,
-            tags = tags?.map(String::trim)?.filter(String::isNotBlank) ?: existing.tags,
+            tags = MemoryTagging.enrich(normalizedCategory, normalizedContent, tags ?: existing.tags),
             updatedAt = now,
         )
         val changes = mapOf(
@@ -177,16 +182,21 @@ class FirebaseMemoryRepository private constructor(
 
         val uuid = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
+        val normalizedContent = mergedContent.trim()
+        val normalizedCategory = category?.trim()?.lowercase()?.ifBlank { null }
+            ?: sources.firstOrNull { it.category != "general" }?.category
+            ?: "general"
         val merged = MemoryItem(
             id = uuid.toFirebaseId(),
             uuid = uuid,
-            content = mergedContent.trim(),
-            category = category?.trim()?.lowercase()?.ifBlank { null }
-                ?: sources.firstOrNull { it.category != "general" }?.category
-                ?: "general",
+            content = normalizedContent,
+            category = normalizedCategory,
             importance = importance?.coerceIn(1, 5) ?: sources.maxOf { it.importance },
-            tags = tags?.map(String::trim)?.filter(String::isNotBlank)
-                ?: sources.flatMap { it.tags }.distinct(),
+            tags = MemoryTagging.enrich(
+                normalizedCategory,
+                normalizedContent,
+                tags ?: sources.flatMap { it.tags },
+            ),
             createdAt = now,
             updatedAt = now,
             source = "ai_merge",
@@ -199,17 +209,34 @@ class FirebaseMemoryRepository private constructor(
         return merged
     }
 
-    override suspend fun search(query: String?, category: String?, limit: Int): List<MemoryItem> {
+    override suspend fun search(
+        query: String?,
+        category: String?,
+        limit: Int,
+        tags: List<String>?,
+    ): List<MemoryItem> {
         ensureLoaded()
         val keyword = query?.trim()?.lowercase()?.takeIf(String::isNotBlank)
         val cleanCategory = category?.trim()?.lowercase()?.takeIf { it.isNotBlank() && it != "all" }
-        return _memories.value
+        val cleanTags = tags.orEmpty().map(MemoryTagging::normalizeTag).filter(String::isNotBlank).distinct()
+        val hasSearchTerms = keyword != null || cleanTags.isNotEmpty()
+        val candidates = _memories.value
             .filter { cleanCategory == null || it.category == cleanCategory }
-            .filter {
-                keyword == null || it.content.lowercase().contains(keyword) ||
-                    it.tags.any { tag -> tag.lowercase().contains(keyword) }
+        return if (!hasSearchTerms) {
+            candidates.take(limit.coerceIn(1, 100))
+        } else {
+            candidates.mapNotNull { memory ->
+                val score = MemoryTagging.relevance(memory, keyword, cleanTags)
+                if (score > 0) memory to score else null
             }
-            .take(limit.coerceIn(1, 100))
+                .sortedWith(
+                    compareByDescending<Pair<MemoryItem, Int>> { it.second }
+                        .thenByDescending { it.first.importance }
+                        .thenByDescending { it.first.updatedAt },
+                )
+                .take(limit.coerceIn(1, 100))
+                .map { it.first }
+        }
     }
 
     override suspend fun getById(id: Long): MemoryItem? {

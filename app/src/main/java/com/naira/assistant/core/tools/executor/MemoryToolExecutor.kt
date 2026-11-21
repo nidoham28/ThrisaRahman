@@ -41,6 +41,7 @@ object MemoryToolExecutor {
         "work",
         "relationship",
         "goal",
+        "health",
         "general"
     )
 
@@ -50,7 +51,7 @@ object MemoryToolExecutor {
 
     private const val MAX_CONTENT_LENGTH = 2000
     private const val MAX_MERGED_CONTENT_LENGTH = 3000
-    private const val MAX_TAGS = 10
+    private const val MAX_TAGS = 24
     private const val MAX_TAG_LENGTH = 50
     private const val MAX_MERGE_IDS = 20
 
@@ -144,6 +145,13 @@ object MemoryToolExecutor {
             return@safely error("Invalid memory category: $category")
         }
 
+        val tags = if (call.args.containsKey("tags")) {
+            parseTags(call.args["tags"])
+                ?: return@safely error("Invalid 'tags'.")
+        } else {
+            null
+        }
+
         val importance = if (call.args.containsKey("importance")) {
             intArg(call, "importance")
                 ?: return@safely error("Invalid 'importance'.")
@@ -153,13 +161,6 @@ object MemoryToolExecutor {
 
         if (importance != null && importance !in 1..5) {
             return@safely error("'importance' must be between 1 and 5.")
-        }
-
-        val tags = if (call.args.containsKey("tags")) {
-            parseTags(call.args["tags"])
-                ?: return@safely error("Invalid 'tags'.")
-        } else {
-            null
         }
 
         val updated = repository.update(
@@ -352,6 +353,13 @@ object MemoryToolExecutor {
             return@safely error("Invalid memory category: $category")
         }
 
+        val tags = if (call.args.containsKey("tags")) {
+            parseTags(call.args["tags"])
+                ?: return@safely error("Invalid 'tags'.")
+        } else {
+            null
+        }
+
         val limit = intArg(call, "limit") ?: DEFAULT_SEARCH_LIMIT
 
         if (limit !in 1..50) {
@@ -361,7 +369,8 @@ object MemoryToolExecutor {
         val results = repository.search(
             query = query?.takeIf { it.isNotBlank() },
             category = category,
-            limit = limit
+            limit = limit,
+            tags = tags,
         )
 
         buildJsonObject {
@@ -369,6 +378,7 @@ object MemoryToolExecutor {
             put("action", "search")
             put("query", query ?: "")
             put("category", category ?: "all")
+            put("tags", buildJsonArray { tags.orEmpty().forEach { add(JsonPrimitive(it)) } })
             put("count", results.size)
 
             put(

@@ -59,6 +59,7 @@ interface MemoryRepository {
         query: String? = null,
         category: String? = null,
         limit: Int = 20,
+        tags: List<String>? = null,
     ): List<MemoryItem>
 
     /**
