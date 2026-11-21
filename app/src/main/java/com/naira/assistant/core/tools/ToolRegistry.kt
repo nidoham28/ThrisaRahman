@@ -270,6 +270,16 @@ object ToolRegistry {
         terminalCalculationTool(),
 
     ).let { registered ->
+        val duplicateNames = registered.groupingBy(ToolDefinition::name)
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+        require(duplicateNames.isEmpty()) {
+            "Tool names must be unique: ${duplicateNames.joinToString()}"
+        }
+        require(registered.all { it.name.isNotBlank() && it.description.isNotBlank() }) {
+            "Every registered tool must have a name and a useful description."
+        }
         check(settingsPermissionRequiredNames.all { required ->
             registered.any { it.name == required }
         }) {
@@ -277,4 +287,10 @@ object ToolRegistry {
         }
         registered
     }
+
+    private val definitionsByName: Map<String, ToolDefinition> by lazy {
+        definitions.associateBy(ToolDefinition::name)
+    }
+
+    fun find(name: String): ToolDefinition? = definitionsByName[name]
 }

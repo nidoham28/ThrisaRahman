@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.naira.assistant.ai.AgentOrchestrator
-import com.naira.assistant.ai.DELEGATE_TOOL_NAME
 import com.naira.assistant.ai.DelegationProgress
 import com.naira.assistant.ai.AssistantApiService
 import com.naira.assistant.ai.toReasoningLevel
@@ -15,8 +14,7 @@ import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.tools.executor.CommandExecution
-import com.naira.assistant.core.tools.ToolRegistry
-import com.naira.assistant.core.tools.executor.ScreenToolExecutor
+import com.naira.assistant.core.tools.ToolCallDispatcher
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.SensitiveContentSettingsStorage
@@ -47,8 +45,8 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
-import com.naira.assistant.domain.FunctionCall
 import androidx.core.net.toUri
+import com.naira.assistant.ai.AssistantToolResult
 import java.util.concurrent.atomic.AtomicInteger
 
 /** One bubble in the chat UI. Kept separate from the AI module's message model. */
@@ -456,23 +454,18 @@ class AssistantViewModel(
         var delegatedSpecialists = 0
         val requestHistory = context.requestHistory
 
-        val executeTool: suspend (FunctionCall) -> com.naira.assistant.ai.AssistantToolResult = { call ->
-            if (call.name in ToolRegistry.settingsPermissionRequiredNames &&
-                !assistantSettingsStorage.getSensitiveToolAccessEnabled()
-            ) {
-                com.naira.assistant.ai.AssistantToolResult(
-                    buildJsonObject {
-                        put("error", "This action is blocked. Enable Sensitive assistant actions in Settings → Permissions to allow it.")
-                    },
-                )
-            } else if (call.name == DELEGATE_TOOL_NAME) {
+        val toolDispatcher = ToolCallDispatcher(
+            context = appContext,
+            sensitiveActionsEnabled = assistantSettingsStorage.getSensitiveToolAccessEnabled(),
+            executeRegisteredTool = toolExecutor,
+            executeSpecialists = { call ->
                 val delegation = AgentOrchestrator.parseRequest(call.args)
                 if (!AgentOrchestrator.canReserveSpecialists(
                         alreadyUsed = delegatedSpecialists,
                         requested = delegation.tasks.size,
                     )
                 ) {
-                    com.naira.assistant.ai.AssistantToolResult(
+                    AssistantToolResult(
                         buildJsonObject {
                             put(
                                 "error",
@@ -508,28 +501,11 @@ class AssistantViewModel(
                             }
                         },
                     )
-                    com.naira.assistant.ai.AssistantToolResult(result)
+                    AssistantToolResult(result)
                 }
-            } else {
-                when (call.name) {
-                    "capture_screen" -> {
-                        val response = ScreenToolExecutor.executeCaptureScreen(call, appContext)
-                        com.naira.assistant.ai.AssistantToolResult(
-                            response = response,
-                            image = ScreenToolExecutor.consumeLastCapture(),
-                        )
-                    }
-                    "perform_screen_action" -> {
-                        val response = ScreenToolExecutor.executePerformScreenAction(call, appContext)
-                        com.naira.assistant.ai.AssistantToolResult(
-                            response = response,
-                            image = ScreenToolExecutor.consumeLastCapture(),
-                        )
-                    }
-                    else -> com.naira.assistant.ai.AssistantToolResult(toolExecutor(call))
-                }
-            }
-        }
+            },
+        )
+        val executeTool = toolDispatcher::execute
 
         assistantApi.streamChat(
             apiKey = context.apiKey,
