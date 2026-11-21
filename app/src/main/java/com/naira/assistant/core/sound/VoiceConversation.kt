@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import com.naira.assistant.domain.settings.AsrProviderSettingsStorage
 import java.io.Closeable
 
@@ -95,26 +97,40 @@ class VoiceConversation(
         }
     }
 
-    fun start() {
+    suspend fun prepareForWakeWord() = prepareSpeechToText(prewarmSystemOnly = true)
+
+    private suspend fun prepareSpeechToText(prewarmSystemOnly: Boolean) {
+        if (stt != null) return
+
+        val settings = withContext(Dispatchers.IO) {
+            AsrProviderSettingsStorage(appContext).load()
+        }
+        if (prewarmSystemOnly && settings.provider != AsrProvider.SYSTEM) return
+        if (settings.provider == AsrProvider.SYSTEM &&
+            !SpeechRecognizer.isRecognitionAvailable(appContext)
+        ) {
+            error("Speech recognition isn't available on this device.")
+        }
+
+        val recognizer = SpeechToTextFactory.create(appContext, language, settings)
+        try {
+            recognizer.prepare()
+            stt = recognizer
+        } catch (error: Exception) {
+            recognizer.close()
+            throw error
+        }
+    }
+
+    fun start(afterWakeWord: Boolean = false) {
         if (running) return
         val gen = ++generation
         loop = scope.launch {
             var sessionStt: SpeechToText? = null
             try {
-                val settings = withContext(Dispatchers.IO) {
-                    AsrProviderSettingsStorage(appContext).load()
-                }
-                if (settings.provider == AsrProvider.SYSTEM &&
-                    !SpeechRecognizer.isRecognitionAvailable(appContext)
-                ) {
-                    reportError("Speech recognition isn't available on this device.")
-                    return@launch
-                }
-                val recognizer = SpeechToTextFactory.create(appContext, language, settings)
-                sessionStt = recognizer
-                stt = recognizer
-                recognizer.prepare()
-                converse()
+                prepareSpeechToText(prewarmSystemOnly = false)
+                sessionStt = stt
+                converse(afterWakeWord)
             } catch (e: SpeechToText.SttException) {
                 if (gen == generation) reportError(sttErrorMessage(e.code))
             } catch (e: Exception) {
@@ -162,14 +178,18 @@ class VoiceConversation(
 
     // ---- the loop ----
 
-    private suspend fun converse() {
+    private suspend fun converse(afterWakeWord: Boolean) {
         var silentRounds = 0
         var retries = 0
+        var wakeAcknowledgementPending = afterWakeWord
         while (true) {
             interrupted = false
 
             val heard: String? = try {
-                listenOnce().also { retries = 0 }
+                listenOnce(
+                    firstSpeechTimeoutMillis = WAKE_QUESTION_START_TIMEOUT_MILLIS
+                        .takeIf { wakeAcknowledgementPending },
+                ).also { retries = 0 }
             } catch (e: SpeechToText.SttException) {
                 when {
                     e.code == SpeechRecognizer.ERROR_NO_MATCH ||
@@ -189,41 +209,84 @@ class VoiceConversation(
                 }
             }
 
-            if (heard.isNullOrBlank()) {
+            val question = heard.orEmpty().removeLeadingWakePhrase()
+            if (question.isBlank()) {
+                if (wakeAcknowledgementPending) {
+                    wakeAcknowledgementPending = false
+                    silentRounds = 0
+                    if (!speak(wakeWordAcknowledgement())) return
+                    continue
+                }
                 if (++silentRounds >= MAX_SILENT_ROUNDS) return // quietly end → Idle
                 delay(200)
                 continue
             }
+            wakeAcknowledgementPending = false
             silentRounds = 0
 
             chat.busyStatus.first { it == null } // one request at a time
             _state.value = VoiceState.Thinking
-            chat.send(heard)
+            chat.send(question)
 
             if (!speakReply()) return
             delay(200) // let audio focus / recognizer settle
         }
     }
 
-    private suspend fun listenOnce(): String? {
+    private suspend fun listenOnce(firstSpeechTimeoutMillis: Long? = null): String? = coroutineScope {
         var final: String? = null
         val recognizer = checkNotNull(stt) { "Speech recognition has not been prepared." }
         _state.value = VoiceState.Preparing
-        recognizer.listen().collect { event ->
-            when (event) {
-                SpeechToText.Event.Preparing -> _state.value = VoiceState.Preparing
-                SpeechToText.Event.Ready -> _state.value = VoiceState.Listening(
-                    requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
-                )
-                is SpeechToText.Event.Partial -> _state.value = VoiceState.Listening(
-                    partial = event.text,
-                    requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
-                )
-                SpeechToText.Event.Processing -> _state.value = VoiceState.Transcribing
-                is SpeechToText.Event.Final -> final = event.text
+        val speechReady = CompletableDeferred<Unit>()
+        val firstSpeech = CompletableDeferred<Unit>()
+        val listenJob = launch {
+            recognizer.listen().collect { event ->
+                when (event) {
+                    SpeechToText.Event.Preparing -> _state.value = VoiceState.Preparing
+                    SpeechToText.Event.Ready -> {
+                        speechReady.complete(Unit)
+                        _state.value = VoiceState.Listening(
+                            requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
+                        )
+                    }
+                    is SpeechToText.Event.Partial -> {
+                        speechReady.complete(Unit)
+                        firstSpeech.complete(Unit)
+                        _state.value = VoiceState.Listening(
+                            partial = event.text,
+                            requiresManualTurnEnd = recognizer.requiresManualTurnEnd,
+                        )
+                    }
+                    SpeechToText.Event.Processing -> {
+                        speechReady.complete(Unit)
+                        firstSpeech.complete(Unit)
+                        _state.value = VoiceState.Transcribing
+                    }
+                    is SpeechToText.Event.Final -> {
+                        speechReady.complete(Unit)
+                        firstSpeech.complete(Unit)
+                        final = event.text
+                    }
+                }
             }
         }
-        return final
+        try {
+            if (firstSpeechTimeoutMillis != null) {
+                speechReady.await()
+                val startedSpeaking = withTimeoutOrNull(firstSpeechTimeoutMillis) {
+                    firstSpeech.await()
+                    true
+                } ?: false
+                if (!startedSpeaking) {
+                    listenJob.cancelAndJoin()
+                    return@coroutineScope null
+                }
+            }
+            listenJob.join()
+            final
+        } finally {
+            listenJob.cancelAndJoin()
+        }
     }
 
     private data class Snapshot(
@@ -316,9 +379,19 @@ class VoiceConversation(
         .replace(WHITESPACE, " ")
         .trim()
 
+    private fun wakeWordAcknowledgement(): String =
+        if (language.startsWith("bn", ignoreCase = true)) {
+            BANGLA_WAKE_WORD_ACKNOWLEDGEMENT
+        } else {
+            ENGLISH_WAKE_WORD_ACKNOWLEDGEMENT
+        }
+
     private companion object {
         const val MAX_SILENT_ROUNDS = 2
         const val MAX_RETRIES = 3
+        const val WAKE_QUESTION_START_TIMEOUT_MILLIS = 5_000L
+        const val ENGLISH_WAKE_WORD_ACKNOWLEDGEMENT = "I'm listening. What would you like to ask?"
+        const val BANGLA_WAKE_WORD_ACKNOWLEDGEMENT = "আমি শুনছি। কী জানতে চান?"
         const val MIN_CHUNK = 24
         const val SPEAKING_STATUS_DELAY_MILLIS = 250L
         const val SENTENCE_ENDS = ".!?।…"
@@ -328,6 +401,14 @@ class VoiceConversation(
         val WHITESPACE = Regex("\\s+")
     }
 }
+
+private val LEADING_WAKE_PHRASE = Regex(
+    "^\\s*(?:hey\\s+assistant|hello\\s+assistant|wake\\s*up\\s+assistant)\\b[\\s,.:;!?-]*",
+    RegexOption.IGNORE_CASE,
+)
+
+private fun String.removeLeadingWakePhrase(): String =
+    replaceFirst(LEADING_WAKE_PHRASE, "").trim()
 
 internal fun isRetryableSttError(code: Int): Boolean = when (code) {
     SpeechRecognizer.ERROR_CLIENT,

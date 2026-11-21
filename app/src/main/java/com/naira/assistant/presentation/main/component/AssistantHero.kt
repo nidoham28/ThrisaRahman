@@ -140,7 +140,7 @@ private fun StatusLabel(voice: VoiceState) {
         is VoiceState.Idle -> Unit
 
         is VoiceState.Preparing -> StatusChip("GETTING READY")
-        is VoiceState.WakeWordListening -> StatusChip("SAY HEY ASSISTANT")
+        is VoiceState.WakeWordListening -> StatusChip("SAY HEY, HELLO OR WAKEUP ASSISTANT")
         is VoiceState.Listening -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
             StatusChip(
                 when {

@@ -8,6 +8,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import androidx.core.content.ContextCompat
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.KeywordSpotter
@@ -17,6 +18,7 @@ import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -32,9 +34,29 @@ internal class WakeWordDetector(context: Context) {
         ) {
             throw SecurityException("Microphone permission is required for wake-word listening.")
         }
+
+        var restartAttempt = 0
+        while (true) {
+            try {
+                listenUntilWakeWord(onListening)
+                return@withContext
+            } catch (error: AudioRecordDisconnectedException) {
+                currentCoroutineContext().ensureActive()
+                val retryDelay = minOf(
+                    INITIAL_RESTART_DELAY_MILLIS * (1L shl restartAttempt.coerceAtMost(MAX_RESTART_SHIFT)),
+                    MAX_RESTART_DELAY_MILLIS,
+                )
+                delay(retryDelay)
+                restartAttempt++
+            }
+        }
+    }
+
+    private suspend fun listenUntilWakeWord(onListening: suspend () -> Unit) {
         val keywordSpotter = createKeywordSpotter()
         var recorder: AudioRecord? = null
         var automaticGainControl: AutomaticGainControl? = null
+        var noiseSuppressor: NoiseSuppressor? = null
         var stream: OnlineStream? = null
         try {
             val activeStream = keywordSpotter.createStream()
@@ -64,14 +86,11 @@ internal class WakeWordDetector(context: Context) {
                 "Microphone could not be initialized for wake-word detection."
             }
 
-            automaticGainControl =
+            automaticGainControl = createOptionalAudioEffect {
                 AutomaticGainControl.create(activeRecorder.audioSessionId)
-            automaticGainControl?.let { agc ->
-                if (!agc.getEnabled()) {
-                    check(agc.setEnabled(true) == AudioEffect.SUCCESS) {
-                        "Microphone automatic gain control could not be enabled."
-                    }
-                }
+            }
+            noiseSuppressor = createOptionalAudioEffect {
+                NoiseSuppressor.create(activeRecorder.audioSessionId)
             }
 
             activeRecorder.startRecording()
@@ -91,6 +110,9 @@ internal class WakeWordDetector(context: Context) {
                     AudioRecord.READ_BLOCKING,
                 )
                 coroutineContext.ensureActive()
+                if (count == AudioRecord.ERROR_DEAD_OBJECT) {
+                    throw AudioRecordDisconnectedException()
+                }
                 check(count >= 0) { "Microphone audio capture failed ($count)." }
                 if (count == 0) continue
 
@@ -101,34 +123,58 @@ internal class WakeWordDetector(context: Context) {
                 while (keywordSpotter.isReady(activeStream)) {
                     keywordSpotter.decode(activeStream)
                     if (keywordSpotter.getResult(activeStream).keyword.isNotBlank()) {
-                        return@withContext
+                        return
                     }
                 }
             }
         } finally {
             try {
-                automaticGainControl?.release()
+                noiseSuppressor?.release()
             } finally {
                 try {
-                    recorder?.let { activeRecorder ->
-                        try {
-                            if (activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                                activeRecorder.stop()
-                            }
-                        } finally {
-                            activeRecorder.release()
-                        }
-                    }
+                    automaticGainControl?.release()
                 } finally {
                     try {
-                        stream?.release()
+                        recorder?.let { activeRecorder ->
+                            try {
+                                if (activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                                    activeRecorder.stop()
+                                }
+                            } finally {
+                                activeRecorder.release()
+                            }
+                        }
                     } finally {
-                        keywordSpotter.release()
+                        try {
+                            stream?.release()
+                        } finally {
+                            keywordSpotter.release()
+                        }
                     }
                 }
             }
         }
     }
+
+    private inline fun <T : AudioEffect> createOptionalAudioEffect(create: () -> T?): T? {
+        var effect: T? = null
+        return try {
+            effect = create()
+            effect?.let { if (!it.getEnabled()) it.setEnabled(true) }
+            effect
+        } catch (_: RuntimeException) {
+            try {
+                effect?.release()
+            } catch (_: RuntimeException) {
+                // The effect is optional; capture can continue without it.
+            }
+            null
+        }
+    }
+
+    private class AudioRecordDisconnectedException : IllegalStateException(
+        "The microphone connection was interrupted.",
+    )
 
     internal fun createKeywordSpotter(): KeywordSpotter = KeywordSpotter(
         assetManager = appContext.assets,
@@ -171,6 +217,9 @@ internal class WakeWordDetector(context: Context) {
         const val KEYWORD_SCORE = 2.0f
         const val KEYWORD_THRESHOLD = 0.20f
         const val NUM_TRAILING_BLANKS = 2
+        const val INITIAL_RESTART_DELAY_MILLIS = 250L
+        const val MAX_RESTART_DELAY_MILLIS = 4_000L
+        const val MAX_RESTART_SHIFT = 4
         const val SAMPLES_PER_READ = SAMPLE_RATE / 10
         const val BYTES_PER_SAMPLE = 2
         const val PCM_SCALE = 32768.0f

@@ -377,6 +377,13 @@ class WakeWordForegroundService : Service() {
         }
         monitorJob = serviceScope.launch {
             try {
+                try {
+                    voiceConversation.prepareForWakeWord()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    // Wake detection stays available; voice startup reports ASR errors after activation.
+                }
                 while (_isMonitoring.value && currentCoroutineContext().isActive) {
                     conversationActive = false
                     publishState(VoiceState.Preparing)
@@ -385,9 +392,8 @@ class WakeWordForegroundService : Service() {
                     }
                     if (!_isMonitoring.value) break
 
-                    delay(HANDOVER_SETTLE_MILLIS)
                     conversationActive = true
-                    voiceConversation.start()
+                    voiceConversation.start(afterWakeWord = true)
                     val started = voiceConversation.state.first {
                         it.isActive || it is VoiceState.Error
                     }
@@ -511,7 +517,7 @@ class WakeWordForegroundService : Service() {
                 "Phone alert is ringing. Say 'stop phone alert' or tap Stop alert."
             state is VoiceState.Error -> state.message
             state is VoiceState.WakeWordListening ->
-                "Listening for Hey Assistant. Wake-word detection runs on-device."
+                "Listening for Hey Assistant, Hello Assistant, or Wakeup Assistant. Wake-word detection runs on-device."
             state is VoiceState.Listening -> "Listening for your voice command."
             state is VoiceState.Transcribing -> "Transcribing your voice command."
             state is VoiceState.Thinking -> "Naira is working on your request."
@@ -623,7 +629,6 @@ class WakeWordForegroundService : Service() {
         private const val ALERT_WAKE_LOCK_GRACE_MILLIS = 5_000L
         private const val ALERT_REQUEST_TIMEOUT_MILLIS = 5_000L
         private const val ERROR_DISPLAY_MILLIS = 2_500L
-        private const val HANDOVER_SETTLE_MILLIS = 150L
         private val pendingAlertRequests = ConcurrentHashMap<String, CompletableDeferred<String>>()
 
         suspend fun controlPhoneAlert(
