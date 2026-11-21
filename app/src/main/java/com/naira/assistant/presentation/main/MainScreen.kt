@@ -42,6 +42,7 @@ import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
+import com.naira.assistant.core.service.weather.WeatherService
 import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.util.GreetingProvider
@@ -57,8 +58,12 @@ import com.naira.assistant.presentation.main.pages.ChatPage
 import com.naira.assistant.presentation.main.pages.HomePage
 import com.naira.assistant.presentation.main.pages.MemoriesPage
 import com.naira.assistant.presentation.main.pages.ProfilePage
+import com.naira.assistant.presentation.main.pages.WeatherSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 /** Tab indexes used by [AssistantNavigation]. Index 2 is the center mic slot, not a page. */
 private object Tab {
@@ -110,6 +115,29 @@ fun MainScreen(
         mutableStateOf(loadVoiceLanguage(assistantSettingsStorage))
     }
     var greetingText by remember { mutableStateOf(GreetingProvider().currentMessage()) }
+    var weather by remember { mutableStateOf<WeatherSummary?>(null) }
+
+    suspend fun refreshWeather() {
+        try {
+            val report = withContext(Dispatchers.IO) { WeatherService.currentForDhaka() }
+            weather = WeatherSummary(
+                location = report.location,
+                condition = report.condition,
+                temperatureC = report.temperatureC.toInt(),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Keep the last successful conditions visible during network loss.
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshWeather()
+            delay(30 * 60 * 1000L)
+        }
+    }
 
     // Re-read on every resume. Setting mutableState to the same value is a
     // no-op, so redundant reads at startup cost nothing visually.
@@ -117,6 +145,7 @@ fun MainScreen(
         displayName = loadDisplayName(accountStorage)
         voiceLanguage = loadVoiceLanguage(assistantSettingsStorage)
         greetingText = GreetingProvider().currentMessage()
+        scope.launch { refreshWeather() }
         viewModel.refreshSettings()
         // Reminders may have changed while backgrounded; pull fresh data.
         scope.launch { reminderRepository.refresh() }
@@ -228,6 +257,7 @@ fun MainScreen(
                         else -> HomePage(
                             voice = voice.state,
                             displayName = displayName,
+                            weather = weather,
                             mood = currentSessionMood,
                         )
                     }

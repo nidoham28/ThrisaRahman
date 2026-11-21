@@ -6,8 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import com.naira.assistant.core.navigation.ThrisaNavScaffold
 import com.naira.assistant.core.theme.ThrisaTheme
@@ -15,18 +18,12 @@ import com.naira.assistant.core.theme.ThrisaTheme
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Call before super.onCreate(): the decor view reads the edge-to-edge
-        // flags when it's created inside super.onCreate(). After that, the
-        // window is already configured.
         enableEdgeToEdge(
-            // Transparent status bar in both modes — content draws behind it.
             statusBarStyle = SystemBarStyle.auto(
                 lightScrim = Color.TRANSPARENT,
                 darkScrim = Color.TRANSPARENT,
             ),
-            // Transparent nav bar too. If you keep the default, API < 29 gets
-            // a translucent scrim for contrast — safe to leave as default
-            // unless your design tests clean over the gesture pill.
+
             navigationBarStyle = SystemBarStyle.auto(
                 lightScrim = Color.TRANSPARENT,
                 darkScrim = Color.TRANSPARENT,
@@ -35,8 +32,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            ThrisaTheme {
-                ThrisaTheme(darkTheme = isSystemInDarkTheme()) {
+            ThrisaTheme(darkTheme = isSystemInDarkTheme()) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
                     ThrisaNavScaffold(
                         modifier = Modifier.fillMaxSize(),
                     )

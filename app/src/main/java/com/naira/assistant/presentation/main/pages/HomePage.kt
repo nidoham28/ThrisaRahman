@@ -47,7 +47,7 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
 /** Minimal weather model for the Home card. Replace with your real domain type when available. */
-data class WeatherSummary(val condition: String, val temperatureC: Int)
+data class WeatherSummary(val location: String, val condition: String, val temperatureC: Int)
 
 private val CardGap = 10.dp
 private val HeroMinHeight = 180.dp
@@ -144,7 +144,7 @@ fun HomePage(
             CardRow {
                 InfoCard(
                     title = "Weather",
-                    caption = weather?.condition ?: "Unavailable",
+                    caption = weather?.let { "${it.location} · ${it.condition}" } ?: "Loading weather",
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(

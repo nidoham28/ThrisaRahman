@@ -70,6 +70,7 @@ import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeMarkTodoD
 import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeMarkTodoUndone
 import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeSearchTodos
 import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeUpdateTodo
+import com.naira.assistant.core.tools.executor.executeWeatherReport
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
@@ -177,6 +178,9 @@ object CommandExecution {
 
                     "get_current_time" ->
                         executeGetCurrentTime(call)
+
+                    "get_weather_report" ->
+                        executeWeatherReport(call)
 
                     "get_device_info" ->
                         executeGetDeviceInfo(call, appContext)
