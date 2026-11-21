@@ -16,6 +16,7 @@ This is a team-maintained project. Different modules belong to different develop
 | `:common` | READ-ONLY |
 | `:search` | READ-ONLY |
 | `:speech` | READ-ONLY |
+| `:onnx` | READ-ONLY |
 | `:terminal` | READ-ONLY |
 | All other existing/future modules | READ-ONLY |
 | Root Gradle files and configurations | PROTECTED |

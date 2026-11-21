@@ -6,7 +6,7 @@ Model source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/kws-models
 Runtime source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/v2.0.2
 
 The int8 model files and keyword tokens are packaged for on-device inference.
-The supported wake phrases are Hey Assistant, Hello Assistant, and Wakeup Assistant. Their
+The supported wake phrases are Hey Assistant and Hello Assistant. Their
 keyword tokens use pieces from the model's BPE vocabulary.
 No AccessKey, model-training API, or network connection is required.
 

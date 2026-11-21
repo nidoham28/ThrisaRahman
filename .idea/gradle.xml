@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$/ai" />
             <option value="$PROJECT_DIR$/app" />
             <option value="$PROJECT_DIR$/common" />
+            <option value="$PROJECT_DIR$/onnx" />
             <option value="$PROJECT_DIR$/search" />
             <option value="$PROJECT_DIR$/speech" />
             <option value="$PROJECT_DIR$/terminal" />

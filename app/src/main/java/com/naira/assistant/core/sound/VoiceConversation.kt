@@ -224,6 +224,12 @@ class VoiceConversation(
             wakeAcknowledgementPending = false
             silentRounds = 0
 
+            if (question.isSleepAssistantCommand()) {
+                speak(sleepCommandAcknowledgement())
+                // Returning ends this conversation; the foreground service resumes wake-word detection.
+                return
+            }
+
             chat.busyStatus.first { it == null } // one request at a time
             _state.value = VoiceState.Thinking
             chat.send(question)
@@ -386,12 +392,23 @@ class VoiceConversation(
             ENGLISH_WAKE_WORD_ACKNOWLEDGEMENT
         }
 
+    private fun sleepCommandAcknowledgement(): String =
+        if (language.startsWith("bn", ignoreCase = true)) {
+            BANGLA_SLEEP_COMMAND_ACKNOWLEDGEMENT
+        } else {
+            ENGLISH_SLEEP_COMMAND_ACKNOWLEDGEMENT
+        }
+
     private companion object {
         const val MAX_SILENT_ROUNDS = 2
         const val MAX_RETRIES = 3
         const val WAKE_QUESTION_START_TIMEOUT_MILLIS = 5_000L
         const val ENGLISH_WAKE_WORD_ACKNOWLEDGEMENT = "I'm listening. What would you like to ask?"
         const val BANGLA_WAKE_WORD_ACKNOWLEDGEMENT = "আমি শুনছি। কী জানতে চান?"
+        const val ENGLISH_SLEEP_COMMAND_ACKNOWLEDGEMENT =
+            "Going to sleep now. Say Hey Assistant, Hello Assistant, or Wakeup Assistant to wake me."
+        const val BANGLA_SLEEP_COMMAND_ACKNOWLEDGEMENT =
+            "আমি এখন ঘুমিয়ে থাকছি। আবার ডাকতে Hey Assistant, Hello Assistant, বা Wakeup Assistant বলুন।"
         const val MIN_CHUNK = 24
         const val SPEAKING_STATUS_DELAY_MILLIS = 250L
         const val SENTENCE_ENDS = ".!?।…"
@@ -409,6 +426,26 @@ private val LEADING_WAKE_PHRASE = Regex(
 
 private fun String.removeLeadingWakePhrase(): String =
     replaceFirst(LEADING_WAKE_PHRASE, "").trim()
+
+private val VOICE_COMMAND_SEPARATORS = Regex("[^\\p{L}\\p{N}]+")
+private val VOICE_COMMAND_WHITESPACE = Regex("\\s+")
+private val SLEEP_ASSISTANT_COMMANDS = setOf(
+    "sleep assistant",
+    "assistant sleep",
+    "go to sleep assistant",
+    "go to sleep",
+    "stop listening",
+    "অ্যাসিস্ট্যান্ট ঘুমাও",
+    "অ্যাসিস্ট্যান্ট ঘুমাতে যাও",
+    "অ্যাসিস্ট্যান্ট ঘুমিয়ে পড়ো",
+    "সহকারী ঘুমাও",
+)
+
+private fun String.isSleepAssistantCommand(): Boolean =
+    lowercase()
+        .replace(VOICE_COMMAND_SEPARATORS, " ")
+        .trim()
+        .replace(VOICE_COMMAND_WHITESPACE, " ") in SLEEP_ASSISTANT_COMMANDS
 
 internal fun isRetryableSttError(code: Int): Boolean = when (code) {
     SpeechRecognizer.ERROR_CLIENT,

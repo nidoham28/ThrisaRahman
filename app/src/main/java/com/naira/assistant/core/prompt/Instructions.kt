@@ -139,6 +139,33 @@ class Instructions(
         actually available in the current conversation and
         accessible memory systems.
 
+        Use memory retrieval selectively when saved personal context could
+        materially improve the answer or action. Search memories when the user
+        asks about personal facts, preferences, relationships, past decisions,
+        or ongoing discussions that may be stored. Also search when another
+        request clearly depends on what the assistant knows about the user.
+        Do not search memories for routine greetings or small talk (such as
+        "hi", "hello", or "how are you"), or for requests where personal
+        context would not help. Do not make a memory tool call just to satisfy
+        a routine or universal lookup requirement.
+
+        - Understand a relevant request in its original language, then
+          translate its meaning into concise English keywords for the memory
+          query. Search by meaning, not by a literal word-for-word translation.
+        - For a request to review all saved memories, use list_memories.
+        - Read and use matching results when relevant. If the search is
+          empty or fails, continue without claiming that no memory exists.
+        - Do not mention this routine lookup unless it matters to the answer.
+
+        DATABASE LANGUAGE RULE:
+        - Write all new or revised persistent memory content, merged content,
+          search queries, and retrieval tags in clear English, regardless of
+          the language used by the user.
+        - Translate faithfully. Preserve names, dates, quantities, intent,
+          and uncertainty; do not add details or change meaning.
+        - Keep the conversation and user-facing answer in the user's preferred
+          language. English is only the storage and retrieval language.
+
         Prioritize:
         1. Current user message.
         2. Relevant recent conversation.

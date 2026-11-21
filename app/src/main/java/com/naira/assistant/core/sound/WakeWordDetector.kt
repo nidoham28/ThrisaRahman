@@ -214,8 +214,9 @@ internal class WakeWordDetector(context: Context) {
             "wake-word/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         const val MODEL_TOKENS = "wake-word/tokens.txt"
         const val KEYWORDS_FILE = "wake-word/keywords.txt"
-        const val KEYWORD_SCORE = 2.0f
-        const val KEYWORD_THRESHOLD = 0.20f
+        // Sherpa-ONNX's keyword spotting example values for streaming wake words.
+        const val KEYWORD_SCORE = 3.0f
+        const val KEYWORD_THRESHOLD = 0.10f
         const val NUM_TRAILING_BLANKS = 2
         const val INITIAL_RESTART_DELAY_MILLIS = 250L
         const val MAX_RESTART_DELAY_MILLIS = 4_000L

@@ -60,8 +60,6 @@ android {
         release {
             optimization {
                 enable = true
-                // সাবধান: packageScope দিলে শুধু এই প্যাকেজগুলোই optimize হয়,
-                // তোমার নিজের com.naira.** কোড বাদ পড়ে। পুরো অ্যাপ চাইলে লাইনটা সরাও।
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
         }
@@ -104,6 +102,7 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":speech"))
     implementation(project(":terminal"))
+    implementation(project(":onnx"))
 
     implementation(libs.newpipeextractor)
 

@@ -31,6 +31,8 @@ media3 = "1.11.1"
 
 # search module
 jsoup = "1.24.1"
+appcompat = "1.8.0"
+material = "1.14.0"
 
 [libraries]
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
@@ -81,6 +83,8 @@ androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "medi
 
 # search module
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

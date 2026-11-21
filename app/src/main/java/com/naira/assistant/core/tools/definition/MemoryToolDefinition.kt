@@ -147,6 +147,9 @@ object MemoryTools {
             RULES:
             - Store concise, self-contained, factual memories.
             - Preserve the user's intended meaning and important details.
+            - Write content and retrieval tags in English, even when the user
+              spoke or wrote in another language. Translate faithfully; keep
+              names, dates, quantities, and uncertainty unchanged.
             - Check for existing memories to prevent duplicates.
             - Never store temporary details, assumptions, fictional roleplay
               information, or unverified claims as real user facts.
@@ -233,6 +236,8 @@ object MemoryTools {
             - Retrieve the memory first if its ID is unknown.
             - Verify that the selected record matches the requested change.
             - Preserve unrelated information.
+            - Write replacement content and retrieval tags in English,
+              translating faithfully when the correction is in another language.
             - Prefer updating over creating duplicates.
             - Never overwrite information with uncertain details.
             - Content must be the complete replacement, not a partial patch.
@@ -251,8 +256,9 @@ object MemoryTools {
             stringField(
                 name = "content",
                 description = """
-                    Complete replacement memory content.
-                    Preserve relevant facts and corrections.
+                    Complete replacement memory content in English.
+                    Translate corrections faithfully and preserve relevant facts,
+                    names, dates, quantities, and uncertainty.
                     Maximum 2000 characters.
                 """.trimIndent(),
                 minLength = 1,
@@ -274,7 +280,7 @@ object MemoryTools {
 
             stringArrayField(
                 name = "tags",
-                description = "Optional replacement retrieval tags."
+                description = "Optional replacement retrieval tags in English."
             )
         }
     )
@@ -340,6 +346,8 @@ object MemoryTools {
             - Retrieve and inspect every selected memory first.
             - Require at least two distinct, existing memory IDs.
             - Merge only genuinely related information.
+            - Write merged content and retrieval tags in English, faithfully
+              translating non-English source content without changing meaning.
             - Preserve all important, non-conflicting facts and useful tags.
             - Resolve contradictions only when reliable context
               establishes the correct information.
@@ -370,8 +378,9 @@ object MemoryTools {
             stringField(
                 name = "merged_content",
                 description = """
-                    Complete consolidated memory.
-                    Preserve important information without duplication.
+                    Complete consolidated memory in English. Faithfully
+                    translate and preserve important facts, names, dates,
+                    quantities, and uncertainty without duplication.
                     Maximum 3000 characters.
                 """.trimIndent(),
                 minLength = 1,
@@ -393,7 +402,7 @@ object MemoryTools {
 
             stringArrayField(
                 name = "tags",
-                description = "Consolidated retrieval keywords."
+                description = "Consolidated retrieval keywords in English."
             )
         }
     )
@@ -413,10 +422,15 @@ object MemoryTools {
             - The user references previous conversations or personal history.
             - An answer depends on remembered preferences or background.
             - Context is needed for personalization.
+            - Before every response to a new user request, including requests
+              that appear unrelated, perform at least one memory search.
             - A memory must be located before updating or deleting it.
 
             RULES:
-            - Use focused keywords instead of entire conversations.
+            - Translate the user's intent into concise English keywords before
+              searching, regardless of the language of the request.
+            - Use focused English keywords instead of entire conversations.
+              Search by meaning and include relevant English names or concepts.
             - Apply category filters when useful.
             - Prioritize relevance over recency.
             - Request the smallest sufficient result limit.
@@ -432,8 +446,10 @@ object MemoryTools {
             stringField(
                 name = "query",
                 description = """
-                    Optional keywords or phrase to search memory content
-                    and tags. Example: "morning coffee preference".
+                    Optional English keywords or phrase to search memory
+                    content and tags. Translate the user's request into a
+                    concise, meaning-preserving English query first.
+                    Example: "morning coffee preference".
                     Omit for category-based browsing.
                 """.trimIndent(),
                 maxLength = 200
