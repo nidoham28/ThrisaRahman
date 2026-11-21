@@ -9,6 +9,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
+import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.KeywordSpotter
@@ -52,6 +53,7 @@ internal class WakeWordDetector(context: Context) {
         }
     }
 
+    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private suspend fun listenUntilWakeWord(onListening: suspend () -> Unit) {
         val keywordSpotter = createKeywordSpotter()
         var recorder: AudioRecord? = null
@@ -216,7 +218,7 @@ internal class WakeWordDetector(context: Context) {
         const val KEYWORDS_FILE = "wake-word/keywords.txt"
         // Sherpa-ONNX's keyword spotting example values for streaming wake words.
         const val KEYWORD_SCORE = 3.0f
-        const val KEYWORD_THRESHOLD = 0.10f
+        const val KEYWORD_THRESHOLD = 0.25f
         const val NUM_TRAILING_BLANKS = 2
         const val INITIAL_RESTART_DELAY_MILLIS = 250L
         const val MAX_RESTART_DELAY_MILLIS = 4_000L
