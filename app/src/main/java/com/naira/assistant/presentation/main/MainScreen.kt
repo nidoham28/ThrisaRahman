@@ -6,7 +6,14 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
@@ -22,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
@@ -132,6 +140,7 @@ fun MainScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val chatBusyStatus by viewModel.busyStatus.collectAsStateWithLifecycle()
     val currentSessionMood by viewModel.currentSessionMood.collectAsStateWithLifecycle()
+    val isImeVisible = WindowInsets.isImeVisible
 
     // --- Reminders ----------------------------------------------------------
     val reminders by reminderRepository.observeAll().collectAsStateWithLifecycle()
@@ -163,9 +172,7 @@ fun MainScreen(
         gesturesEnabled = drawerState.isOpen || selectedTab == Tab.HOME,
         drawerContent = {
             AppDrawer(
-                // NOTE: `AppDrawer` here uses the legacy `displayname` param.
-                // If you applied the AppDrawer rename fix, change this to
-                // `displayName = displayName`.
+                // Keep the drawer identity label in sync with the current account name.
                 displayName = displayName,
                 greeting = greetingText,
                 onAction = { action ->
@@ -182,40 +189,48 @@ fun MainScreen(
         Scaffold(
             containerColor = Night,
             bottomBar = {
-                AssistantNavigation(
-                    selectedTab,
-                    voice.state,
-                    onSelect = { selectedTab = it },
-                    onMicClick = { voice.onMicClick() },
-                )
+                if (!isImeVisible) {
+                    AssistantNavigation(
+                        selectedTab,
+                        voice.state,
+                        onSelect = { selectedTab = it },
+                        onMicClick = { voice.onMicClick() },
+                    )
+                }
             },
         ) { innerPadding ->
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+            Box(
+                Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Header(
-                    onMenuClick = { scope.launch { drawerState.open() } },
-                    onNotificationsClick = { showReminderInbox = true },
-                    notificationCount = upcomingReminders.size,
-                )
-                when (selectedTab) {
-                    Tab.CHAT -> ChatPage(
-                        messages = messages,
-                        busyStatus = chatBusyStatus,
-                        onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
-                        onOpenImage = { imageUri -> openImage(context, imageUri) },
-                        onStop = viewModel::cancelCurrent,
+                Column(
+                    Modifier
+                        .widthIn(max = 1000.dp)
+                        .fillMaxWidth()
+                        .fillMaxHeight(),
+                ) {
+                    Header(
+                        onMenuClick = { scope.launch { drawerState.open() } },
+                        onNotificationsClick = { showReminderInbox = true },
+                        notificationCount = upcomingReminders.size,
                     )
-                    Tab.MEMORIES -> MemoriesPage()
-                    Tab.PROFILE -> ProfilePage()
-                    // HOME, plus defensively any unexpected index (2 = mic slot).
-                    else -> HomePage(
-                        voice = voice.state,
-                        displayName = displayName,
-                        mood = currentSessionMood,
-                    )
+                    when (selectedTab) {
+                        Tab.CHAT -> ChatPage(
+                            messages = messages,
+                            busyStatus = chatBusyStatus,
+                            onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
+                            onOpenImage = { imageUri -> openImage(context, imageUri) },
+                            onStop = viewModel::cancelCurrent,
+                        )
+                        Tab.MEMORIES -> MemoriesPage()
+                        Tab.PROFILE -> ProfilePage()
+                        // HOME, plus defensively any unexpected index (2 = mic slot).
+                        else -> HomePage(
+                            voice = voice.state,
+                            displayName = displayName,
+                            mood = currentSessionMood,
+                        )
+                    }
                 }
             }
         }

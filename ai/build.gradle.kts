@@ -61,6 +61,7 @@ android {
 
 dependencies {
     implementation(project(":common"))
+    implementation(libs.androidx.annotation)
 
     // Compose
     implementation(libs.androidx.core.ktx)

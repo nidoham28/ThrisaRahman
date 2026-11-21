@@ -194,120 +194,125 @@ fun ChatPage(
         attachedImage = null
     }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .background(Night)
-            .imePadding()
-            .padding(horizontal = 16.dp, vertical = 20.dp)
-    ) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (messages.isEmpty()) {
-                EmptyChatState(
-                    onSuggestion = { draft = it },
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    reverseLayout = true,
-                    contentPadding = PaddingValues(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (busyStatus != null) {
-                        item(key = "busy-status") { BusyStatus(busyStatus) }
+    BoxWithConstraints(modifier.fillMaxSize().background(Night)) {
+        val horizontalPadding = if (maxWidth < 360.dp) 10.dp else 16.dp
+        val verticalPadding = if (maxHeight < 480.dp) 8.dp else 16.dp
+        Column(
+            Modifier
+                .widthIn(max = 840.dp)
+                .fillMaxSize()
+                .align(Alignment.Center)
+                .imePadding()
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding)
+        ) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (messages.isEmpty()) {
+                    EmptyChatState(
+                        onSuggestion = { draft = it },
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        reverseLayout = true,
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (busyStatus != null) {
+                            item(key = "busy-status") { BusyStatus(busyStatus) }
+                        }
+
+                        items(reversed, key = { it.id }) { message ->
+                            MessageBubble(
+                                message = message,
+                                onOpenImage = onOpenImage,
+                            )
+                        }
                     }
 
-                    items(reversed, key = { it.id }) { message ->
-                        MessageBubble(
-                            message = message,
-                            onOpenImage = onOpenImage,
+                    if (showJumpToLatest) {
+                        JumpToLatestPill(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 12.dp),
+                            onClick = { scope.launch { listState.animateScrollToItem(0) } }
                         )
                     }
                 }
+            }
 
-                if (showJumpToLatest) {
-                    JumpToLatestPill(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp),
-                        onClick = { scope.launch { listState.animateScrollToItem(0) } }
+            Spacer(Modifier.height(10.dp))
+
+            attachedImage?.let { uri ->
+                AttachmentPreview(uri = uri, onRemove = { attachedImage = null })
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ComposerButton(
+                    icon = Icons.Outlined.AddPhotoAlternate,
+                    description = "Attach an image",
+                    enabled = !isBusy,
+                    onClick = {
+                        imagePicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                )
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isBusy,
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = BodySize,
+                        lineHeight = BodyLineHeight
+                    ),
+                    placeholder = {
+                        Text(
+                            text = "Ask me anything?",
+                            color = TextSoft,
+                            fontSize = BodySize,
+                            lineHeight = BodyLineHeight,
+                        )
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(onSend = { sendDraft() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextHigh,
+                        unfocusedTextColor = TextHigh,
+                        focusedBorderColor = Aqua,
+                        unfocusedBorderColor = CardStroke,
+                        cursorColor = Aqua,
+                        focusedContainerColor = FieldSurface,
+                        unfocusedContainerColor = FieldSurface,
+                    ),
+                    maxLines = 4,
+                )
+                if (isBusy && onStop != null) {
+                    ComposerButton(
+                        icon = Icons.Outlined.Stop,
+                        description = "Stop generating",
+                        filled = true,
+                        onClick = onStop,
+                    )
+                } else {
+                    ComposerButton(
+                        icon = Icons.AutoMirrored.Outlined.Send,
+                        description = "Send message",
+                        enabled = canSend,
+                        filled = true,
+                        onClick = { sendDraft() },
                     )
                 }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        attachedImage?.let { uri ->
-            AttachmentPreview(uri = uri, onRemove = { attachedImage = null })
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ComposerButton(
-                icon = Icons.Outlined.AddPhotoAlternate,
-                description = "Attach an image",
-                enabled = !isBusy,
-                onClick = {
-                    imagePicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-            )
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f),
-                enabled = !isBusy,
-                textStyle = LocalTextStyle.current.copy(
-                    fontSize = BodySize,
-                    lineHeight = BodyLineHeight
-                ),
-                placeholder = {
-                    Text(
-                        text = "Ask me anything?",
-                        color = TextSoft,
-                        fontSize = BodySize,
-                        lineHeight = BodyLineHeight,
-                    )
-                },
-                shape = RoundedCornerShape(24.dp),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Send
-                ),
-                keyboardActions = KeyboardActions(onSend = { sendDraft() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = TextHigh,
-                    unfocusedTextColor = TextHigh,
-                    focusedBorderColor = Aqua,
-                    unfocusedBorderColor = CardStroke,
-                    cursorColor = Aqua,
-                    focusedContainerColor = FieldSurface,
-                    unfocusedContainerColor = FieldSurface,
-                ),
-                maxLines = 4,
-            )
-            if (isBusy && onStop != null) {
-                ComposerButton(
-                    icon = Icons.Outlined.Stop,
-                    description = "Stop generating",
-                    filled = true,
-                    onClick = onStop,
-                )
-            } else {
-                ComposerButton(
-                    icon = Icons.AutoMirrored.Outlined.Send,
-                    description = "Send message",
-                    enabled = canSend,
-                    filled = true,
-                    onClick = { sendDraft() },
-                )
             }
         }
     }

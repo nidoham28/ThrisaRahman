@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,33 +75,37 @@ fun AssistantNavigation(
                 .height(1.dp)
                 .background(CardStroke)
         )
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(Dim.NavBar)
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            destinations.forEachIndexed { index, dest ->
-                if (index == MicIndex) {
-                    MicButton(
-                        modifier = Modifier.weight(1f),
-                        active = voice.isActive,
-                        accessibilityDescription = when {
-                            voice is VoiceState.WakeWordListening -> "Stop background Hey Assistant"
-                            voice is VoiceState.Listening && voice.requiresManualTurnEnd -> "Finish speaking"
-                            voice.isActive -> "Stop background voice session"
-                            else -> "Enable background Hey Assistant"
-                        },
-                        onClick = onMicClick,
-                    )
-                } else {
-                    NavItem(
-                        dest = dest,
-                        selected = selectedTab == index,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSelect(index) },
-                    )
+        Box(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .widthIn(max = 640.dp)
+                    .fillMaxWidth()
+                    .align(Alignment.Center)
+                    .height(Dim.NavBar)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                destinations.forEachIndexed { index, dest ->
+                    if (index == MicIndex) {
+                        MicButton(
+                            modifier = Modifier.weight(1f),
+                            active = voice.isActive,
+                            accessibilityDescription = when {
+                                voice is VoiceState.WakeWordListening -> "Stop background Hey Assistant"
+                                voice is VoiceState.Listening && voice.requiresManualTurnEnd -> "Finish speaking"
+                                voice.isActive -> "Stop background voice session"
+                                else -> "Enable background Hey Assistant"
+                            },
+                            onClick = onMicClick,
+                        )
+                    } else {
+                        NavItem(
+                            dest = dest,
+                            selected = selectedTab == index,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onSelect(index) },
+                        )
+                    }
                 }
             }
         }
