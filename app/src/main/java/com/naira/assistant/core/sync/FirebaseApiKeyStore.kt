@@ -51,6 +51,48 @@ class FirebaseApiKeyStore(
         }.toMap()
     }
 
+    suspend fun pushServiceKey(service: String, apiKey: String): Boolean {
+        val uid = currentUserId() ?: return false
+        val key = apiKey.trim()
+        require(service in SERVICE_KEYS) { "Unsupported service key." }
+        if (key.isEmpty()) return deleteServiceKey(service)
+        return try {
+            providerKeysRef(uid).child(service).setValue(
+                mapOf("provider" to service, "apiKey" to key, "updatedAt" to System.currentTimeMillis()),
+            ).await()
+            true
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            Log.e(TAG, "Couldn't save the $service key to Firebase", error)
+            false
+        }
+    }
+
+    suspend fun deleteServiceKey(service: String): Boolean {
+        val uid = currentUserId() ?: return false
+        require(service in SERVICE_KEYS) { "Unsupported service key." }
+        return try {
+            providerKeysRef(uid).child(service).removeValue().await()
+            true
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            Log.e(TAG, "Couldn't delete the $service key from Firebase", error)
+            false
+        }
+    }
+
+    suspend fun fetchServiceKeys(): Map<String, String> {
+        val uid = currentUserId() ?: return emptyMap()
+        return providerKeysRef(uid).get().await().children.mapNotNull { snapshot ->
+            val service = snapshot.key?.takeIf { it in SERVICE_KEYS } ?: return@mapNotNull null
+            val value = (snapshot.child("apiKey").value as? String)
+                ?: (snapshot.value as? String)
+            value?.trim()?.takeIf(String::isNotEmpty)?.let { service to it }
+        }.toMap()
+    }
+
     private fun DataSnapshot.toProviderKey(): Pair<AssistantProvider, String>? {
         val value = value
         if (value is String) {
@@ -74,5 +116,6 @@ class FirebaseApiKeyStore(
 
     private companion object {
         const val TAG = "FirebaseApiKeyStore"
+        val SERVICE_KEYS = setOf("cricapi", "weatherapi")
     }
 }

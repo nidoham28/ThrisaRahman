@@ -40,7 +40,7 @@ import com.naira.assistant.presentation.settings.model.EditField
 internal fun ApiKeyDialog(
     title: String,
     placeholder: String,
-    description: String = "The key is stored on this device for your signed-in account.",
+    description: String = "The key is saved on this device and synced to Firebase for your account.",
     initialKey: String,
     onSave: (String) -> Unit,
     onRemove: () -> Unit,

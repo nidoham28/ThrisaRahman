@@ -209,5 +209,6 @@ internal class SettingsState(
         relationship = assistantStorage.getRelationship()
         theme = userSettingsStorage.getTheme()
         fontSize = userSettingsStorage.getFontSize()
+        refreshAsrSettings()
     }
 }

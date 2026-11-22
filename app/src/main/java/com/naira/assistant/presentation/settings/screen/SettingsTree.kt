@@ -250,7 +250,7 @@ internal fun buildTree(
                             SettingsNode.Item(
                                 id = "weatherapi-key",
                                 title = "WeatherAPI Key",
-                                subtitle = if (state.weatherApiKey.isBlank()) "Not configured" else "Configured · stored on this device",
+                                subtitle = if (state.weatherApiKey.isBlank()) "Not configured" else "Configured · synced to your account",
                                 icon = Icons.Outlined.Key,
                                 onClick = onEditWeatherApiKey,
                                 trailing = {

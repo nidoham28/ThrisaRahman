@@ -42,6 +42,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.naira.assistant.core.service.CloudSettingsPatch
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
@@ -50,6 +54,7 @@ import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
+import com.naira.assistant.core.sync.FirebasePaths
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AsrProvider
@@ -212,6 +217,24 @@ fun SettingsScreen(
         }
     }
 
+    fun syncServiceApiKey(service: String, key: String) {
+        coroutineScope.launch {
+            val synced = try {
+                if (key.isBlank()) apiKeySync.deleteServiceKey(service)
+                else apiKeySync.pushServiceKey(service, key)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            if (!synced) Toast.makeText(
+                context,
+                "Key saved on this device, but cloud sync failed.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
     fun saveCricketCredential(key: String) {
         if (userId == null) {
             Toast.makeText(context, "Sign in before saving an API key.", Toast.LENGTH_LONG).show()
@@ -220,6 +243,7 @@ fun SettingsScreen(
         try {
             state.saveCricketApiKey(key)
             editingCricketApiKey = false
+            syncServiceApiKey("cricapi", key)
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "Couldn't save the CricAPI key.", Toast.LENGTH_LONG).show()
         }
@@ -233,6 +257,7 @@ fun SettingsScreen(
         try {
             state.saveWeatherApiKey(key)
             editingWeatherApiKey = false
+            syncServiceApiKey("weatherapi", key)
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "Couldn't save the WeatherAPI key.", Toast.LENGTH_LONG).show()
         }
@@ -267,22 +292,63 @@ fun SettingsScreen(
         synchronizeCloudSettings()
     }
 
-    LaunchedEffect(userId) {
-        if (userId == null) return@LaunchedEffect
-        cloudSyncError = null
-        val cloudKeys = try {
-            apiKeySync.fetchAll()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            cloudSyncError = e.message ?: "Couldn't load provider keys from Firebase."
-            return@LaunchedEffect
-        }
-        cloudKeys.forEach { (provider, key) -> state.saveApiKey(provider, key) }
-    }
-
     LaunchedEffect(refreshPermissionsTrigger) {
         if (refreshPermissionsTrigger > 0) synchronizeCloudSettings()
+    }
+
+    DisposableEffect(userId, cloudSettingsRepository) {
+        val uid = userId
+        if (uid == null) return@DisposableEffect onDispose { }
+        val database = FirebaseDatabase.getInstance(
+            "https://naira-assistant-default-rtdb.asia-southeast1.firebasedatabase.app",
+        )
+        val settingsRefs = listOf(
+            FirebasePaths.user(database, uid),
+            FirebasePaths.assistants(database, uid),
+            FirebasePaths.cloudSettings(database, uid),
+        )
+        val settingsListeners = settingsRefs.map { reference ->
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    synchronizeCloudSettings()
+                }
+                override fun onCancelled(error: DatabaseError) {
+                    cloudSyncError = error.message
+                }
+            }
+            reference.addValueEventListener(listener)
+            reference to listener
+        }
+        val keysReference = FirebasePaths.providerKeys(database, uid)
+        val keysListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                coroutineScope.launch {
+                    try {
+                        val remoteKeys = apiKeySync.fetchAll()
+                        AssistantProvider.entries.forEach { provider ->
+                            state.saveApiKey(provider, remoteKeys[provider].orEmpty())
+                        }
+                        val serviceKeys = apiKeySync.fetchServiceKeys()
+                        serviceKeys["cricapi"]?.let(state::saveCricketApiKey)
+                        serviceKeys["weatherapi"]?.let(state::saveWeatherApiKey)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        cloudSyncError = e.message ?: "Couldn't load provider keys from Firebase."
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                cloudSyncError = error.message
+            }
+        }
+        keysReference.addValueEventListener(keysListener)
+        onDispose {
+            settingsListeners.forEach { (reference, listener) ->
+                reference.removeEventListener(listener)
+            }
+            keysReference.removeEventListener(keysListener)
+        }
     }
 
     val requestMultipleLauncher = rememberLauncherForActivityResult(
@@ -444,6 +510,8 @@ fun SettingsScreen(
         onSaveAsrProvider = { value ->
             try {
                 state.saveAsrProvider(value)
+                cloudSettingsRepository.recordChange(CloudSettingsPatch(asrProvider = value))
+                synchronizeCloudSettings()
             } catch (e: Exception) {
                 Toast.makeText(context, e.message ?: "Couldn't save the speech provider.", Toast.LENGTH_LONG).show()
             }

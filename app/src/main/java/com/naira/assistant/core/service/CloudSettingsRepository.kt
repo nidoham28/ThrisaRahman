@@ -7,6 +7,8 @@ import androidx.core.content.edit
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.settings.AccountSettingsStorage
 import com.naira.assistant.domain.settings.ApiKeyStorage
+import com.naira.assistant.domain.settings.AsrProvider
+import com.naira.assistant.domain.settings.AsrProviderSettingsStorage
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
@@ -50,6 +52,7 @@ internal data class CloudSettings(
     val relationship: RelationType = RelationType.DEFAULT,
     val assistantThinkingMode: AssistantThinkingMode = AssistantThinkingMode.AUTO,
     val openRouterModelId: String = AssistantProvider.OPENROUTER.defaultModelId,
+    val asrProvider: AsrProvider = AsrProvider.SYSTEM,
 )
 
 internal data class CloudSettingsPatch(
@@ -68,6 +71,7 @@ internal data class CloudSettingsPatch(
     val relationship: RelationType? = null,
     val assistantThinkingMode: AssistantThinkingMode? = null,
     val openRouterModelId: String? = null,
+    val asrProvider: AsrProvider? = null,
 ) {
     val isEmpty: Boolean
         get() = speechEngine == null && theme == null && fontSize == null &&
@@ -75,7 +79,7 @@ internal data class CloudSettingsPatch(
                 activeProvider == null &&
                 username == null && phone == null && gender == null &&
                 assistantName == null && assistantLanguage == null && relationship == null &&
-                assistantThinkingMode == null && openRouterModelId == null
+                assistantThinkingMode == null && openRouterModelId == null && asrProvider == null
 
     fun merge(override: CloudSettingsPatch): CloudSettingsPatch = CloudSettingsPatch(
         speechEngine = override.speechEngine ?: speechEngine,
@@ -93,6 +97,7 @@ internal data class CloudSettingsPatch(
         relationship = override.relationship ?: relationship,
         assistantThinkingMode = override.assistantThinkingMode ?: assistantThinkingMode,
         openRouterModelId = override.openRouterModelId ?: openRouterModelId,
+        asrProvider = override.asrProvider ?: asrProvider,
     )
 }
 
@@ -253,7 +258,7 @@ private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolea
             (openRouterModelId == null || openRouterModelId.trim().equals(
                 settings.openRouterModelId.trim(),
                 ignoreCase = true,
-            ))
+            )) && (asrProvider == null || asrProvider == settings.asrProvider)
 
 /**
  * Process-wide store of pending (not yet confirmed by the server) settings
@@ -290,6 +295,7 @@ private object CloudPendingPatchStore {
     private lateinit var apiKeyStorage: ApiKeyStorage
     private lateinit var speechStorage: SpeechSettingsStorage
     private lateinit var assistantStorage: AssistantSettingsStorage
+    private lateinit var asrStorage: AsrProviderSettingsStorage
     private val userSettingsStorage = UserSettingsStorage()
 
     /** Idempotent; the first call wins. Restores previously persisted patches. */
@@ -300,6 +306,7 @@ private object CloudPendingPatchStore {
             apiKeyStorage = ApiKeyStorage(appContext)
             speechStorage = SpeechSettingsStorage(appContext)
             assistantStorage = AssistantSettingsStorage(appContext)
+            asrStorage = AsrProviderSettingsStorage(appContext)
             if (prefs == null) {
                 val p = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 restorePersisted(p)
@@ -365,6 +372,7 @@ private object CloudPendingPatchStore {
             if (patch.openRouterModelId == null) {
                 apiKeyStorage.saveOpenRouterModelId(settings.openRouterModelId, userId)
             }
+            if (patch.asrProvider == null) asrStorage.setProvider(settings.asrProvider)
         }
     }
 
@@ -398,6 +406,7 @@ private object CloudPendingPatchStore {
                 openRouterModelId = current.openRouterModelId.takeUnless {
                     it == patch.openRouterModelId
                 },
+                asrProvider = current.asrProvider.takeUnless { it == patch.asrProvider },
             )
             if (remaining.isEmpty) pending.remove(userId) else pending[userId] = remaining
             persist(userId)
@@ -440,6 +449,7 @@ private data class PendingPatchDto(
     val relationship: String? = null,
     val assistantThinkingMode: String? = null,
     val openRouterModelId: String? = null,
+    val asrProvider: String? = null,
 )
 
 private inline fun <reified E : Enum<E>> String?.toEnumOrNull(): E? =
@@ -461,6 +471,7 @@ private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
     relationship = relationship.toEnumOrNull(),
     assistantThinkingMode = assistantThinkingMode.toEnumOrNull(),
     openRouterModelId = openRouterModelId,
+    asrProvider = asrProvider.toEnumOrNull(),
 )
 
 private fun CloudSettingsPatch.toDto() = PendingPatchDto(
@@ -479,6 +490,7 @@ private fun CloudSettingsPatch.toDto() = PendingPatchDto(
     relationship = relationship?.name,
     assistantThinkingMode = assistantThinkingMode?.name,
     openRouterModelId = openRouterModelId,
+    asrProvider = asrProvider?.name,
 )
 
 /**
@@ -555,7 +567,7 @@ internal class FirebaseCloudSettingsRemoteStore(
         moveLegacy("assistantThinkingMode", "assistants/$userId/thinkingMode", assistantValues, "thinkingMode")
         val appSettings = setOf(
             "speechEngine", "activeProvider", "theme", "fontSize", "storedHistory",
-            "storedMemories", "voiceOutputEnabled", "openRouterModelId",
+            "storedMemories", "voiceOutputEnabled", "openRouterModelId", "asrProvider",
         )
         appSettings.forEach { key ->
             val oldValue = legacy[key] ?: return@forEach
@@ -624,6 +636,7 @@ internal class FirebaseCloudSettingsRemoteStore(
                 ?.trim()
                 ?.takeIf(String::isNotEmpty)
                 ?: AssistantProvider.OPENROUTER.defaultModelId,
+            asrProvider = (data["asrProvider"] as? String).toEnumOrNull() ?: AsrProvider.SYSTEM,
         )
     }
 
@@ -636,6 +649,7 @@ internal class FirebaseCloudSettingsRemoteStore(
         "storedMemories" to storedMemories,
         "voiceOutputEnabled" to voiceOutputEnabled,
         "openRouterModelId" to openRouterModelId,
+        "asrProvider" to asrProvider.name,
     )
 
     override suspend fun update(userId: String, patch: CloudSettingsPatch) {
@@ -651,6 +665,7 @@ internal class FirebaseCloudSettingsRemoteStore(
             patch.storedMemories?.let { settings("storedMemories", it) }
             patch.voiceOutputEnabled?.let { settings("voiceOutputEnabled", it) }
             patch.openRouterModelId?.let { settings("openRouterModelId", it.trim()) }
+            patch.asrProvider?.let { settings("asrProvider", it.name) }
 
             patch.username?.let {
                 put("users/$userId/username", it)
