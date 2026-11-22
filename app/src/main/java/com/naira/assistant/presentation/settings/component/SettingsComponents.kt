@@ -132,13 +132,13 @@ internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         sections.forEach { (section, sectionCategories) ->
-            SettingsSectionTag(section.title, sectionCategories.size)
+            SettingsSectionTag(section.title)
             sectionCategories.forEach { category ->
                 RootCategoryCard(category) { onOpen(category.id) }
             }
         }
         if (ungroupedCategories.isNotEmpty()) {
-            SettingsSectionTag("More Settings", ungroupedCategories.size)
+            SettingsSectionTag("More Settings")
             ungroupedCategories.forEach { category ->
                 RootCategoryCard(category) { onOpen(category.id) }
             }
@@ -148,32 +148,15 @@ internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
 }
 
 @Composable
-private fun SettingsSectionTag(title: String, categoryCount: Int) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.clip(RoundedCornerShape(50))
-                .background(Aqua.copy(alpha = 0.12f))
-                .border(1.dp, Aqua.copy(alpha = 0.22f), RoundedCornerShape(50))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Text(
-                title,
-                color = Aqua,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.25.sp,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            "$categoryCount ${if (categoryCount == 1) "category" else "categories"}",
-            color = TextSoft,
-            fontSize = 11.sp,
-        )
-    }
+private fun SettingsSectionTag(title: String) {
+    Text(
+        title,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
+        color = Aqua,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.25.sp,
+    )
 }
 
 @Composable

@@ -88,11 +88,9 @@ internal data class SettingsSection(
 )
 
 internal val rootSettingsSections = listOf(
-    SettingsSection("Preferences & Profile", listOf("preferences", "profile")),
-    SettingsSection("Assistants & Extensions", listOf("assistant", "extensions")),
-    SettingsSection("Providers & Services", listOf("providers", "integrations", "voice")),
-    SettingsSection("Permissions & Data", listOf("privacy", "data")),
-    SettingsSection("About", listOf("about")),
+    SettingsSection("General Settings", listOf("preferences", "profile", "assistant", "extensions")),
+    SettingsSection("Provider & Services", listOf("providers", "integrations", "voice")),
+    SettingsSection("Additional Settings", listOf("privacy", "data", "about")),
 )
 
 internal val rootCategoryOrder = rootSettingsSections.flatMap { it.categoryIds }
