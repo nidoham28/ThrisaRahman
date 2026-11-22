@@ -5,7 +5,8 @@ data class Character(
     var name: String? = null,
     var type: CharacterType = CharacterType.ANIME,
     var gender: CharacterGender = CharacterGender.CUSTOM,
-    var description: String? = null,
     var personality: List<String> = emptyList(),
-    var interests: List<String> = emptyList()
+    var knowledge: List<String> = emptyList(),
+    var limitations: List<String> = emptyList(),
+    var interests: List<String> = emptyList(),
 )

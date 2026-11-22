@@ -11,7 +11,6 @@ object JervisPrompt {
         name = "Jervis",
         type = CharacterType.REALISTIC,
         gender = CharacterGender.MALE,
-        description = "An intelligent personal AI assistant",
         personality = listOf(
             "Intelligent",
             "Professional",

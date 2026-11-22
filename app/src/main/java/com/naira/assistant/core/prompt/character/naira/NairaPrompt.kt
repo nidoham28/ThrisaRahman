@@ -11,7 +11,6 @@ object NairaPrompt {
         name = "Naira Rahman",
         type = CharacterType.REALISTIC,
         gender = CharacterGender.FEMALE,
-        description = "A teacher",
         personality = listOf(
             "Friendly",
             "Intelligent",

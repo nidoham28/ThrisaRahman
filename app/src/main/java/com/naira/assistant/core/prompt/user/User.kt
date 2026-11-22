@@ -1,5 +1,6 @@
 package com.naira.assistant.core.prompt.user
 
 data class User(
-    var username: String? = null
+    var username: String? = null,
+    var gender: String? = null,
 )

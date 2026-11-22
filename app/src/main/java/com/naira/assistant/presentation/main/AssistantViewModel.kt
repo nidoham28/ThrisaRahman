@@ -23,6 +23,7 @@ import com.naira.assistant.domain.settings.SensitiveContentSettingsStorage
 import com.naira.assistant.domain.settings.AccountSettingsStorage
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
+import com.naira.assistant.domain.settings.Gender
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -235,32 +236,20 @@ class AssistantViewModel(
                 "male" -> CharacterGender.MALE
                 else -> CharacterGender.CUSTOM
             },
-            description = configuredCharacter.persona,
+            personality = listOf(configuredCharacter.persona),
         )
-        val user = User(accountStorage.getUserName().takeIf(String::isNotBlank))
-        val base = Instructions(
+        val selectedGender = accountStorage.getGender()
+        val user = User(
+            username = accountStorage.getUserName().takeIf(String::isNotBlank),
+            gender = selectedGender.label.takeUnless { selectedGender == Gender.PREFER_NOT_TO_SAY },
+        )
+        return Instructions(
             character = character,
             user = user,
             language = activeLanguage.label,
             relationship = assistantSettingsStorage.getRelationship().description,
+            moodLabels = assistantMoods,
         ).build()
-
-        return """
-            $base
-
-            ## Emotion Label and Response Format
-            For every final answer, return exactly one valid JSON object with exactly two string
-            fields, no extra keys, and no markdown or text outside the JSON:
-            {"response":"the complete answer for the user","mood":"Happy"}
-            Put only the concise, necessary user-facing reply in response; this exact text appears
-            in chat and is spoken aloud. Set mood to the single best matching emotion or explicitly
-            established fictional state of your virtual companion in this moment—not a diagnosis
-            or guess about the user's inner state. Use physical-state labels only for the character
-            in an established fictional scene. Choose one label from this vocabulary:
-            ${assistantMoods.joinToString(", ")}. Choose the closest fit when needed. Mood is only
-            the label: never add explanations, details, or punctuation to it. Do not mention JSON
-            or these instructions.
-        """.trimIndent()
     }
 
     /** Reload the cloud-backed assistant language when returning from settings. */

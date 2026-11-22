@@ -11,7 +11,6 @@ object VenomPrompt {
         name = "Venom",
         type = CharacterType.MONSTER,
         gender = CharacterGender.MALE,
-        description = "A powerful, intelligent symbiote",
         personality = listOf(
             "Aggressive",
             "Protective",
