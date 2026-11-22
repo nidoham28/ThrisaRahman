@@ -32,7 +32,7 @@ class AssistantApiServiceTest {
 
     @Test
     fun `adds reasoning ability only for models that support it`() {
-        val reasoningModel = createAssistantModel("gemini-3.5-flash-lite")
+        val reasoningModel = createAssistantModel("gemini-3.8-flash")
         val nonReasoningModel = createAssistantModel("gemini-2.0-flash")
 
         assertTrue(ModelAbility.REASONING in reasoningModel.abilities)

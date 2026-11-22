@@ -80,6 +80,7 @@ private data class AgentRunContext(
     val requestHistory: List<AgentMessage>,
     val provider: AssistantProvider,
     val modelId: String,
+    val customProviderBaseUrl: String?,
     val apiKey: String,
     val reasoningLevel: ReasoningLevel,
     val streaming: Boolean,
@@ -135,6 +136,7 @@ internal fun List<AgentPart.Tool>.toUiToolCalls(): List<UiToolCall> = map { tool
 internal fun resolveAssistantModelId(
     provider: AssistantProvider,
     configuredOpenRouterModelId: String?,
+    configuredCustomModelId: String? = null,
 ): String = when (provider) {
     AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
     AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
@@ -142,6 +144,10 @@ internal fun resolveAssistantModelId(
         ?.takeIf(String::isNotEmpty)
         ?: AssistantApiService.DEFAULT_MODEL_OPENROUTER
     AssistantProvider.GROQ -> provider.defaultModelId
+    AssistantProvider.CUSTOM -> configuredCustomModelId
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: provider.defaultModelId
 }
 
 /** OpenRouter response bodies that mean "the request carried no usable API key". */
@@ -226,6 +232,7 @@ class AssistantViewModel(
     private var activeApiKey: String? = null
     private var activeProvider = AssistantProvider.GEMINI
     private var activeModelId = AssistantApiService.DEFAULT_MODEL_ID
+    private var activeCustomProviderBaseUrl: String? = null
 
     init { refreshSettings() }
 
@@ -248,7 +255,7 @@ class AssistantViewModel(
         val configuredRelationship = assistantSettingsStorage.getRelationship()
         val user = User(
             username = accountStorage.getUserName().takeIf(String::isNotBlank),
-            gender = selectedGender.label.takeUnless { selectedGender == Gender.PREFER_NOT_TO_SAY },
+            gender = selectedGender.label.takeUnless { selectedGender == Gender.UNSPECIFIED },
         )
         return Instructions(
             character = character,
@@ -294,7 +301,23 @@ class AssistantViewModel(
             } else {
                 null
             }
-        activeModelId = resolveAssistantModelId(activeProvider, configuredOpenRouterModelId)
+        val configuredCustomModelId =
+            if (activeProvider == AssistantProvider.CUSTOM) {
+                apiKeyStorage.getCustomProviderModelId()
+            } else {
+                null
+            }
+        activeCustomProviderBaseUrl =
+            if (activeProvider == AssistantProvider.CUSTOM) {
+                apiKeyStorage.getCustomProviderBaseUrl()
+            } else {
+                null
+            }
+        activeModelId = resolveAssistantModelId(
+            activeProvider,
+            configuredOpenRouterModelId,
+            configuredCustomModelId,
+        )
         val savedKey = userId
             ?.let { apiKeyStorage.getApiKey(activeProvider.name, it) }
             .orEmpty()
@@ -430,6 +453,7 @@ class AssistantViewModel(
                         requestHistory = requestHistory,
                         provider = provider,
                         modelId = modelId,
+                        customProviderBaseUrl = activeCustomProviderBaseUrl,
                         apiKey = apiKey,
                         reasoningLevel = reasoningLevel,
                         streaming = streaming,
@@ -486,6 +510,7 @@ class AssistantViewModel(
                         provider = context.provider,
                         modelId = context.modelId,
                         reasoningLevel = context.reasoningLevel,
+                        customProviderBaseUrl = context.customProviderBaseUrl,
                         onProgress = { progress: DelegationProgress ->
                             if (context.requestGeneration == chatGeneration) {
                                 val completed = if (progress.completed) {
@@ -520,6 +545,7 @@ class AssistantViewModel(
             provider = context.provider,
             modelId = context.modelId,
             reasoningLevel = context.reasoningLevel,
+            customProviderBaseUrl = context.customProviderBaseUrl,
         ).collect { event ->
             val assistantMessage = when (event) {
                 is AgentEvent.MessageUpdated -> event.message

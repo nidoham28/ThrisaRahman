@@ -6,13 +6,12 @@ import android.content.Context
 enum class Gender(val id: String, val label: String) {
     MALE("male", "Male"),
     FEMALE("female", "Female"),
-    OTHER("other", "Other"),
-    PREFER_NOT_TO_SAY("prefer_not_to_say", "Prefer not to say");
+    UNSPECIFIED("unspecified", "Unspecified");
 
     companion object {
         fun fromId(raw: String?): Gender =
             entries.firstOrNull { it.id.equals(raw, ignoreCase = true) || it.label.equals(raw, ignoreCase = true) }
-                ?: PREFER_NOT_TO_SAY
+                ?: UNSPECIFIED
     }
 }
 
@@ -83,7 +82,7 @@ class AccountSettingsStorage(context: Context) {
         var username: String = ""
 
         @Volatile
-        var gender: Gender = Gender.PREFER_NOT_TO_SAY
+        var gender: Gender = Gender.UNSPECIFIED
 
         @Volatile
         var phoneNumber: String = ""

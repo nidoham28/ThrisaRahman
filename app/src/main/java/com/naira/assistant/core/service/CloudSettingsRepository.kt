@@ -46,7 +46,7 @@ internal data class CloudSettings(
     val voiceOutputEnabled: Boolean = true,
     val username: String = "",
     val phone: String = "",
-    val gender: Gender = Gender.PREFER_NOT_TO_SAY,
+    val gender: Gender = Gender.UNSPECIFIED,
     val assistantName: String = "Assistant",
     val assistantLanguage: AssistantLanguage = AssistantLanguage.BANGLA,
     val relationship: RelationType = RelationType.DEFAULT,

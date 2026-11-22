@@ -1,9 +1,11 @@
 package com.naira.assistant.domain.settings
 
+import androidx.compose.runtime.mutableStateOf
+
 /** In-memory cache for the non-secret fields synchronized from Firebase. */
 class UserSettingsStorage {
-    fun getTheme(): String = theme
-    fun setTheme(value: String) { theme = value }
+    fun getTheme(): String = theme.value
+    fun setTheme(value: String) { theme.value = value }
 
     fun getFontSize(): String = fontSize
     fun setFontSize(value: String) { fontSize = value }
@@ -18,8 +20,7 @@ class UserSettingsStorage {
     fun setVoiceOutputEnabled(value: Boolean) { voiceOutputEnabled = value }
 
     private companion object {
-        @Volatile
-        var theme: String = "system"
+        val theme = mutableStateOf("system")
 
         @Volatile
         var fontSize: String = "medium"

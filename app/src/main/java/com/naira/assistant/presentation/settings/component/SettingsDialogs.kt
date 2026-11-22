@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.sp
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
-import com.naira.assistant.domain.settings.AsrProvider
 import com.naira.assistant.presentation.settings.model.EditField
 
 
@@ -80,67 +79,6 @@ internal fun ApiKeyDialog(
                 TextButton(onClick = onDismiss) { Text("Cancel", color = TextSoft) }
             }
         }
-    )
-}
-
-@Composable
-internal fun AsrApiKeyDialog(
-    provider: AsrProvider,
-    hasSavedKey: Boolean,
-    onSave: (String) -> Unit,
-    onRemove: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var key by remember(provider) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = RowSurface,
-        title = {
-            Text(
-                "${provider.displayName} API Key",
-                color = TextHigh,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
-        text = {
-            Column {
-                Text(
-                    "Stored encrypted on this device and never synced. Enter a new key to replace the saved key.",
-                    color = TextSoft,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    placeholder = { Text("Enter API key", color = TextSoft.copy(alpha = 0.5f)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(key) },
-                enabled = key.isNotBlank(),
-            ) {
-                Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            Row {
-                if (hasSavedKey) {
-                    TextButton(onClick = onRemove) {
-                        Text("Remove", color = Danger)
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = TextSoft)
-                }
-            }
-        },
     )
 }
 

@@ -1,5 +1,6 @@
 package com.naira.assistant.core.util
 
+import android.content.Context
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.StreamingService
@@ -9,7 +10,7 @@ object NewPipeExtractorInstance {
         NewPipe.getService(ServiceList.YouTube.serviceId)
     }
 
-    fun init() {
-        NewPipe.init(NewPipeDownloaderImpl())
+    fun init(context: Context) {
+        NewPipe.init(NewPipeDownloaderImpl(context.applicationContext))
     }
 }

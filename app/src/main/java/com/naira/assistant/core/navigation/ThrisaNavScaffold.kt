@@ -294,7 +294,11 @@ fun ThrisaNavScaffold(
             SettingsScreen(
                 onBack = {
                     navController.popBackStack()
-                }
+                },
+                onLogout = {
+                    loginStateStorage.saveLoggedIn(false)
+                    navigateToRoot(navController, Routes.Login)
+                },
             )
         }
 

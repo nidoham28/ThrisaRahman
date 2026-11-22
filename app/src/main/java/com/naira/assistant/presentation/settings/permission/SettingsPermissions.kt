@@ -5,6 +5,7 @@ package com.naira.assistant.presentation.settings.permission
 import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationManager
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -31,13 +32,14 @@ internal data class PermissionStatus(
     val hasMedia: Boolean,
     val hasAllMedia: Boolean,
     val hasAllFiles: Boolean,
+    val hasModifySystemSettings: Boolean,
     val hasAccessibility: Boolean
 ) {
-    val totalCount: Int = 8
+    val totalCount: Int = 9
     val grantedCount: Int
         get() = listOf(
             hasMic, hasCalendar, hasNotifications, hasExactAlarm,
-            hasBluetooth, hasAllMedia, hasAllFiles, hasAccessibility
+            hasBluetooth, hasAllMedia, hasAllFiles, hasModifySystemSettings, hasAccessibility
         ).count { it }
     val allGranted: Boolean
         get() = grantedCount == totalCount
@@ -52,6 +54,7 @@ internal class PermissionActions(
     val onRequestBluetooth: () -> Unit,
     val onRequestMedia: () -> Unit,
     val onRequestAllFiles: () -> Unit,
+    val onRequestModifySystemSettings: () -> Unit,
     val onOpenAccessibility: () -> Unit,
     val onOpenAppSettings: () -> Unit,
     val onOpenPermissions: () -> Unit
@@ -102,6 +105,7 @@ internal fun checkPermissions(context: Context): PermissionStatus {
     ) == PackageManager.PERMISSION_GRANTED
     val hasMedia = hasAllMedia || hasSelectedVisualMedia || grantedMediaCount > 0
     val hasAllFiles = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    val hasModifySystemSettings = AndroidSettings.System.canWrite(context)
     val hasAccessibility = ThrisaAccessibilityService.isEnabledInSettings(context)
 
     return PermissionStatus(
@@ -113,6 +117,7 @@ internal fun checkPermissions(context: Context): PermissionStatus {
         hasMedia = hasMedia,
         hasAllMedia = hasAllMedia,
         hasAllFiles = hasAllFiles,
+        hasModifySystemSettings = hasModifySystemSettings,
         hasAccessibility = hasAccessibility
     )
 }
@@ -140,6 +145,40 @@ internal fun openAppSettings(context: Context) {
         context.startActivity(intent)
     }.onFailure {
         Toast.makeText(context, "Unable to open app settings.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+internal fun isDefaultAssistant(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    val roleManager = context.getSystemService(RoleManager::class.java) ?: return false
+    return roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT) &&
+        roleManager.isRoleHeld(RoleManager.ROLE_ASSISTANT)
+}
+
+internal fun openDefaultAssistantSettings(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val roleManager = context.getSystemService(RoleManager::class.java)
+        if (roleManager?.isRoleAvailable(RoleManager.ROLE_ASSISTANT) == true) {
+            runCatching {
+                context.startActivity(roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT))
+            }.onFailure {
+                openDefaultAppsSettings(context)
+            }
+            return
+        }
+    }
+    openDefaultAppsSettings(context)
+}
+
+private fun openDefaultAppsSettings(context: Context) {
+    runCatching {
+        context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+    }.onFailure {
+        Toast.makeText(
+            context,
+            "Open Android Settings > Apps > Default apps > Digital assistant app.",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 }
 
@@ -177,6 +216,19 @@ internal fun openAllFilesAccessSettings(context: Context) {
     }.onFailure {
         Toast.makeText(context, "Unable to open all-files access settings.", Toast.LENGTH_SHORT).show()
     }
+}
+
+internal fun openModifySystemSettings(context: Context) {
+    if (AndroidSettings.System.canWrite(context)) return
+    val intent = Intent(AndroidSettings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+        data = Uri.fromParts("package", context.packageName, null)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
+        .recoverCatching { openAppSettings(context) }
+        .onFailure {
+            Toast.makeText(context, "Unable to open system settings access.", Toast.LENGTH_SHORT).show()
+        }
 }
 
 internal fun openAccessibilitySettings(context: Context) {

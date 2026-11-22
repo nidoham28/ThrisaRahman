@@ -57,18 +57,14 @@ import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.sync.FirebasePaths
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.domain.settings.ApiKeyStorage
-import com.naira.assistant.domain.settings.AsrProvider
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.presentation.settings.component.ApiKeyDialog
-import com.naira.assistant.presentation.settings.component.AsrApiKeyDialog
 import com.naira.assistant.presentation.settings.component.EditFieldDialog
 import com.naira.assistant.presentation.settings.component.NodeCard
 import com.naira.assistant.presentation.settings.component.RootList
-import com.naira.assistant.presentation.settings.component.SettingsAsrStorageErrorCard
 import com.naira.assistant.presentation.settings.component.SettingsCloudSyncErrorCard
 import com.naira.assistant.presentation.settings.component.TopBar
 import com.naira.assistant.presentation.settings.model.EditField
-import com.naira.assistant.presentation.settings.model.SettingsDestination
 import com.naira.assistant.presentation.settings.permission.PermissionActions
 import com.naira.assistant.presentation.settings.permission.checkPermissions
 import com.naira.assistant.presentation.main.WakeWordForegroundService
@@ -78,6 +74,7 @@ import com.naira.assistant.presentation.settings.permission.openAllFilesAccessSe
 import com.naira.assistant.presentation.settings.permission.openAppSettings
 import com.naira.assistant.presentation.settings.permission.openExactAlarmSettings
 import com.naira.assistant.presentation.settings.permission.openNotificationSettings
+import com.naira.assistant.presentation.settings.permission.openModifySystemSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -90,7 +87,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
-    onNavigate: (SettingsDestination) -> Unit = {},
+    onLogout: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val storage = remember { ApiKeyStorage(context.applicationContext) }
@@ -120,7 +117,6 @@ fun SettingsScreen(
     }
     var editingCricketApiKey by rememberSaveable { mutableStateOf(false) }
     var editingWeatherApiKey by rememberSaveable { mutableStateOf(false) }
-    var editingAsrApiKey by rememberSaveable { mutableStateOf(false) }
     var editingFieldName by rememberSaveable { mutableStateOf<String?>(null) }
     val editingField = editingFieldName?.let { name ->
         EditField.entries.firstOrNull { it.name == name }
@@ -128,6 +124,7 @@ fun SettingsScreen(
 
     var awaitingAccessibilityGrant by remember { mutableStateOf(false) }
     var showAccessibilityHelp by remember { mutableStateOf(false) }
+    var showLogoutConfirmation by rememberSaveable { mutableStateOf(false) }
 
     var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
     var backgroundVoiceEnabled by remember {
@@ -263,29 +260,6 @@ fun SettingsScreen(
         }
     }
 
-    fun saveAsrCredential(key: String) {
-        val provider = state.asrProvider
-        if (provider == AsrProvider.SYSTEM) return
-        try {
-            state.saveAsrApiKey(provider, key)
-            editingAsrApiKey = false
-            Toast.makeText(context, "Speech key saved encrypted on this device.", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Toast.makeText(context, e.message ?: "Couldn't save the speech provider key.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun removeAsrCredential() {
-        val provider = state.asrProvider
-        if (provider == AsrProvider.SYSTEM) return
-        try {
-            state.saveAsrApiKey(provider, "")
-            editingAsrApiKey = false
-        } catch (e: Exception) {
-            Toast.makeText(context, e.message ?: "Couldn't remove the speech provider key.", Toast.LENGTH_LONG).show()
-        }
-    }
-
     fun chooseActiveProvider(provider: AssistantProvider) {
         state.saveProvider(provider, userId)
         cloudSettingsRepository.recordChange(CloudSettingsPatch(activeProvider = provider))
@@ -399,6 +373,8 @@ fun SettingsScreen(
                     openExactAlarmSettings(context)
                 } else if (!permissionStatus.hasAllFiles) {
                     openAllFilesAccessSettings(context)
+                } else if (!permissionStatus.hasModifySystemSettings) {
+                    openModifySystemSettings(context)
                 } else if (!permissionStatus.hasAccessibility) {
                     awaitingAccessibilityGrant = true
                     openAccessibilitySettings(context)
@@ -451,6 +427,11 @@ fun SettingsScreen(
                 if (permissionStatus.hasAllFiles) Toast.makeText(context, "All-files access is already granted.", Toast.LENGTH_SHORT).show()
                 else openAllFilesAccessSettings(context)
             },
+            onRequestModifySystemSettings = {
+                if (permissionStatus.hasModifySystemSettings) {
+                    Toast.makeText(context, "Modify-system-settings access is already granted.", Toast.LENGTH_SHORT).show()
+                } else openModifySystemSettings(context)
+            },
             onOpenAccessibility = {
                 if (permissionStatus.hasAccessibility) Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
                 else {
@@ -467,7 +448,6 @@ fun SettingsScreen(
         state = state,
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
-        onNavigate = onNavigate,
         onSaveActiveProvider = ::chooseActiveProvider,
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
@@ -507,16 +487,6 @@ fun SettingsScreen(
             cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
             synchronizeCloudSettings()
         },
-        onSaveAsrProvider = { value ->
-            try {
-                state.saveAsrProvider(value)
-                cloudSettingsRepository.recordChange(CloudSettingsPatch(asrProvider = value))
-                synchronizeCloudSettings()
-            } catch (e: Exception) {
-                Toast.makeText(context, e.message ?: "Couldn't save the speech provider.", Toast.LENGTH_LONG).show()
-            }
-        },
-        onEditAsrApiKey = { editingAsrApiKey = true },
         backgroundVoiceEnabled = backgroundVoiceEnabled,
         onToggleBackgroundVoice = {
             try {
@@ -527,6 +497,12 @@ fun SettingsScreen(
                 Toast.makeText(context, "Grant microphone and notification permissions to control background voice.", Toast.LENGTH_LONG).show()
             }
         },
+        onSaveTheme = { value ->
+            state.saveTheme(value)
+            cloudSettingsRepository.recordChange(CloudSettingsPatch(theme = value))
+            synchronizeCloudSettings()
+        },
+        onLogout = { showLogoutConfirmation = true },
     )
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
@@ -546,22 +522,6 @@ fun SettingsScreen(
         ) {
             cloudSyncError?.let { message ->
                 SettingsCloudSyncErrorCard(message, ::synchronizeCloudSettings)
-            }
-            state.asrSettingsError?.let { message ->
-                SettingsAsrStorageErrorCard(
-                    message = message,
-                    onReset = {
-                        try {
-                            state.clearAsrSettings()
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                e.message ?: "Couldn't clear the saved speech settings.",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    },
-                )
             }
             if (isRoot) {
                 RootList(current.children) { id -> pathIds = pathIds + id }
@@ -607,21 +567,14 @@ fun SettingsScreen(
         )
     }
 
-    if (editingAsrApiKey && state.asrProvider != AsrProvider.SYSTEM) {
-        AsrApiKeyDialog(
-            provider = state.asrProvider,
-            hasSavedKey = state.asrApiKeyConfigured,
-            onSave = ::saveAsrCredential,
-            onRemove = ::removeAsrCredential,
-            onDismiss = { editingAsrApiKey = false },
-        )
-    }
-
     editingField?.let { field ->
         val initialValue = when (field) {
             EditField.USERNAME -> state.username
             EditField.PHONE -> state.phone
+            EditField.CUSTOM_USER_AGENT -> state.customUserAgent
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
+            EditField.CUSTOM_PROVIDER_MODEL -> state.customProviderModelId
+            EditField.CUSTOM_PROVIDER_BASE_URL -> state.customProviderBaseUrl
         }
         EditFieldDialog(
             field = field,
@@ -633,12 +586,21 @@ fun SettingsScreen(
                         CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
                     )
                     synchronizeCloudSettings()
+                } else if (field == EditField.CUSTOM_USER_AGENT) {
+                    state.saveCustomUserAgent(value)
+                } else if (field == EditField.CUSTOM_PROVIDER_MODEL) {
+                    state.saveCustomProviderModelId(value)
+                } else if (field == EditField.CUSTOM_PROVIDER_BASE_URL) {
+                    state.saveCustomProviderBaseUrl(value)
                 } else {
                     state.saveProfileField(field, value)
                     val patch = when (field) {
                         EditField.USERNAME -> CloudSettingsPatch(username = state.username)
                         EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
+                        EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
                         EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
+                        EditField.CUSTOM_PROVIDER_MODEL -> CloudSettingsPatch()
+                        EditField.CUSTOM_PROVIDER_BASE_URL -> CloudSettingsPatch()
                     }
                     cloudSettingsRepository.recordChange(patch)
                     synchronizeCloudSettings()
@@ -674,6 +636,40 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showAccessibilityHelp = false }) { Text("Later") }
             }
+        )
+    }
+
+    if (showLogoutConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmation = false },
+            title = { Text("Log out?") },
+            text = { Text("You will need to sign in again to access your account.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutConfirmation = false
+                        coroutineScope.launch {
+                            authService.logout().fold(
+                                onSuccess = { onLogout() },
+                                onFailure = { error ->
+                                    Toast.makeText(
+                                        context,
+                                        error.message ?: "Couldn't log out. Please try again.",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                },
+                            )
+                        }
+                    },
+                ) {
+                    Text("Log out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
         )
     }
 }

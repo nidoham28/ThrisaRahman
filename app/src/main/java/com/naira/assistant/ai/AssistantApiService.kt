@@ -100,11 +100,12 @@ class AssistantApiService(context: Context) : AutoCloseable {
         provider: AssistantProvider = AssistantProvider.GEMINI,
         modelId: String = provider.defaultModelId,
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
+        customProviderBaseUrl: String? = null,
     ): Flow<AgentEvent> {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
-        val setting = createAssistantProviderSetting(provider, apiKey)
+        val setting = createAssistantProviderSetting(provider, apiKey, customProviderBaseUrl)
         val model = createAssistantModel(modelId)
         val tools = (toolDefinitions + AgentOrchestrator.toolDefinition())
             .map { it.toAgentTool(executeTool) }
@@ -133,6 +134,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         provider: AssistantProvider,
         modelId: String,
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
+        customProviderBaseUrl: String? = null,
         onProgress: suspend (DelegationProgress) -> Unit,
     ): JsonObject {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
@@ -141,7 +143,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
             "At most ${AgentOrchestrator.MAX_SPECIALISTS} specialists may run at once."
         }
 
-        val setting = createAssistantProviderSetting(provider, apiKey)
+        val setting = createAssistantProviderSetting(provider, apiKey, customProviderBaseUrl)
         val selectedProvider = providerManager.getProviderByType(setting)
         val model = createAssistantModel(modelId)
         val context = specialistContext(messages)
@@ -343,6 +345,7 @@ internal fun normalizeOpenRouterAuthorization(request: Request): Request {
 internal fun createAssistantProviderSetting(
     provider: AssistantProvider,
     apiKey: String,
+    customProviderBaseUrl: String? = null,
 ): ProviderSetting = when (provider) {
     AssistantProvider.GEMINI -> ProviderSetting.Google(
         apiKey = apiKey.trim(),
@@ -358,6 +361,18 @@ internal fun createAssistantProviderSetting(
         baseUrl = AssistantApiService.GROQ_BASE_URL,
         useResponseApi = false,
     )
+    AssistantProvider.CUSTOM -> {
+        val baseUrl = customProviderBaseUrl?.trim()?.takeIf(String::isNotEmpty)
+            ?: error("Add an API base URL for your custom provider in Settings → AI Providers.")
+        require(baseUrl.startsWith("https://", ignoreCase = true)) {
+            "The custom provider API URL must use HTTPS."
+        }
+        ProviderSetting.OpenAI(
+            apiKey = apiKey.trim(),
+            baseUrl = baseUrl,
+            useResponseApi = false,
+        )
+    }
 }
 
 internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (this) {

@@ -16,10 +16,6 @@ import com.naira.assistant.presentation.settings.component.icon
 /*  Enums                                                              */
 /* ------------------------------------------------------------------ */
 
-enum class SettingsDestination {
-    APPEARANCE
-}
-
 internal enum class RowStyle { NORMAL, PREMIUM, DANGER }
 
 internal enum class EditField(
@@ -31,10 +27,27 @@ internal enum class EditField(
 ) {
     USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
     PHONE("Phone number", "Your profile phone number.", "+880 1XXXXXXXXX", isPhoneNumber = true),
+    CUSTOM_USER_AGENT(
+        "Custom user-agent",
+        "Used for browser-style video requests. Leave blank to use the default browser identity.",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+    ),
     OPENROUTER_MODEL(
         "OpenRouter model",
         "Enter an OpenRouter model ID. Use openrouter/auto for automatic routing.",
         AssistantProvider.OPENROUTER.defaultModelId,
+        requiresNonBlank = true,
+    ),
+    CUSTOM_PROVIDER_MODEL(
+        "Custom provider model",
+        "Enter the model ID supported by your OpenAI-compatible provider.",
+        "e.g. my-model",
+        requiresNonBlank = true,
+    ),
+    CUSTOM_PROVIDER_BASE_URL(
+        "Custom provider API URL",
+        "Enter the HTTPS base URL for an OpenAI-compatible API.",
+        "https://api.example.com/v1/",
         requiresNonBlank = true,
     ),
 }
@@ -53,7 +66,8 @@ internal sealed interface SettingsNode {
         val subtitle: String? = null,
         val icon: ImageVector,
         val accent: Color = Aqua,
-        val children: List<SettingsNode>
+        val children: List<SettingsNode>,
+        val trailing: (@Composable () -> Unit)? = null,
     ) : SettingsNode
 
     data class Item(
@@ -68,11 +82,17 @@ internal sealed interface SettingsNode {
     ) : SettingsNode
 }
 
-internal val rootCategoryOrder = listOf(
-    "appearance",
-    "account",
-    "assistant",
-    "ai",
-    "permissions",
-    "engine",
+internal data class SettingsSection(
+    val title: String,
+    val categoryIds: List<String>,
 )
+
+internal val rootSettingsSections = listOf(
+    SettingsSection("Preferences & Profile", listOf("preferences", "profile")),
+    SettingsSection("Assistants & Extensions", listOf("assistant", "extensions")),
+    SettingsSection("Providers & Services", listOf("providers", "integrations", "voice")),
+    SettingsSection("Permissions & Data", listOf("privacy", "data")),
+    SettingsSection("About", listOf("about")),
+)
+
+internal val rootCategoryOrder = rootSettingsSections.flatMap { it.categoryIds }

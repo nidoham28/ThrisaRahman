@@ -28,7 +28,7 @@ class AssistantModelSelectionTest {
     @Test
     fun `keeps Gemini model selection independent of OpenRouter`() {
         assertEquals(
-            AssistantApiService.DEFAULT_MODEL_ID,
+            "gemini-3.8-flash",
             resolveAssistantModelId(AssistantProvider.GEMINI, "anthropic/claude-3.7-sonnet"),
         )
     }

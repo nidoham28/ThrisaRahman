@@ -38,7 +38,7 @@ class ThrisaApp : Application(), ViewModelStoreOwner {
         super.onCreate()
         FirebaseApp.initializeApp(this)
         cleanUpLegacySettings()
-        NewPipeExtractorInstance.init()
+        NewPipeExtractorInstance.init(this)
     }
 
     override fun onTerminate() {

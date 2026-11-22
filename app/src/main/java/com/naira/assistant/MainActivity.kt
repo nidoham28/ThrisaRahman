@@ -11,9 +11,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.naira.assistant.core.navigation.ThrisaNavScaffold
 import com.naira.assistant.core.theme.ThrisaTheme
+import com.naira.assistant.domain.settings.UserSettingsStorage
 
 class MainActivity : ComponentActivity() {
 
@@ -32,7 +34,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            ThrisaTheme(darkTheme = isSystemInDarkTheme()) {
+            val themePreference = remember { UserSettingsStorage() }.getTheme()
+            val darkTheme = when (themePreference.lowercase()) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemInDarkTheme()
+            }
+            ThrisaTheme(darkTheme = darkTheme) {
                 Box(
                     Modifier
                         .fillMaxSize()

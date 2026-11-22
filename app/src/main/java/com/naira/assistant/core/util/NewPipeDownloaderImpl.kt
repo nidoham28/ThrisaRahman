@@ -1,5 +1,7 @@
 package com.naira.assistant.core.util
 
+import android.content.Context
+import com.naira.assistant.domain.settings.NetworkSettingsStorage
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -9,7 +11,8 @@ import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import java.io.IOException
 import kotlin.collections.iterator
 
-class NewPipeDownloaderImpl : Downloader() {
+class NewPipeDownloaderImpl(context: Context) : Downloader() {
+    private val networkSettings = NetworkSettingsStorage(context)
     private val client = OkHttpClient.Builder()
         .build()
 
@@ -23,7 +26,6 @@ class NewPipeDownloaderImpl : Downloader() {
         val requestBuilder = okhttp3.Request.Builder()
             .method(httpMethod, dataToSend?.toRequestBody())
             .url(url)
-            .addHeader("User-Agent", USER_AGENT)
 
         for ((headerKey, headerValues) in headers) {
             requestBuilder.removeHeader(headerKey)
@@ -31,6 +33,10 @@ class NewPipeDownloaderImpl : Downloader() {
                 requestBuilder.addHeader(headerKey, headerValue)
             }
         }
+        requestBuilder.header(
+            "User-Agent",
+            networkSettings.getCustomUserAgent().ifBlank { DEFAULT_USER_AGENT },
+        )
         val response = client.newCall(requestBuilder.build()).execute()
 
         return when (response.code) {
@@ -53,7 +59,7 @@ class NewPipeDownloaderImpl : Downloader() {
     }
 
     companion object {
-        private const val USER_AGENT =
+        private const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0"
     }
 }

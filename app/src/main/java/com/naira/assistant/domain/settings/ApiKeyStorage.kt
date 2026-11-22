@@ -11,9 +11,10 @@ enum class AssistantProvider(
     val placeholder: String,
     val defaultModelId: String,
 ) {
-    GEMINI("Gemini", "AIza...", "gemini-3.5-flash-lite"),
+    GEMINI("Gemini", "AIza...", "gemini-3.8-flash"),
     OPENROUTER("OpenRouter", "sk-or-...", "openrouter/auto"),
-    GROQ("Groq", "gsk_...", "openai/gpt-oss-120b");
+    GROQ("Groq", "gsk_...", "openai/gpt-oss-120b"),
+    CUSTOM("Custom Provider", "Enter your API key", "custom-model");
 
     companion object {
         fun fromStorageValue(value: String?): AssistantProvider =
@@ -103,9 +104,25 @@ class ApiKeyStorage(context: Context) {
         }
     }
 
+    fun getCustomProviderModelId(): String =
+        prefs.getString(CUSTOM_PROVIDER_MODEL_KEY, null)?.trim().orEmpty()
+
+    fun saveCustomProviderModelId(modelId: String) {
+        prefs.edit { putString(CUSTOM_PROVIDER_MODEL_KEY, modelId.trim()) }
+    }
+
+    fun getCustomProviderBaseUrl(): String =
+        prefs.getString(CUSTOM_PROVIDER_BASE_URL_KEY, null)?.trim().orEmpty()
+
+    fun saveCustomProviderBaseUrl(baseUrl: String) {
+        prefs.edit { putString(CUSTOM_PROVIDER_BASE_URL_KEY, baseUrl.trim()) }
+    }
+
     private companion object {
         const val PREFS_NAME = "api_key_prefs"
         const val SELECTED_PROVIDER_KEY = "selected_provider"
+        const val CUSTOM_PROVIDER_MODEL_KEY = "custom_provider_model"
+        const val CUSTOM_PROVIDER_BASE_URL_KEY = "custom_provider_base_url"
 
         fun selectedProviderKey(userId: String?) =
             userId?.let { "selected_provider_${it.lowercase(Locale.ROOT)}" }

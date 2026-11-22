@@ -27,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,25 +39,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
-import com.naira.assistant.domain.settings.AsrProvider
-import com.naira.assistant.domain.settings.AssistantCharacter
 import com.naira.assistant.domain.settings.AssistantLanguage
-import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.RelationType
 import com.naira.assistant.presentation.settings.model.RowStyle
 import com.naira.assistant.presentation.settings.model.SettingsNode
+import com.naira.assistant.presentation.settings.model.rootSettingsSections
 
 
 /* ------------------------------------------------------------------ */
@@ -118,39 +118,61 @@ internal fun SettingsCloudSyncErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-internal fun SettingsAsrStorageErrorCard(message: String, onReset: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 14.dp, bottom = 12.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF171C2C))
-            .border(1.dp, CardStroke, RoundedCornerShape(18.dp))
-            .padding(16.dp)
-    ) {
-        Text(
-            "Speech settings unavailable",
-            color = TextHigh,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(message, color = TextSoft, fontSize = 12.sp)
-        TextButton(onClick = onReset, modifier = Modifier.align(Alignment.End)) {
-            Text("Clear speech settings", color = Danger)
+internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
+    val categories = nodes.filterIsInstance<SettingsNode.Category>()
+    val sections = rootSettingsSections.mapNotNull { section ->
+        val sectionCategories = categories.filter { it.id in section.categoryIds }
+        section.takeIf { sectionCategories.isNotEmpty() }?.let { it to sectionCategories }
+    }
+    val groupedCategoryIds = sections.flatMap { (_, sectionCategories) ->
+        sectionCategories.map(SettingsNode.Category::id)
+    }.toSet()
+    val ungroupedCategories = categories.filterNot { it.id in groupedCategoryIds }
+    val rootItems = nodes.filterIsInstance<SettingsNode.Item>()
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        sections.forEach { (section, sectionCategories) ->
+            SettingsSectionTag(section.title, sectionCategories.size)
+            sectionCategories.forEach { category ->
+                RootCategoryCard(category) { onOpen(category.id) }
+            }
         }
+        if (ungroupedCategories.isNotEmpty()) {
+            SettingsSectionTag("More Settings", ungroupedCategories.size)
+            ungroupedCategories.forEach { category ->
+                RootCategoryCard(category) { onOpen(category.id) }
+            }
+        }
+        rootItems.forEach { RootItemCard(it) }
     }
 }
 
 @Composable
-internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        nodes.forEach { node ->
-            when (node) {
-                is SettingsNode.Category -> RootCategoryCard(node) { onOpen(node.id) }
-                is SettingsNode.Item -> RootItemCard(node)
-            }
+private fun SettingsSectionTag(title: String, categoryCount: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.clip(RoundedCornerShape(50))
+                .background(Aqua.copy(alpha = 0.12f))
+                .border(1.dp, Aqua.copy(alpha = 0.22f), RoundedCornerShape(50))
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            Text(
+                title,
+                color = Aqua,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.25.sp,
+            )
         }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$categoryCount ${if (categoryCount == 1) "category" else "categories"}",
+            color = TextSoft,
+            fontSize = 11.sp,
+        )
     }
 }
 
@@ -247,7 +269,8 @@ internal fun CategoryRow(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            TrailingChevron()
+            category.trailing?.invoke()
+            if (category.trailing == null) TrailingChevron()
         }
         if (!isLast) Divider(startPadding = 58.dp)
     }
@@ -332,6 +355,54 @@ internal fun TrailingValue(text: String) {
 }
 
 @Composable
+internal fun TrailingSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = Modifier.semantics { contentDescription = label },
+    )
+}
+
+@Composable
+internal fun ThemeDropdownTrailing(selected: String, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when (selected.lowercase()) {
+        "light" -> "Light"
+        "dark" -> "Dark"
+        else -> "System"
+    }
+
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(selectedLabel, color = Aqua, fontSize = 13.sp)
+            Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Choose theme",
+                tint = TextSoft,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun TrailingBadge(text: String, accent: Color = Aqua) {
     Box(
         Modifier.clip(RoundedCornerShape(6.dp))
@@ -339,215 +410,6 @@ internal fun TrailingBadge(text: String, accent: Color = Aqua) {
             .padding(horizontal = 7.dp, vertical = 2.dp)
     ) {
         Text(text, color = accent, fontSize = 9.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-internal fun ProviderDropdownTrailing(
-    selected: AssistantProvider,
-    onSelect: (AssistantProvider) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            Text(selected.displayName, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null,
-                tint = TextSoft, modifier = Modifier.size(18.dp))
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(RowSurface)
-                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-        ) {
-            AssistantProvider.entries.forEach { provider ->
-                val isSelected = provider == selected
-                DropdownMenuItem(
-                    text = {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                provider.displayName,
-                                color = TextHigh,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                            Spacer(Modifier.weight(1f))
-                            if (isSelected) {
-                                Icon(Icons.Outlined.Check, contentDescription = null, tint = Aqua,
-                                    modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    },
-                    onClick = { onSelect(provider); expanded = false }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun SpeechEngineDropdown(
-    selected: SpeechEngine,
-    onSelect: (SpeechEngine) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            Text(selected.label, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose speech engine",
-                tint = TextSoft, modifier = Modifier.size(18.dp))
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(RowSurface)
-                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-        ) {
-            SpeechEngine.entries.forEach { engine ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    engine.label, color = TextHigh, fontSize = 14.sp,
-                                    fontWeight = if (engine == selected) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                                if (engine == selected) {
-                                    Spacer(Modifier.width(10.dp))
-                                    Icon(Icons.Outlined.Check, contentDescription = null,
-                                        tint = Aqua, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                            Text(engine.description, color = TextSoft, fontSize = 11.sp)
-                        }
-                    },
-                    onClick = { onSelect(engine); expanded = false }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun AsrProviderDropdown(
-    selected: AsrProvider,
-    onSelect: (AsrProvider) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            Text(selected.displayName, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                Icons.Outlined.KeyboardArrowDown,
-                contentDescription = "Choose speech recognition provider",
-                tint = TextSoft,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(RowSurface)
-                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-        ) {
-            AsrProvider.entries.forEach { provider ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                provider.displayName,
-                                color = TextHigh,
-                                fontSize = 14.sp,
-                                fontWeight = if (provider == selected) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                            if (provider == selected) {
-                                Spacer(Modifier.width(10.dp))
-                                Icon(
-                                    Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    tint = Aqua,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onSelect(provider)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun AssistantNameDropdown(selected: String, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        ) {
-            Text(selected, color = Aqua, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Choose assistant name",
-                tint = TextSoft, modifier = Modifier.size(18.dp))
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(RowSurface)
-                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-        ) {
-            AssistantCharacter.entries.forEach { character ->
-                val name = character.displayName
-                val isSelected = name == selected
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    name, color = TextHigh, fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                                Spacer(Modifier.weight(1f))
-                                if (isSelected) {
-                                    Icon(Icons.Outlined.Check, contentDescription = null,
-                                        tint = Aqua, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                            Text(
-                                "${character.gender} · ${character.voice.geminiVoiceName} voice",
-                                color = TextSoft, fontSize = 11.sp
-                            )
-                        }
-                    },
-                    onClick = { onSelect(name); expanded = false },
-                )
-            }
-        }
     }
 }
 

@@ -10,13 +10,13 @@ import androidx.compose.runtime.setValue
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.settings.AccountSettingsStorage
 import com.naira.assistant.domain.settings.ApiKeyStorage
-import com.naira.assistant.domain.settings.AsrProvider
-import com.naira.assistant.domain.settings.AsrProviderSettingsStorage
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.Gender
+import com.naira.assistant.domain.settings.InterfaceSettingsStorage
+import com.naira.assistant.domain.settings.NetworkSettingsStorage
 import com.naira.assistant.domain.settings.RelationType
 import com.naira.assistant.domain.settings.SpeechSettingsStorage
 import com.naira.assistant.domain.settings.UserSettingsStorage
@@ -46,6 +46,9 @@ internal class SettingsState(
     private var groqKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.GROQ.name, it) }.orEmpty()
     )
+    private var customProviderKey by mutableStateOf(
+        currentUserId()?.let { storage.getApiKey(AssistantProvider.CUSTOM.name, it) }.orEmpty()
+    )
     var cricketApiKey by mutableStateOf(
         currentUserId()?.let(storage::getCricApiKey).orEmpty()
     )
@@ -53,10 +56,13 @@ internal class SettingsState(
         currentUserId()?.let(storage::getWeatherApiKey).orEmpty()
     )
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
+    var customProviderModelId by mutableStateOf(storage.getCustomProviderModelId())
+    var customProviderBaseUrl by mutableStateOf(storage.getCustomProviderBaseUrl())
     private val speechStorage = SpeechSettingsStorage(context)
-    private val asrSettingsStorage = AsrProviderSettingsStorage(context.applicationContext)
     private val accountStorage = AccountSettingsStorage(context)
     private val assistantStorage = AssistantSettingsStorage(context)
+    private val interfaceSettingsStorage = InterfaceSettingsStorage(context)
+    private val networkSettingsStorage = NetworkSettingsStorage(context)
     var assistantLanguage by mutableStateOf(assistantStorage.getLanguage())
     var assistantThinkingMode by mutableStateOf(assistantStorage.getThinkingMode())
     var sensitiveToolAccessEnabled by mutableStateOf(assistantStorage.getSensitiveToolAccessEnabled())
@@ -65,25 +71,20 @@ internal class SettingsState(
     var gender by mutableStateOf(accountStorage.getGender())
     var assistantName by mutableStateOf(assistantStorage.getName())
     var relationship by mutableStateOf(assistantStorage.getRelationship())
+    var showAssistantAvatar by mutableStateOf(interfaceSettingsStorage.showAssistantAvatar())
+    var codeWordWrap by mutableStateOf(interfaceSettingsStorage.codeWordWrap())
+    var collapseCodeBlocks by mutableStateOf(interfaceSettingsStorage.collapseCodeBlocks())
+    var showCodeLineNumbers by mutableStateOf(interfaceSettingsStorage.showCodeLineNumbers())
+    var customUserAgent by mutableStateOf(networkSettingsStorage.getCustomUserAgent())
     var speechEngine by mutableStateOf(
         runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
     )
-    var asrProvider by mutableStateOf(AsrProvider.SYSTEM)
-        private set
-    var asrApiKeyConfigured by mutableStateOf(false)
-        private set
-    var asrSettingsError by mutableStateOf<String?>(null)
-        private set
-
-    init {
-        refreshAsrSettings()
-    }
-
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
         AssistantProvider.GROQ -> groqKey
+        AssistantProvider.CUSTOM -> customProviderKey
     }
 
     fun saveApiKey(provider: AssistantProvider, value: String) {
@@ -92,6 +93,7 @@ internal class SettingsState(
             AssistantProvider.GEMINI -> geminiKey = cleaned
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
             AssistantProvider.GROQ -> groqKey = cleaned
+            AssistantProvider.CUSTOM -> customProviderKey = cleaned
         }
         currentUserId()?.let { storage.saveApiKey(provider.name, it, cleaned) }
     }
@@ -119,39 +121,31 @@ internal class SettingsState(
         openRouterModelId = cleaned
     }
 
+    fun saveCustomProviderModelId(value: String) {
+        val cleaned = value.trim()
+        storage.saveCustomProviderModelId(cleaned)
+        customProviderModelId = cleaned
+    }
+
+    fun saveCustomProviderBaseUrl(value: String) {
+        val cleaned = value.trim()
+        storage.saveCustomProviderBaseUrl(cleaned)
+        customProviderBaseUrl = cleaned
+    }
+
     fun saveSpeechEngine(engine: SpeechEngine) {
         speechEngine = engine
         speechStorage.setEngine(engine.name)
     }
 
-    fun saveAsrProvider(provider: AsrProvider) {
-        asrSettingsStorage.setProvider(provider)
-        asrProvider = provider
-        refreshAsrSettings()
-    }
-
-    fun saveAsrApiKey(provider: AsrProvider, key: String) {
-        asrSettingsStorage.setApiKey(provider, key)
-        refreshAsrSettings()
-    }
-
-    fun clearAsrSettings() {
-        asrSettingsStorage.clear()
-        asrSettingsError = null
-        asrProvider = AsrProvider.SYSTEM
-        asrApiKeyConfigured = false
-    }
-
-    private fun refreshAsrSettings() {
-        try {
-            val settings = asrSettingsStorage.load()
-            asrProvider = settings.provider
-            asrApiKeyConfigured = settings.apiKey(settings.provider) != null
-            asrSettingsError = null
-        } catch (e: Exception) {
-            asrSettingsError =
-                e.message ?: "Saved speech recognition settings are unavailable."
+    fun saveTheme(value: String) {
+        val selected = when (value.lowercase()) {
+            "light" -> "light"
+            "dark" -> "dark"
+            else -> "system"
         }
+        userSettingsStorage.setTheme(selected)
+        theme = selected
     }
 
     fun saveAssistantLanguage(value: AssistantLanguage) {
@@ -167,6 +161,32 @@ internal class SettingsState(
     fun saveSensitiveToolAccess(enabled: Boolean) {
         sensitiveToolAccessEnabled = enabled
         assistantStorage.setSensitiveToolAccessEnabled(enabled)
+    }
+
+    fun saveShowAssistantAvatar(enabled: Boolean) {
+        showAssistantAvatar = enabled
+        interfaceSettingsStorage.setShowAssistantAvatar(enabled)
+    }
+
+    fun saveCodeWordWrap(enabled: Boolean) {
+        codeWordWrap = enabled
+        interfaceSettingsStorage.setCodeWordWrap(enabled)
+    }
+
+    fun saveCollapseCodeBlocks(enabled: Boolean) {
+        collapseCodeBlocks = enabled
+        interfaceSettingsStorage.setCollapseCodeBlocks(enabled)
+    }
+
+    fun saveShowCodeLineNumbers(enabled: Boolean) {
+        showCodeLineNumbers = enabled
+        interfaceSettingsStorage.setShowCodeLineNumbers(enabled)
+    }
+
+    fun saveCustomUserAgent(value: String) {
+        val cleaned = value.trim()
+        networkSettingsStorage.setCustomUserAgent(cleaned)
+        customUserAgent = cleaned
     }
 
     fun saveProfileField(field: EditField, value: String) {
@@ -209,6 +229,5 @@ internal class SettingsState(
         relationship = assistantStorage.getRelationship()
         theme = userSettingsStorage.getTheme()
         fontSize = userSettingsStorage.getFontSize()
-        refreshAsrSettings()
     }
 }
