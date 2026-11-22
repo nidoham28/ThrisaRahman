@@ -84,6 +84,28 @@ class WakeWordForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    /** Starts/stops a user-requested conversation without changing service monitoring. */
+    fun onMicButtonTap() {
+        val voiceConversation = conversation ?: return
+        monitorJob?.cancel()
+        monitorJob = null
+        val conversationWasActive = voiceConversation.state.value.isActive
+        conversationActive = true
+        voiceConversation.onMicTap()
+        serviceScope.launch {
+            if (!conversationWasActive) {
+                voiceConversation.state.first { it.isActive || it is VoiceState.Error }
+            }
+            voiceConversation.state.first { it == VoiceState.Idle || it is VoiceState.Error }
+            conversationActive = false
+            if (_isMonitoring.value) {
+                voiceConversation.close()
+                if (conversation === voiceConversation) conversation = null
+                startMonitoring()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()

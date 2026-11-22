@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +32,26 @@ fun rememberVoiceSession(): VoiceSession {
     val context = LocalContext.current
     var service by remember { mutableStateOf<WakeWordForegroundService?>(null) }
     val fallbackState = remember { MutableStateFlow<VoiceState>(VoiceState.Idle) }
-    val fallbackMonitoring = remember { MutableStateFlow(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        if (hasRequiredVoicePermissions(context)) {
+            try { WakeWordForegroundService.start(context) }
+            catch (_: Exception) { fallbackState.value = VoiceState.Error("Couldn't start background voice.") }
+        } else if (granted.isNotEmpty()) {
+            fallbackState.value = VoiceState.Error("Microphone and notification permissions are needed for background voice.")
+        }
+    }
+
+    LaunchedEffect(context) {
+        val preferences = context.getSharedPreferences("background_voice", android.content.Context.MODE_PRIVATE)
+        if (!preferences.getBoolean("first_open_prompted", false)) {
+            preferences.edit().putBoolean("first_open_prompted", true).apply()
+            val missing = missingVoicePermissions(context)
+            if (missing.isEmpty()) WakeWordForegroundService.start(context)
+            else permissionLauncher.launch(missing)
+        }
+    }
 
     DisposableEffect(context) {
         val connection = object : ServiceConnection {
@@ -58,9 +78,7 @@ fun rememberVoiceSession(): VoiceSession {
     }
 
     val stateFlow = service?.state ?: fallbackState
-    val monitoringFlow = service?.isMonitoring ?: fallbackMonitoring
     val state by stateFlow.collectAsStateWithLifecycle()
-    val monitoring by monitoringFlow.collectAsStateWithLifecycle()
 
     fun reportError(message: String) {
         val errorState = VoiceState.Error(message)
@@ -69,38 +87,10 @@ fun rememberVoiceSession(): VoiceSession {
         else fallbackState.value = errorState
     }
 
-    fun startService() {
-        fallbackState.value = VoiceState.Preparing
-        try {
-            WakeWordForegroundService.start(context)
-        } catch (error: Exception) {
-            reportError(error.message ?: "Couldn't start background voice.")
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
-        if (hasRequiredVoicePermissions(context)) {
-            startService()
-        } else {
-            reportError("Microphone and notification permissions are needed for background voice.")
-        }
-    }
-
     return VoiceSession(state) {
-        if (monitoring) {
-            try {
-                WakeWordForegroundService.stop(context)
-                fallbackState.value = VoiceState.Idle
-            } catch (error: Exception) {
-                reportError(error.message ?: "Couldn't stop background voice.")
-            }
-        } else {
-            val missingPermissions = missingVoicePermissions(context)
-            if (missingPermissions.isEmpty()) startService()
-            else permissionLauncher.launch(missingPermissions)
-        }
+        val activeService = service
+        if (activeService != null) activeService.onMicButtonTap()
+        else reportError("Background voice isn't running. Enable it in Settings first.")
     }
 }
 

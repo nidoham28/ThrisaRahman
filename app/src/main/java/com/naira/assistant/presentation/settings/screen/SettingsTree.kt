@@ -81,6 +81,8 @@ internal fun buildTree(
     onSaveSpeechEngine: (SpeechEngine) -> Unit,
     onSaveAsrProvider: (AsrProvider) -> Unit,
     onEditAsrApiKey: () -> Unit,
+    backgroundVoiceEnabled: Boolean,
+    onToggleBackgroundVoice: () -> Unit,
 ): SettingsNode.Category = SettingsNode.Category(
     id = "root",
     title = "Settings",
@@ -282,6 +284,14 @@ internal fun buildTree(
             icon = Icons.Outlined.Security,
             accent = Aqua,
             children = listOfNotNull(
+                SettingsNode.Item(
+                    id = "background-voice",
+                    title = "Background wake word",
+                    subtitle = if (backgroundVoiceEnabled) "Wake word listening is enabled" else "Wake word listening is paused",
+                    icon = Icons.Outlined.SettingsVoice,
+                    onClick = onToggleBackgroundVoice,
+                    trailing = { TrailingBadge(if (backgroundVoiceEnabled) "ON · STOP" else "OFF · START", if (backgroundVoiceEnabled) Success else Aqua) },
+                ),
                 if (!permissionStatus.allGranted) {
                     SettingsNode.Item(
                         id = "grant-all-permissions", title = "Request all permissions",

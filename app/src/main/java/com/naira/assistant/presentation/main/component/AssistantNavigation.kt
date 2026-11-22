@@ -89,12 +89,11 @@ fun AssistantNavigation(
                     if (index == MicIndex) {
                         MicButton(
                             modifier = Modifier.weight(1f),
-                            active = voice.isActive,
+                            active = voice !is VoiceState.WakeWordListening && voice.isActive,
                             accessibilityDescription = when {
-                                voice is VoiceState.WakeWordListening -> "Stop background Hey Assistant"
                                 voice is VoiceState.Listening && voice.requiresManualTurnEnd -> "Finish speaking"
-                                voice.isActive -> "Stop background voice session"
-                                else -> "Enable background Hey Assistant"
+                                voice.isActive && voice !is VoiceState.WakeWordListening -> "Stop speech conversation"
+                                else -> "Start speech conversation"
                             },
                             onClick = onMicClick,
                         )

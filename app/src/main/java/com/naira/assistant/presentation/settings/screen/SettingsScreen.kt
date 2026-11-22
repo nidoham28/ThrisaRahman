@@ -66,6 +66,7 @@ import com.naira.assistant.presentation.settings.model.EditField
 import com.naira.assistant.presentation.settings.model.SettingsDestination
 import com.naira.assistant.presentation.settings.permission.PermissionActions
 import com.naira.assistant.presentation.settings.permission.checkPermissions
+import com.naira.assistant.presentation.main.WakeWordForegroundService
 import com.naira.assistant.presentation.settings.permission.mediaReadPermissions
 import com.naira.assistant.presentation.settings.permission.openAccessibilitySettings
 import com.naira.assistant.presentation.settings.permission.openAllFilesAccessSettings
@@ -124,13 +125,22 @@ fun SettingsScreen(
     var showAccessibilityHelp by remember { mutableStateOf(false) }
 
     var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
+    var backgroundVoiceEnabled by remember {
+        mutableStateOf(context.getSharedPreferences("background_voice", android.content.Context.MODE_PRIVATE)
+            .getBoolean("monitoring_requested", false))
+    }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
     val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refreshPermissionsTrigger++
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshPermissionsTrigger++
+                backgroundVoiceEnabled = context.getSharedPreferences(
+                    "background_voice", android.content.Context.MODE_PRIVATE,
+                ).getBoolean("monitoring_requested", false)
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -439,6 +449,16 @@ fun SettingsScreen(
             }
         },
         onEditAsrApiKey = { editingAsrApiKey = true },
+        backgroundVoiceEnabled = backgroundVoiceEnabled,
+        onToggleBackgroundVoice = {
+            try {
+                if (backgroundVoiceEnabled) WakeWordForegroundService.stop(context)
+                else WakeWordForegroundService.start(context)
+                backgroundVoiceEnabled = !backgroundVoiceEnabled
+            } catch (_: Exception) {
+                Toast.makeText(context, "Grant microphone and notification permissions to control background voice.", Toast.LENGTH_LONG).show()
+            }
+        },
     )
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
