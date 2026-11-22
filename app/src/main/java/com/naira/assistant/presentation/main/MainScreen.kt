@@ -264,6 +264,7 @@ fun MainScreen(
                             busyStatus = chatBusyStatus,
                             onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
                             onOpenImage = { imageUri -> openImage(context, imageUri) },
+                            onClearChat = viewModel::newChat,
                             onStop = viewModel::cancelCurrent,
                         )
                         Tab.MEMORIES -> MemoriesPage()

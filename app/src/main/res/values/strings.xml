@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Naira Assistant</string>
+    <string name="accessibility_service_label">Thrisa AI Screen Access</string>
+    <string name="accessibility_service_description">When enabled by you, Thrisa can read visible screen text, capture screenshots, and perform requested taps, clicks, and scrolling to assist with tasks. Screen content may include private information.</string>
 </resources>

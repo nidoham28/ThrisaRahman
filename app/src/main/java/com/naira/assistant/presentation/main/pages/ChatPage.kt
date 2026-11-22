@@ -47,9 +47,11 @@ import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -57,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -140,10 +143,12 @@ fun ChatPage(
     busyStatus: String?,
     onSend: (String, String?) -> Unit,
     onOpenImage: (String) -> Unit,
+    onClearChat: () -> Unit,
     modifier: Modifier = Modifier,
     onStop: (() -> Unit)? = null,
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
+    var showClearChatConfirmation by rememberSaveable { mutableStateOf(false) }
 
     // `remember` (not `rememberSaveable`): the URI string itself survives
     // process death, but the transient `content://` grant that
@@ -216,6 +221,25 @@ fun ChatPage(
                 .imePadding()
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
         ) {
+            if (messages.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { showClearChatConfirmation = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = Aqua,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Clear chat", color = Aqua)
+                    }
+                }
+            }
+
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (messages.isEmpty()) {
                     EmptyChatState(
@@ -326,6 +350,29 @@ fun ChatPage(
                 }
             }
         }
+    }
+
+    if (showClearChatConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearChatConfirmation = false },
+            title = { Text("Clear this conversation?") },
+            text = { Text("This removes the messages in the current chat and starts a new conversation.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearChatConfirmation = false
+                        onClearChat()
+                    },
+                ) {
+                    Text("Clear chat")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearChatConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 

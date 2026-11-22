@@ -414,7 +414,9 @@ internal fun buildTree(
                 ),
                 SettingsNode.Item(
                     id = "permission-accessibility", title = "Screen access (Accessibility)",
-                    subtitle = "Let the AI see your screen and execute tasks for you",
+                    subtitle = if (permissionStatus.hasAccessibility)
+                        "Enabled in Android Accessibility settings"
+                    else "Open Android Settings → Accessibility to enable screen reading and controls",
                     icon = Icons.Outlined.TouchApp,
                     onClick = permissionActions.onOpenAccessibility,
                     trailing = {
