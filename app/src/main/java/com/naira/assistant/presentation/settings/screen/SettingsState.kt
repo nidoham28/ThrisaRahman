@@ -56,6 +56,10 @@ internal class SettingsState(
         currentUserId()?.let(storage::getWeatherApiKey).orEmpty()
     )
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
+    var geminiModelId by mutableStateOf(storage.getGeminiModelId(currentUserId()))
+    var openRouterBaseUrl by mutableStateOf(storage.getOpenRouterBaseUrl(currentUserId()))
+    var groqModelId by mutableStateOf(storage.getGroqModelId(currentUserId()))
+    var groqBaseUrl by mutableStateOf(storage.getGroqBaseUrl(currentUserId()))
     var customProviderModelId by mutableStateOf(storage.getCustomProviderModelId())
     var customProviderBaseUrl by mutableStateOf(storage.getCustomProviderBaseUrl())
     private val speechStorage = SpeechSettingsStorage(context)
@@ -119,6 +123,30 @@ internal class SettingsState(
         val cleaned = value.trim()
         storage.saveOpenRouterModelId(cleaned, currentUserId())
         openRouterModelId = cleaned
+    }
+
+    fun saveGeminiModelId(value: String) {
+        val cleaned = value.trim()
+        storage.saveGeminiModelId(cleaned, currentUserId())
+        geminiModelId = cleaned
+    }
+
+    fun saveOpenRouterBaseUrl(value: String) {
+        val cleaned = value.trim()
+        storage.saveOpenRouterBaseUrl(cleaned, currentUserId())
+        openRouterBaseUrl = cleaned
+    }
+
+    fun saveGroqModelId(value: String) {
+        val cleaned = value.trim()
+        storage.saveGroqModelId(cleaned, currentUserId())
+        groqModelId = cleaned
+    }
+
+    fun saveGroqBaseUrl(value: String) {
+        val cleaned = value.trim()
+        storage.saveGroqBaseUrl(cleaned, currentUserId())
+        groqBaseUrl = cleaned
     }
 
     fun saveCustomProviderModelId(value: String) {
@@ -217,7 +245,11 @@ internal class SettingsState(
     fun refreshCloudBackedSettings() {
         val userId = currentUserId()
         selectedProvider = storage.getSelectedProvider(userId)
+        geminiModelId = storage.getGeminiModelId(userId)
         openRouterModelId = storage.getOpenRouterModelId(userId)
+        openRouterBaseUrl = storage.getOpenRouterBaseUrl(userId)
+        groqModelId = storage.getGroqModelId(userId)
+        groqBaseUrl = storage.getGroqBaseUrl(userId)
         assistantLanguage = assistantStorage.getLanguage()
         assistantThinkingMode = assistantStorage.getThinkingMode()
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }

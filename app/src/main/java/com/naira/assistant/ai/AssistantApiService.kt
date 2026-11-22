@@ -1,6 +1,7 @@
 package com.naira.assistant.ai
 
 import android.content.Context
+import java.net.URI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -100,12 +101,12 @@ class AssistantApiService(context: Context) : AutoCloseable {
         provider: AssistantProvider = AssistantProvider.GEMINI,
         modelId: String = provider.defaultModelId,
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
-        customProviderBaseUrl: String? = null,
+        providerBaseUrl: String? = null,
     ): Flow<AgentEvent> {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
-        val setting = createAssistantProviderSetting(provider, apiKey, customProviderBaseUrl)
+        val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
         val model = createAssistantModel(modelId)
         val tools = (toolDefinitions + AgentOrchestrator.toolDefinition())
             .map { it.toAgentTool(executeTool) }
@@ -134,7 +135,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         provider: AssistantProvider,
         modelId: String,
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
-        customProviderBaseUrl: String? = null,
+        providerBaseUrl: String? = null,
         onProgress: suspend (DelegationProgress) -> Unit,
     ): JsonObject {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
@@ -143,7 +144,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
             "At most ${AgentOrchestrator.MAX_SPECIALISTS} specialists may run at once."
         }
 
-        val setting = createAssistantProviderSetting(provider, apiKey, customProviderBaseUrl)
+        val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
         val selectedProvider = providerManager.getProviderByType(setting)
         val model = createAssistantModel(modelId)
         val context = specialistContext(messages)
@@ -295,7 +296,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
     }
 
     companion object {
-        const val DEFAULT_MODEL_ID = "gemini-3.5-flash-lite"
+        val DEFAULT_MODEL_ID = AssistantProvider.GEMINI.defaultModelId
         const val DEFAULT_MODEL_OPENROUTER = "openrouter/free"
         const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
         const val GROQ_BASE_URL = "https://api.groq.com/openai/v1"
@@ -345,7 +346,7 @@ internal fun normalizeOpenRouterAuthorization(request: Request): Request {
 internal fun createAssistantProviderSetting(
     provider: AssistantProvider,
     apiKey: String,
-    customProviderBaseUrl: String? = null,
+    providerBaseUrl: String? = null,
 ): ProviderSetting = when (provider) {
     AssistantProvider.GEMINI -> ProviderSetting.Google(
         apiKey = apiKey.trim(),
@@ -353,26 +354,39 @@ internal fun createAssistantProviderSetting(
     )
     AssistantProvider.OPENROUTER -> ProviderSetting.OpenAI(
         apiKey = sanitizeOpenRouterApiKey(apiKey),
-        baseUrl = AssistantApiService.OPENROUTER_BASE_URL,
+        baseUrl = providerBaseUrl.toHttpsBaseUrlOrDefault(
+            AssistantApiService.OPENROUTER_BASE_URL,
+            "OpenRouter",
+        ),
         useResponseApi = false,
     )
     AssistantProvider.GROQ -> ProviderSetting.OpenAI(
         apiKey = apiKey.trim(),
-        baseUrl = AssistantApiService.GROQ_BASE_URL,
+        baseUrl = providerBaseUrl.toHttpsBaseUrlOrDefault(
+            AssistantApiService.GROQ_BASE_URL,
+            "Groq",
+        ),
         useResponseApi = false,
     )
     AssistantProvider.CUSTOM -> {
-        val baseUrl = customProviderBaseUrl?.trim()?.takeIf(String::isNotEmpty)
+        val baseUrl = providerBaseUrl?.trim()?.takeIf(String::isNotEmpty)
             ?: error("Add an API base URL for your custom provider in Settings → AI Providers.")
-        require(baseUrl.startsWith("https://", ignoreCase = true)) {
-            "The custom provider API URL must use HTTPS."
-        }
+        val validatedBaseUrl = baseUrl.toHttpsBaseUrlOrDefault(baseUrl, "Custom provider")
         ProviderSetting.OpenAI(
             apiKey = apiKey.trim(),
-            baseUrl = baseUrl,
+            baseUrl = validatedBaseUrl,
             useResponseApi = false,
         )
     }
+}
+
+private fun String?.toHttpsBaseUrlOrDefault(default: String, providerName: String): String {
+    val baseUrl = this?.trim()?.takeIf(String::isNotEmpty) ?: return default
+    val uri = runCatching { URI(baseUrl) }.getOrNull()
+    require(uri?.scheme.equals("https", ignoreCase = true) && !uri?.host.isNullOrBlank()) {
+        "$providerName API base URL must be a valid HTTPS URL."
+    }
+    return baseUrl
 }
 
 internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (this) {

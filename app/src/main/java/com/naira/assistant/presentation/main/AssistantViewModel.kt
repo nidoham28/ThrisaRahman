@@ -80,7 +80,7 @@ private data class AgentRunContext(
     val requestHistory: List<AgentMessage>,
     val provider: AssistantProvider,
     val modelId: String,
-    val customProviderBaseUrl: String?,
+    val providerBaseUrl: String?,
     val apiKey: String,
     val reasoningLevel: ReasoningLevel,
     val streaming: Boolean,
@@ -137,13 +137,21 @@ internal fun resolveAssistantModelId(
     provider: AssistantProvider,
     configuredOpenRouterModelId: String?,
     configuredCustomModelId: String? = null,
+    configuredGeminiModelId: String? = null,
+    configuredGroqModelId: String? = null,
 ): String = when (provider) {
-    AssistantProvider.GEMINI -> AssistantApiService.DEFAULT_MODEL_ID
+    AssistantProvider.GEMINI -> configuredGeminiModelId
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: AssistantApiService.DEFAULT_MODEL_ID
     AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
         ?.trim()
         ?.takeIf(String::isNotEmpty)
         ?: AssistantApiService.DEFAULT_MODEL_OPENROUTER
-    AssistantProvider.GROQ -> provider.defaultModelId
+    AssistantProvider.GROQ -> configuredGroqModelId
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: provider.defaultModelId
     AssistantProvider.CUSTOM -> configuredCustomModelId
         ?.trim()
         ?.takeIf(String::isNotEmpty)
@@ -232,7 +240,7 @@ class AssistantViewModel(
     private var activeApiKey: String? = null
     private var activeProvider = AssistantProvider.GEMINI
     private var activeModelId = AssistantApiService.DEFAULT_MODEL_ID
-    private var activeCustomProviderBaseUrl: String? = null
+    private var activeProviderBaseUrl: String? = null
 
     init { refreshSettings() }
 
@@ -295,9 +303,21 @@ class AssistantViewModel(
 
     private fun loadLocalProviderSettings(userId: String?) {
         activeProvider = apiKeyStorage.getSelectedProvider(userId)
+        val configuredGeminiModelId =
+            if (activeProvider == AssistantProvider.GEMINI) {
+                apiKeyStorage.getGeminiModelId(userId)
+            } else {
+                null
+            }
         val configuredOpenRouterModelId =
             if (activeProvider == AssistantProvider.OPENROUTER) {
                 apiKeyStorage.getOpenRouterModelId(userId)
+            } else {
+                null
+            }
+        val configuredGroqModelId =
+            if (activeProvider == AssistantProvider.GROQ) {
+                apiKeyStorage.getGroqModelId(userId)
             } else {
                 null
             }
@@ -307,16 +327,18 @@ class AssistantViewModel(
             } else {
                 null
             }
-        activeCustomProviderBaseUrl =
-            if (activeProvider == AssistantProvider.CUSTOM) {
-                apiKeyStorage.getCustomProviderBaseUrl()
-            } else {
-                null
-            }
+        activeProviderBaseUrl = when (activeProvider) {
+            AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterBaseUrl(userId)
+            AssistantProvider.GROQ -> apiKeyStorage.getGroqBaseUrl(userId)
+            AssistantProvider.CUSTOM -> apiKeyStorage.getCustomProviderBaseUrl()
+            AssistantProvider.GEMINI -> null
+        }
         activeModelId = resolveAssistantModelId(
             activeProvider,
             configuredOpenRouterModelId,
             configuredCustomModelId,
+            configuredGeminiModelId,
+            configuredGroqModelId,
         )
         val savedKey = userId
             ?.let { apiKeyStorage.getApiKey(activeProvider.name, it) }
@@ -453,7 +475,7 @@ class AssistantViewModel(
                         requestHistory = requestHistory,
                         provider = provider,
                         modelId = modelId,
-                        customProviderBaseUrl = activeCustomProviderBaseUrl,
+                        providerBaseUrl = activeProviderBaseUrl,
                         apiKey = apiKey,
                         reasoningLevel = reasoningLevel,
                         streaming = streaming,
@@ -510,7 +532,7 @@ class AssistantViewModel(
                         provider = context.provider,
                         modelId = context.modelId,
                         reasoningLevel = context.reasoningLevel,
-                        customProviderBaseUrl = context.customProviderBaseUrl,
+                        providerBaseUrl = context.providerBaseUrl,
                         onProgress = { progress: DelegationProgress ->
                             if (context.requestGeneration == chatGeneration) {
                                 val completed = if (progress.completed) {
@@ -545,7 +567,7 @@ class AssistantViewModel(
             provider = context.provider,
             modelId = context.modelId,
             reasoningLevel = context.reasoningLevel,
-            customProviderBaseUrl = context.customProviderBaseUrl,
+            providerBaseUrl = context.providerBaseUrl,
         ).collect { event ->
             val assistantMessage = when (event) {
                 is AgentEvent.MessageUpdated -> event.message

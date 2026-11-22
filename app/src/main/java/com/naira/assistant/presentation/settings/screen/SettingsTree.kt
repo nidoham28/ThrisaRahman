@@ -358,17 +358,45 @@ internal fun buildTree(
                             SettingsNode.Item(
                                 id = "model-${provider.name.lowercase()}",
                                 title = "Model selection",
-                                subtitle = if (provider == AssistantProvider.OPENROUTER) {
-                                    state.openRouterModelId
-                                } else {
-                                    provider.defaultModelId
+                                subtitle = when (provider) {
+                                    AssistantProvider.GEMINI -> state.geminiModelId
+                                    AssistantProvider.OPENROUTER -> state.openRouterModelId
+                                    AssistantProvider.GROQ -> state.groqModelId
+                                    AssistantProvider.CUSTOM -> provider.defaultModelId
                                 },
                                 icon = Icons.Outlined.AutoAwesome,
-                                onClick = if (provider == AssistantProvider.OPENROUTER) {
-                                    { onEditField(EditField.OPENROUTER_MODEL) }
-                                } else null,
+                                onClick = when (provider) {
+                                    AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
+                                    AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
+                                    AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
+                                    AssistantProvider.CUSTOM -> null
+                                },
                             )
                         )
+                        if (provider == AssistantProvider.OPENROUTER || provider == AssistantProvider.GROQ) {
+                            val baseUrl = if (provider == AssistantProvider.OPENROUTER) {
+                                state.openRouterBaseUrl
+                            } else {
+                                state.groqBaseUrl
+                            }
+                            add(
+                                SettingsNode.Item(
+                                    id = "api-url-${provider.name.lowercase()}",
+                                    title = "API base URL",
+                                    subtitle = baseUrl.ifBlank { "Default · tap to override" },
+                                    icon = Icons.Outlined.Settings,
+                                    onClick = {
+                                        onEditField(
+                                            if (provider == AssistantProvider.OPENROUTER) {
+                                                EditField.OPENROUTER_BASE_URL
+                                            } else {
+                                                EditField.GROQ_BASE_URL
+                                            },
+                                        )
+                                    },
+                                ),
+                            )
+                        }
                         add(
                             SettingsNode.Item(
                                 id = "reasoning-${provider.name.lowercase()}",

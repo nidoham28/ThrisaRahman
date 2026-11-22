@@ -572,7 +572,11 @@ fun SettingsScreen(
             EditField.USERNAME -> state.username
             EditField.PHONE -> state.phone
             EditField.CUSTOM_USER_AGENT -> state.customUserAgent
+            EditField.GEMINI_MODEL -> state.geminiModelId
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
+            EditField.OPENROUTER_BASE_URL -> state.openRouterBaseUrl
+            EditField.GROQ_MODEL -> state.groqModelId
+            EditField.GROQ_BASE_URL -> state.groqBaseUrl
             EditField.CUSTOM_PROVIDER_MODEL -> state.customProviderModelId
             EditField.CUSTOM_PROVIDER_BASE_URL -> state.customProviderBaseUrl
         }
@@ -580,12 +584,20 @@ fun SettingsScreen(
             field = field,
             initialValue = initialValue,
             onSave = { value: String ->
-                if (field == EditField.OPENROUTER_MODEL) {
+                if (field == EditField.GEMINI_MODEL) {
+                    state.saveGeminiModelId(value)
+                } else if (field == EditField.OPENROUTER_MODEL) {
                     state.saveOpenRouterModelId(value)
                     cloudSettingsRepository.recordChange(
                         CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
                     )
                     synchronizeCloudSettings()
+                } else if (field == EditField.OPENROUTER_BASE_URL) {
+                    state.saveOpenRouterBaseUrl(value)
+                } else if (field == EditField.GROQ_MODEL) {
+                    state.saveGroqModelId(value)
+                } else if (field == EditField.GROQ_BASE_URL) {
+                    state.saveGroqBaseUrl(value)
                 } else if (field == EditField.CUSTOM_USER_AGENT) {
                     state.saveCustomUserAgent(value)
                 } else if (field == EditField.CUSTOM_PROVIDER_MODEL) {
@@ -598,7 +610,11 @@ fun SettingsScreen(
                         EditField.USERNAME -> CloudSettingsPatch(username = state.username)
                         EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
                         EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
+                        EditField.GEMINI_MODEL -> CloudSettingsPatch()
                         EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
+                        EditField.OPENROUTER_BASE_URL -> CloudSettingsPatch()
+                        EditField.GROQ_MODEL -> CloudSettingsPatch()
+                        EditField.GROQ_BASE_URL -> CloudSettingsPatch()
                         EditField.CUSTOM_PROVIDER_MODEL -> CloudSettingsPatch()
                         EditField.CUSTOM_PROVIDER_BASE_URL -> CloudSettingsPatch()
                     }

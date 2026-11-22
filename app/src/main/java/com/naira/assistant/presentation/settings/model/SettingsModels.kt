@@ -32,11 +32,33 @@ internal enum class EditField(
         "Used for browser-style video requests. Leave blank to use the default browser identity.",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
     ),
+    GEMINI_MODEL(
+        "Gemini model ID",
+        "Enter a Gemini API model ID, for example gemini-3.5-flash-lite.",
+        AssistantProvider.GEMINI.defaultModelId,
+        requiresNonBlank = true,
+    ),
     OPENROUTER_MODEL(
         "OpenRouter model",
         "Enter an OpenRouter model ID. Use openrouter/auto for automatic routing.",
         AssistantProvider.OPENROUTER.defaultModelId,
         requiresNonBlank = true,
+    ),
+    OPENROUTER_BASE_URL(
+        "OpenRouter API base URL",
+        "Optional HTTPS endpoint override. Leave blank to use OpenRouter's default API URL.",
+        "https://openrouter.ai/api/v1",
+    ),
+    GROQ_MODEL(
+        "Groq model ID",
+        "Enter a model ID supported by GroqCloud.",
+        AssistantProvider.GROQ.defaultModelId,
+        requiresNonBlank = true,
+    ),
+    GROQ_BASE_URL(
+        "Groq API base URL",
+        "Optional HTTPS endpoint override. Leave blank to use Groq's default API URL.",
+        "https://api.groq.com/openai/v1",
     ),
     CUSTOM_PROVIDER_MODEL(
         "Custom provider model",
