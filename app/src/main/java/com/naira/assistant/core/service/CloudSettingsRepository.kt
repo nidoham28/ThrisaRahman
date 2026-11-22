@@ -468,7 +468,9 @@ private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
     gender = gender.toEnumOrNull(),
     assistantName = assistantName,
     assistantLanguage = assistantLanguage.toEnumOrNull(),
-    relationship = relationship.toEnumOrNull(),
+    relationship = relationship
+        ?.takeIf(RelationType::isValidId)
+        ?.let(RelationType::fromId),
     assistantThinkingMode = assistantThinkingMode.toEnumOrNull(),
     openRouterModelId = openRouterModelId,
     asrProvider = asrProvider.toEnumOrNull(),

@@ -3,11 +3,9 @@
 package com.naira.assistant.presentation.settings.component
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.naira.assistant.core.theme.Aqua
@@ -37,9 +35,7 @@ internal fun RelationType.accent(): Color = when {
 }
 
 internal fun RelationType.icon(): ImageVector = when (this) {
-    RelationType.STRANGER -> Icons.Outlined.Person
-    RelationType.FRIEND -> Icons.Outlined.People
-    RelationType.CLOSE_FRIEND -> Icons.Outlined.ChatBubbleOutline
-    RelationType.GIRLFRIEND -> Icons.Outlined.FavoriteBorder
-    RelationType.WIFE -> Icons.Outlined.Favorite
+    RelationType.FRIENDS -> Icons.Outlined.People
+    RelationType.ROMANCE -> Icons.Outlined.FavoriteBorder
+    RelationType.INTIMATE -> Icons.Outlined.Favorite
 }

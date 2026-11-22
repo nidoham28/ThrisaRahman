@@ -11,6 +11,7 @@ import com.naira.assistant.ai.toReasoningLevel
 import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.character.util.Character
 import com.naira.assistant.core.prompt.character.util.CharacterGender
+import com.naira.assistant.core.prompt.character.util.CharacterType
 import com.naira.assistant.core.prompt.user.User
 import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
@@ -21,6 +22,7 @@ import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.SensitiveContentSettingsStorage
 import com.naira.assistant.domain.settings.AccountSettingsStorage
+import com.naira.assistant.domain.settings.AssistantCharacter
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.Gender
@@ -231,6 +233,10 @@ class AssistantViewModel(
         val configuredCharacter = assistantSettingsStorage.getCharacter()
         val character = Character(
             name = assistantSettingsStorage.getName(),
+            type = when (configuredCharacter) {
+                AssistantCharacter.VENOM -> CharacterType.MONSTER
+                AssistantCharacter.NAIRA, AssistantCharacter.JERVIS -> CharacterType.REALISTIC
+            },
             gender = when (configuredCharacter.gender.lowercase()) {
                 "female" -> CharacterGender.FEMALE
                 "male" -> CharacterGender.MALE
@@ -239,6 +245,7 @@ class AssistantViewModel(
             personality = listOf(configuredCharacter.persona),
         )
         val selectedGender = accountStorage.getGender()
+        val configuredRelationship = assistantSettingsStorage.getRelationship()
         val user = User(
             username = accountStorage.getUserName().takeIf(String::isNotBlank),
             gender = selectedGender.label.takeUnless { selectedGender == Gender.PREFER_NOT_TO_SAY },
@@ -247,7 +254,7 @@ class AssistantViewModel(
             character = character,
             user = user,
             language = activeLanguage.label,
-            relationship = assistantSettingsStorage.getRelationship().description,
+            relationship = "${configuredRelationship.title}: ${configuredRelationship.description}",
             moodLabels = assistantMoods,
         ).build()
     }

@@ -120,7 +120,7 @@ internal fun RelationTypeSheet(
                 Column {
                     Text("Relationship", color = TextHigh, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(2.dp))
-                    Text("Who she is to you — from stranger to wife", color = TextSoft, fontSize = 12.sp)
+                    Text("Choose the assistant's relationship style", color = TextSoft, fontSize = 12.sp)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -133,7 +133,7 @@ internal fun RelationTypeSheet(
                     RelationOptionCard(type, isSelected = type == pending) { pending = type }
                 }
                 Spacer(Modifier.height(6.dp))
-                SectionLabel("ROMANTIC BOND")
+                SectionLabel("ROMANTIC AND INTIMATE")
                 romantic.forEach { type ->
                     RelationOptionCard(type, isSelected = type == pending) { pending = type }
                 }

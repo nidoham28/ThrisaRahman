@@ -8,10 +8,9 @@ enum class CharacterVoice(
     val geminiVoiceName: String,
     val localVoiceGender: AssistantVoice,
 ) {
-    THRISA("Leda", AssistantVoice.FEMALE),
     NAIRA("Aoede", AssistantVoice.FEMALE),
-    HRIDOY("Puck", AssistantVoice.MALE),
-    RAIHAN("Charon", AssistantVoice.MALE),
+    VENOM("Puck", AssistantVoice.MALE),
+    JERVIS("Charon", AssistantVoice.MALE),
 }
 
 enum class AssistantThinkingMode(
@@ -34,18 +33,15 @@ enum class AssistantCharacter(
     val voice: CharacterVoice,
     val persona: String,
 ) {
-    THRISA("Thrisa", "female", CharacterVoice.THRISA,
-        "You are Thrisa: warm, expressive, emotionally perceptive. Read the user's mood before " +
-                "advising, use gentle humor and affectionate encouragement, and stay candid."),
     NAIRA("Naira", "female", CharacterVoice.NAIRA,
         "You are Naira: thoughtful, curious, quietly confident. Use precise, simple words, ask one " +
                 "insightful question when it helps, and bring a calm, creative perspective."),
-    HRIDOY("Hridoy", "male", CharacterVoice.HRIDOY,
-        "You are Hridoy: upbeat, direct, resourceful. Give practical ideas in energetic, natural " +
-                "language, with light humor and never pushy."),
-    RAIHAN("Raihan", "male", CharacterVoice.RAIHAN,
-        "You are Raihan: composed, observant, wryly funny. Be measured and reassuring, point out " +
-                "useful details, and give clear perspective in a casual tone.");
+    VENOM("Venom", "male", CharacterVoice.VENOM,
+        "You are Venom: aggressive, protective, sarcastic, and fearless. Use dark humor while " +
+                "remaining loyal and protective."),
+    JERVIS("Jervis", "male", CharacterVoice.JERVIS,
+        "You are Jervis: an intelligent personal AI assistant. Be professional, calm, logical, " +
+                "polite, witty, and helpful.");
 
     fun buildInstructions(language: AssistantLanguage, relationship: RelationType): String =
         "$persona Always reply in ${language.name}. " +
@@ -55,7 +51,12 @@ enum class AssistantCharacter(
 
     companion object {
         fun fromName(name: String): AssistantCharacter =
-            entries.firstOrNull { it.displayName.equals(name.trim(), ignoreCase = true) } ?: THRISA
+            when (name.trim().lowercase()) {
+                "thrisa" -> NAIRA
+                "hridoy", "raihan" -> JERVIS
+                else -> entries.firstOrNull { it.displayName.equals(name.trim(), ignoreCase = true) }
+                    ?: NAIRA
+            }
     }
 }
 
@@ -64,10 +65,15 @@ class AssistantSettingsStorage(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getName(): String = prefs.getString(KEY_NAME, DEFAULT_NAME) ?: DEFAULT_NAME
+    fun getName(): String {
+        val savedName = prefs.getString(KEY_NAME, DEFAULT_NAME) ?: DEFAULT_NAME
+        val selectedName = AssistantCharacter.fromName(savedName).displayName
+        if (savedName != selectedName) setName(selectedName)
+        return selectedName
+    }
 
     fun setName(value: String) {
-        prefs.edit { putString(KEY_NAME, value.trim()) }
+        prefs.edit { putString(KEY_NAME, AssistantCharacter.fromName(value).displayName) }
     }
 
     fun getCharacter(): AssistantCharacter = AssistantCharacter.fromName(getName())
@@ -75,7 +81,8 @@ class AssistantSettingsStorage(context: Context) {
     fun getLanguage(): AssistantLanguage = readEnum(KEY_LANGUAGE, AssistantLanguage.BANGLA)
     fun setLanguage(value: AssistantLanguage) = writeEnum(KEY_LANGUAGE, value)
 
-    fun getRelationship(): RelationType = readEnum(KEY_RELATIONSHIP, RelationType.STRANGER)
+    fun getRelationship(): RelationType =
+        RelationType.fromId(prefs.getString(KEY_RELATIONSHIP, null))
     fun setRelationship(value: RelationType) = writeEnum(KEY_RELATIONSHIP, value)
 
     fun getThinkingMode(): AssistantThinkingMode =
@@ -105,6 +112,6 @@ class AssistantSettingsStorage(context: Context) {
         const val KEY_RELATIONSHIP = "relationship"
         const val KEY_THINKING_MODE = "thinking_mode"
         const val KEY_SENSITIVE_TOOL_ACCESS = "sensitive_tool_access"
-        const val DEFAULT_NAME = "Assistant"
+        const val DEFAULT_NAME = "Naira"
     }
 }
