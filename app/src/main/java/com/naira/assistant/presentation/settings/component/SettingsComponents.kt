@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,10 +76,10 @@ internal fun TopBar(title: String, onBack: () -> Unit) {
                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
                 tint = TextHigh,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(26.dp),
             )
         }
-        Text(title, color = TextHigh, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = TextHigh, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -130,20 +131,20 @@ internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
     val ungroupedCategories = categories.filterNot { it.id in groupedCategoryIds }
     val rootItems = nodes.filterIsInstance<SettingsNode.Item>()
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         sections.forEach { (section, sectionCategories) ->
-            SettingsSectionTag(section.title)
-            sectionCategories.forEach { category ->
-                RootCategoryCard(category) { onOpen(category.id) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsSectionTag(section.title)
+                NodeCard(sectionCategories, onOpen)
             }
         }
         if (ungroupedCategories.isNotEmpty()) {
-            SettingsSectionTag("More Settings")
-            ungroupedCategories.forEach { category ->
-                RootCategoryCard(category) { onOpen(category.id) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsSectionTag("More Settings")
+                NodeCard(ungroupedCategories, onOpen)
             }
         }
-        rootItems.forEach { RootItemCard(it) }
+        if (rootItems.isNotEmpty()) NodeCard(rootItems, onOpen)
     }
 }
 
@@ -151,55 +152,14 @@ internal fun RootList(nodes: List<SettingsNode>, onOpen: (String) -> Unit) {
 private fun SettingsSectionTag(title: String) {
     Text(
         title,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp),
-        color = Aqua,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.25.sp,
-    )
-}
-
-@Composable
-internal fun RootCategoryCard(category: SettingsNode.Category, onClick: () -> Unit) {
-    Row(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(RowSurface)
-            .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                .background(category.accent.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(category.icon, contentDescription = null, tint = category.accent, modifier = Modifier.size(18.dp))
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(category.title, color = TextHigh, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            category.subtitle?.let {
-                Spacer(Modifier.height(2.dp))
-                Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        TrailingChevron()
-    }
-}
-
-@Composable
-internal fun RootItemCard(item: SettingsNode.Item) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(RowSurface)
-            .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-    ) {
-        ItemRow(item, isLast = true)
-    }
+            .semantics { heading() },
+        color = Aqua,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.2.sp,
+    )
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,11 +204,11 @@ internal fun CategoryRow(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(category.title, color = TextHigh, fontSize = 15.sp,
+                Text(category.title, color = TextHigh, fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 category.subtitle?.let {
                     Spacer(Modifier.height(2.dp))
-                    Text(it, color = TextSoft, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(it, color = TextSoft, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.width(8.dp))
@@ -289,12 +249,12 @@ internal fun ItemRow(item: SettingsNode.Item, isLast: Boolean) {
                 Spacer(Modifier.width(14.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text(item.title, color = titleColor, fontSize = 15.sp,
+                Text(item.title, color = titleColor, fontSize = 17.sp,
                     fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 item.subtitle?.let {
                     Spacer(Modifier.height(2.dp))
                     Text(it, color = TextSoft.copy(alpha = if (item.enabled) 1f else 0.45f),
-                        fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.width(12.dp))
