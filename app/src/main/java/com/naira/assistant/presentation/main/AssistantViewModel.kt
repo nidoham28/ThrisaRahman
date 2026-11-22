@@ -9,7 +9,9 @@ import com.naira.assistant.ai.DelegationProgress
 import com.naira.assistant.ai.AssistantApiService
 import com.naira.assistant.ai.toReasoningLevel
 import com.naira.assistant.core.prompt.Instructions
-import com.naira.assistant.core.prompt.InstructionsConfig
+import com.naira.assistant.core.prompt.character.util.Character
+import com.naira.assistant.core.prompt.character.util.CharacterGender
+import com.naira.assistant.core.prompt.user.User
 import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
@@ -225,19 +227,24 @@ class AssistantViewModel(
     init { refreshSettings() }
 
     private fun buildInstructions(): String {
-        val character = assistantSettingsStorage.getCharacter()
-        val defaultPersona = InstructionsConfig().persona
+        val configuredCharacter = assistantSettingsStorage.getCharacter()
+        val character = Character(
+            name = assistantSettingsStorage.getName(),
+            gender = when (configuredCharacter.gender.lowercase()) {
+                "female" -> CharacterGender.FEMALE
+                "male" -> CharacterGender.MALE
+                else -> CharacterGender.CUSTOM
+            },
+            description = configuredCharacter.persona,
+        )
+        val user = User(accountStorage.getUserName().takeIf(String::isNotBlank))
         val base = Instructions(
-            InstructionsConfig(
-                assistantName = assistantSettingsStorage.getName(),
-                persona = character.persona.ifBlank { defaultPersona },
-                sex = character.gender.ifBlank { "female" },
-                language = activeLanguage.code,
-                relationship = assistantSettingsStorage.getRelationship().id,
-                username = accountStorage.getUserName(),
-                userContext = "",
-            )
+            character = character,
+            user = user,
+            language = activeLanguage.label,
+            relationship = assistantSettingsStorage.getRelationship().description,
         ).build()
+
         return """
             $base
 
