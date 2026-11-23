@@ -21,35 +21,55 @@ internal object AssistantSettingsPage : CategoryNameUi() {
         SettingsNode.Category(
             id = "assistant",
             title = "Assistant",
-            subtitle = "Set-up personalized assistent (agents)",
+            subtitle = "Customize your assistant's behavior and personality.",
             //subtitle = "${AssistantCharacter.fromName(state.assistantName).displayName} is active",
             icon = Icons.Outlined.AutoAwesome,
             children = buildList {
                 AssistantCharacter.entries.forEach { character ->
-                    val isActive = character.displayName.equals(state.assistantName, ignoreCase = true)
-                    add(SettingsNode.Category(
-                        id = "assistant-${character.name.lowercase()}",
-                        title = character.displayName,
-                        subtitle = "${character.gender} · ${character.voice.geminiVoiceName} voice",
-                        icon = Icons.Outlined.SmartToy,
-                        trailing = {
-                            TrailingSwitch(
-                                label = "Select ${character.displayName}",
-                                checked = isActive,
-                                onCheckedChange = { checked ->
-                                    if (checked) onSaveAssistantName(character.displayName)
-                                },
-                            )
-                        },
-                        children = listOf(
-                            SettingsNode.Item("${character.name.lowercase()}-language", "Language", state.assistantLanguage.name.lowercase().replaceFirstChar(Char::uppercase), Icons.Outlined.Language,
-                                trailing = { LanguageDropdown(state.assistantLanguage, onSaveLanguage) }),
-                            SettingsNode.Item("${character.name.lowercase()}-style", "Interaction style", state.relationship.name.lowercase().replaceFirstChar(Char::uppercase), Icons.Outlined.People,
-                                trailing = { RelationTypeDropdown(state.relationship, onSaveRelationship) }),
-                        ),
-                    ))
+                    val isActive =
+                        character.displayName.equals(state.assistantName, ignoreCase = true)
+                    add(
+                        SettingsNode.Category(
+                            id = "assistant-${character.name.lowercase()}",
+                            title = character.displayName,
+                            subtitle = "${character.gender} · ${character.voice.geminiVoiceName} voice",
+                            icon = Icons.Outlined.SmartToy,
+                            trailing = {
+                                TrailingSwitch(
+                                    label = "Select ${character.displayName}",
+                                    checked = isActive,
+                                    onCheckedChange = { checked ->
+                                        if (checked) onSaveAssistantName(character.displayName)
+                                    },
+                                )
+                            },
+                            children = listOf(
+                                SettingsNode.Item(
+                                    "${character.name.lowercase()}-language",
+                                    "Language",
+                                    "Choose your preferred language."
+                                        .replaceFirstChar(Char::uppercase),
+                                    Icons.Outlined.Language,
+                                    trailing = {
+                                        LanguageDropdown(
+                                            state.assistantLanguage, onSaveLanguage
+                                        )
+                                    }),
+                                SettingsNode.Item(
+                                    "${character.name.lowercase()}-style",
+                                    "Relationship style",
+                                    "Choose your preferred interaction style."
+                                        .replaceFirstChar(Char::uppercase),
+                                    Icons.Outlined.People,
+                                    trailing = {
+                                        RelationTypeDropdown(
+                                            state.relationship, onSaveRelationship
+                                        )
+                                    }),
+                            ),
+                        )
+                    )
                 }
-            }
-        )
+            })
     }
 }

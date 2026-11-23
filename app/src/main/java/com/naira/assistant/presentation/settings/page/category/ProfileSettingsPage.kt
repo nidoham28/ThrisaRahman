@@ -31,7 +31,7 @@ internal object ProfileSettingsPage : CategoryNameUi() {
                     onClick = { onEditField(EditField.PHONE) },
                 ),
                 SettingsNode.Item(
-                    id = "gender", title = "Gender", subtitle = "Profile information",
+                    id = "gender", title = "Gender", subtitle = "Select your gender.",
                     icon = Icons.Outlined.Person,
                     trailing = { GenderDropdown(state.gender, onSaveGender) },
                 ),
