@@ -47,9 +47,9 @@ internal object PreferencesSettingsPage : CategoryNameUi() {
                     icon = Icons.Outlined.Settings,
                     children = listOf(
                         SettingsNode.Item(
-                            id = "User Agent",
-                            title = "Customize your browser identity.",
-                            subtitle = state.customUserAgent.ifBlank { "Use the default browser identity" },
+                            id = "custom-user-agent",
+                            title = "User Agent",
+                            subtitle = state.customUserAgent.ifBlank { "Customize your browser identity." },
                             icon = Icons.Outlined.Settings,
                             onClick = { onEditField(EditField.CUSTOM_USER_AGENT) },
                             trailing = {
