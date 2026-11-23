@@ -23,8 +23,8 @@ internal object AdvancedSettingsPage : CategoryNameUi() {
             children = listOf(
                 SettingsNode.Item(
                     id = "wakeup-word-service",
-                    title = "Wakeup word service",
-                    subtitle = "Listen for the wake word while the app is in the background",
+                    title = "Wakeup Word Service",
+                    subtitle = "Configure voice activation settings.",
                     icon = Icons.Outlined.Mic,
                     onClick = {
                         context.onToggleWakeWordService(!state.wakeWordServiceEnabled)
@@ -36,18 +36,6 @@ internal object AdvancedSettingsPage : CategoryNameUi() {
                             onCheckedChange = context.onToggleWakeWordService,
                         )
                     },
-                ),
-                SettingsNode.Item(
-                    id = "wake-word-model",
-                    title = "Wake-word model",
-                    subtitle = "Sherpa-ONNX Zipformer2 · runs on-device",
-                    icon = Icons.Outlined.SettingsVoice,
-                ),
-                SettingsNode.Item(
-                    id = "wake-word-phrases",
-                    title = "Wake phrases",
-                    subtitle = "Hey Assistant · Hello Assistant · Wakeup Assistant",
-                    icon = Icons.Outlined.Mic,
                 ),
                 SettingsNode.Item(
                     id = "wake-word-sensitivity",

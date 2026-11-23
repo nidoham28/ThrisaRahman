@@ -12,19 +12,19 @@ import com.naira.assistant.presentation.settings.page.SettingsPageContext
 internal object DataManagementSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         SettingsNode.Category(
-            id = "data", title = "Data Backup", subtitle = "Backup and restore app data",
+            id = "data", title = "Storage", subtitle = "Backup and restore app data",
             icon = Icons.Outlined.FolderOpen,
             children = listOf(
                 SettingsNode.Item(
-                    id = "export-data", title = "Export Data (Backup)",
-                    subtitle = "Not available yet",
+                    id = "export-data", title = "Export",
+                    subtitle = "Create a backup of your data.",
                     icon = Icons.Outlined.FolderOpen,
                     onClick = { onDataManagementAction("Export Data (Backup)") },
                     trailing = { TrailingChevron() },
                 ),
                 SettingsNode.Item(
-                    id = "import-data", title = "Import Data (Restore)",
-                    subtitle = "Not available yet",
+                    id = "import-data", title = "Import",
+                    subtitle = "Restore data from a backup.",
                     icon = Icons.Outlined.FolderOpen,
                     onClick = { onDataManagementAction("Import Data (Restore)") },
                     trailing = { TrailingChevron() },
