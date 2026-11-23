@@ -31,7 +31,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                     SettingsNode.Category(
                         id = "provider-${provider.name.lowercase()}",
                         title = provider.displayName,
-                        subtitle = "Configure $provider API settings.",
+                        subtitle = "Configure assistant API settings.",
                         icon = Icons.Outlined.VpnKey,
                         trailing = {
                             TrailingSwitch(
@@ -62,30 +62,6 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                     },
                                 )
                             )
-                            if (provider == AssistantProvider.OPENROUTER || provider == AssistantProvider.GROQ) {
-                                val baseUrl = if (provider == AssistantProvider.OPENROUTER) {
-                                    state.openRouterBaseUrl
-                                } else {
-                                    state.groqBaseUrl
-                                }
-                                add(
-                                    SettingsNode.Item(
-                                        id = "api-url-${provider.name.lowercase()}",
-                                        title = "API base URL",
-                                        subtitle = baseUrl.ifBlank { "Default · tap to override" },
-                                        icon = Icons.Outlined.Settings,
-                                        onClick = {
-                                            onEditField(
-                                                if (provider == AssistantProvider.OPENROUTER) {
-                                                    EditField.OPENROUTER_BASE_URL
-                                                } else {
-                                                    EditField.GROQ_BASE_URL
-                                                },
-                                            )
-                                        },
-                                    ),
-                                )
-                            }
                             add(
                                 SettingsNode.Item(
                                     id = "reasoning-${provider.name.lowercase()}",
