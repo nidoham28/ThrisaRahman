@@ -92,6 +92,7 @@ internal class SettingsState(
     var wakeWordDetectionThreshold by mutableStateOf(
         backgroundWakeWordSettingsStorage.getDetectionThreshold(),
     )
+    var wakeWordServiceEnabled by mutableStateOf(backgroundWakeWordSettingsStorage.isServiceEnabled())
     var geminiTtsModel by mutableStateOf(speechStorage.getGeminiTtsModel())
     var geminiTtsVoice by mutableStateOf(speechStorage.getGeminiTtsVoice())
     var customTtsVoice by mutableStateOf(speechStorage.getCustomTtsVoice())
@@ -114,6 +115,11 @@ internal class SettingsState(
     fun saveWakeWordDetectionThreshold(value: Float) {
         backgroundWakeWordSettingsStorage.setDetectionThreshold(value)
         wakeWordDetectionThreshold = backgroundWakeWordSettingsStorage.getDetectionThreshold()
+    }
+
+    fun saveWakeWordServiceEnabled(enabled: Boolean) {
+        backgroundWakeWordSettingsStorage.setServiceEnabled(enabled)
+        wakeWordServiceEnabled = backgroundWakeWordSettingsStorage.isServiceEnabled()
     }
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey

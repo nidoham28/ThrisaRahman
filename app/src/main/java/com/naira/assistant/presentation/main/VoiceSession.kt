@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.core.sound.VoiceState
+import com.naira.assistant.domain.settings.BackgroundWakeWordSettingsStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** One mic-driven session exposed to the UI: the current voice state + the mic tap handler. */
@@ -44,13 +45,15 @@ fun rememberVoiceSession(): VoiceSession {
     }
 
     LaunchedEffect(context) {
+        if (!BackgroundWakeWordSettingsStorage(context).isServiceEnabled()) return@LaunchedEffect
         val preferences = context.getSharedPreferences("background_voice", android.content.Context.MODE_PRIVATE)
-        if (!preferences.getBoolean("first_open_prompted", false)) {
+        val firstOpen = !preferences.getBoolean("first_open_prompted", false)
+        if (firstOpen) {
             preferences.edit().putBoolean("first_open_prompted", true).apply()
-            val missing = missingVoicePermissions(context)
-            if (missing.isEmpty()) WakeWordForegroundService.start(context)
-            else permissionLauncher.launch(missing)
         }
+        val missing = missingVoicePermissions(context)
+        if (missing.isEmpty()) WakeWordForegroundService.start(context)
+        else if (firstOpen) permissionLauncher.launch(missing)
     }
 
     DisposableEffect(context) {

@@ -74,6 +74,8 @@ import com.naira.assistant.presentation.settings.permission.openAppSettings
 import com.naira.assistant.presentation.settings.permission.openExactAlarmSettings
 import com.naira.assistant.presentation.settings.permission.openNotificationSettings
 import com.naira.assistant.presentation.settings.permission.openModifySystemSettings
+import com.naira.assistant.presentation.main.WakeWordForegroundService
+import com.naira.assistant.presentation.settings.page.SettingsPageContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -128,6 +130,7 @@ fun SettingsScreen(
     var dataManagementAction by rememberSaveable { mutableStateOf<String?>(null) }
 
     var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
+    var enableWakeWordAfterPermission by remember { mutableStateOf(false) }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
     val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
 
@@ -337,6 +340,22 @@ fun SettingsScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         refreshPermissionsTrigger++
+        if (enableWakeWordAfterPermission) {
+            enableWakeWordAfterPermission = false
+            val updatedPermissions = checkPermissions(context)
+            if (updatedPermissions.hasMic && updatedPermissions.hasNotifications) {
+                runCatching {
+                    state.saveWakeWordServiceEnabled(true)
+                    WakeWordForegroundService.start(context)
+                }.onFailure {
+                    state.saveWakeWordServiceEnabled(false)
+                    Toast.makeText(context, "Couldn't start the wakeup word service.", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(context, "Microphone and notification access are needed for the wakeup word service.", Toast.LENGTH_LONG).show()
+            }
+            return@rememberLauncherForActivityResult
+        }
         val allGranted = results.values.isNotEmpty() && results.values.all { it }
         if (allGranted) {
             Toast.makeText(context, "Permissions granted successfully.", Toast.LENGTH_SHORT).show()
@@ -501,6 +520,31 @@ fun SettingsScreen(
             state.saveTheme(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(theme = value))
             synchronizeCloudSettings()
+        },
+        onToggleWakeWordService = { enabled ->
+            if (!enabled) {
+                state.saveWakeWordServiceEnabled(false)
+                WakeWordForegroundService.stop(context)
+            } else {
+                val missing = buildList {
+                    if (!permissionStatus.hasMic) add(Manifest.permission.RECORD_AUDIO)
+                    if (!permissionStatus.hasNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                if (missing.isEmpty()) {
+                    runCatching {
+                        state.saveWakeWordServiceEnabled(true)
+                        WakeWordForegroundService.start(context)
+                    }.onFailure {
+                        state.saveWakeWordServiceEnabled(false)
+                        Toast.makeText(context, "Couldn't start the wakeup word service.", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    enableWakeWordAfterPermission = true
+                    requestMultipleLauncher.launch(missing.toTypedArray())
+                }
+            }
         },
         onLogout = { showLogoutConfirmation = true },
     )
