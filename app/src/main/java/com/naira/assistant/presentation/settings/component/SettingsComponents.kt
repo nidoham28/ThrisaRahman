@@ -346,6 +346,42 @@ internal fun ThemeDropdownTrailing(selected: String, onSelect: (String) -> Unit)
 }
 
 @Composable
+internal fun WakeWordSensitivityDropdown(selectedThreshold: Float, onSelect: (Float) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when {
+        selectedThreshold <= 0.17f -> "High"
+        selectedThreshold >= 0.35f -> "Low"
+        else -> "Balanced"
+    }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(selectedLabel, color = Aqua, fontSize = 13.sp)
+            Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Choose wake-word sensitivity",
+                tint = TextSoft,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            listOf(
+                "High sensitivity" to 0.15f,
+                "Balanced" to 0.25f,
+                "Low sensitivity" to 0.40f,
+            ).forEach { (label, threshold) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(threshold)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun TrailingBadge(text: String, accent: Color = Aqua) {
     Box(
         Modifier.clip(RoundedCornerShape(6.dp))

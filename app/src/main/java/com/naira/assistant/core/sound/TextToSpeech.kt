@@ -13,6 +13,7 @@ import android.speech.tts.TextToSpeech as AndroidTextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.naira.assistant.ai.AssistantApiService
 import com.naira.assistant.core.config.API_KEYS
+import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.CharacterVoice
 import com.naira.assistant.domain.settings.AssistantVoice
 import com.naira.assistant.domain.settings.SpeechSettingsStorage
@@ -30,6 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import me.rerere.tts.controller.AudioPlayer
+import me.rerere.tts.model.AudioFormat as TtsAudioFormat
+import me.rerere.tts.model.TTSResponse
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.UUID
@@ -39,7 +43,8 @@ import kotlin.coroutines.coroutineContext
 
 enum class SpeechEngine(val label: String, val description: String) {
     SYSTEM("System", "Local Device TTS"),
-    ADVANCED("Advanced", "Gemini TTS")
+    ADVANCED("Advanced", "Gemini TTS"),
+    CUSTOM("Custom", "Custom TTS Provider")
 }
 
 /**
@@ -62,6 +67,7 @@ class TextToSpeech(
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val speechSettings = SpeechSettingsStorage(appContext)
     private val assistantApi = AssistantApiService(appContext)
+    private var customAudioPlayer: AudioPlayer? = null
 
     private val playbackLock = Any()
     private var activePlayback: PcmPlayback? = null
@@ -103,12 +109,14 @@ class TextToSpeech(
                     check(apiKey.isNotEmpty()) {
                         "Add a Gemini API key in Settings → Providers & API Keys → API Keys to use Gemini TTS."
                     }
-                    val pcm = takePrefetch(text, voice)
-                        ?: generateGeminiSpeech(apiKey, text.trim(), voice)
+                    val geminiVoice = speechSettings.getGeminiTtsVoice()
+                    val pcm = takePrefetch(text, geminiVoice)
+                        ?: generateGeminiSpeech(apiKey, text.trim(), geminiVoice)
                     coroutineContext.ensureActive()
                     check(!closed) { "TTS has already been closed" }
                     playPcm(pcm, onPlaybackStarted)
                 }
+                SpeechEngine.CUSTOM -> speakWithCustomProvider(text.trim(), onPlaybackStarted)
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -138,7 +146,7 @@ class TextToSpeech(
 
         synchronized(playbackLock) {
             if (closed) return
-            val voice = speechSettings.getCharacter().voice
+            val voice = speechSettings.getGeminiTtsVoice()
             if (prefetched?.text == trimmed && prefetched?.voice == voice) return
             prefetched?.pcm?.cancel()
             val apiKey = API_KEYS(appContext).trim()
@@ -172,6 +180,10 @@ class TextToSpeech(
             systemEngine?.shutdown()
             systemEngine = null
             systemEngineReady = null
+        }
+        customAudioPlayer?.let { player ->
+            Handler(Looper.getMainLooper()).post { runCatching { player.stop(); player.clear(); player.release() } }
+            customAudioPlayer = null
         }
         assistantApi.close()
     }
@@ -273,14 +285,15 @@ class TextToSpeech(
     private suspend fun generateGeminiSpeech(
         apiKey: String,
         text: String,
-        voice: CharacterVoice,
+        voice: String,
     ): ByteArray =
         withContext(Dispatchers.IO) {
             val output = ByteArrayOutputStream()
             assistantApi.generateSpeech(
                 apiKey = apiKey,
                 text = text,
-                voiceName = voice.geminiVoiceName,
+                model = speechSettings.getGeminiTtsModel(),
+                voiceName = voice,
             ).collect { chunk ->
                 require(chunk.format == me.rerere.tts.model.AudioFormat.PCM) {
                     "Gemini TTS returned unsupported audio format: ${chunk.format}"
@@ -290,8 +303,35 @@ class TextToSpeech(
             output.toByteArray()
         }
 
+    private suspend fun speakWithCustomProvider(text: String, onPlaybackStarted: () -> Unit) {
+        val userId = com.naira.assistant.core.service.FirebaseAuthService().currentUser()?.uid
+        val apiKey = userId?.let { ApiKeyStorage(appContext).getCustomTtsApiKey(it) }.orEmpty().trim()
+        check(apiKey.isNotEmpty()) { "Add an API key in Settings → Speech & Voice → Custom TTS Provider." }
+        val baseUrl = speechSettings.getCustomTtsBaseUrl().trim()
+        check(baseUrl.isNotEmpty()) { "Set an API base URL in Settings → Speech & Voice → Custom TTS Provider." }
+        val model = speechSettings.getCustomTtsModel().trim()
+        check(model.isNotEmpty()) { "Set a model in Settings → Speech & Voice → Custom TTS Provider." }
+        val audio = withContext(Dispatchers.IO) {
+            val output = ByteArrayOutputStream()
+            assistantApi.generateCustomSpeech(
+                apiKey = apiKey,
+                baseUrl = baseUrl,
+                model = model,
+                voice = speechSettings.getCustomTtsVoice(),
+                text = text,
+            ).collect { chunk -> output.write(chunk.data) }
+            output.toByteArray()
+        }
+        check(audio.isNotEmpty()) { "Custom TTS returned no audio." }
+        withContext(Dispatchers.Main.immediate) {
+            val player = customAudioPlayer ?: AudioPlayer(appContext).also { customAudioPlayer = it }
+            onPlaybackStarted()
+            player.play(TTSResponse(audioData = audio, format = TtsAudioFormat.MP3))
+        }
+    }
+
     /** Returns the prefetched audio for [text] if one matches, consuming the slot. */
-    private suspend fun takePrefetch(text: String, voice: CharacterVoice): ByteArray? {
+    private suspend fun takePrefetch(text: String, voice: String): ByteArray? {
         val candidate = synchronized(playbackLock) {
             val p = prefetched
             prefetched = null
@@ -312,7 +352,7 @@ class TextToSpeech(
 
     private class Prefetch(
         val text: String,
-        val voice: CharacterVoice,
+        val voice: String,
         val pcm: Deferred<ByteArray>,
     )
 
@@ -378,6 +418,9 @@ class TextToSpeech(
     }
 
     private fun stopPlaybackLocked() {
+        customAudioPlayer?.let { player ->
+            Handler(Looper.getMainLooper()).post { runCatching { player.stop(); player.clear() } }
+        }
         val playback = activePlayback ?: return
         activePlayback = null
         playback.release()

@@ -38,6 +38,8 @@ internal enum class EditField(
         AssistantProvider.GEMINI.defaultModelId,
         requiresNonBlank = true,
     ),
+    GEMINI_TTS_MODEL("Google TTS model", "Enter a Gemini TTS model ID.", "gemini-2.5-flash-preview-tts", requiresNonBlank = true),
+    GEMINI_TTS_VOICE("Google TTS voice", "Enter a Gemini prebuilt voice name.", "Leda", requiresNonBlank = true),
     OPENROUTER_MODEL(
         "OpenRouter model",
         "Enter an OpenRouter model ID. Use openrouter/auto for automatic routing.",
@@ -72,6 +74,9 @@ internal enum class EditField(
         "https://api.example.com/v1/",
         requiresNonBlank = true,
     ),
+    CUSTOM_TTS_MODEL("Custom TTS model", "Model ID supported by your TTS endpoint.", "gpt-4o-mini-tts", requiresNonBlank = true),
+    CUSTOM_TTS_BASE_URL("Custom TTS API base URL", "OpenAI-compatible TTS endpoint base URL.", "https://api.example.com/v1", requiresNonBlank = true),
+    CUSTOM_TTS_VOICE("Custom TTS voice", "Voice name supported by your TTS endpoint.", "alloy", requiresNonBlank = true),
 }
 
 /* ------------------------------------------------------------------ */
@@ -112,7 +117,7 @@ internal data class SettingsSection(
 internal val rootSettingsSections = listOf(
     SettingsSection("General Settings", listOf("preferences", "profile", "assistant", "extensions")),
     SettingsSection("Provider & Services", listOf("providers", "integrations", "voice")),
-    SettingsSection("Additional Settings", listOf("privacy", "data", "about")),
+    SettingsSection("Additional Settings", listOf("advanced-settings", "privacy", "data", "about")),
 )
 
 internal val rootCategoryOrder = rootSettingsSections.flatMap { it.categoryIds }

@@ -55,6 +55,17 @@ class ApiKeyStorage(context: Context) {
         }
     }
 
+    fun getCustomTtsApiKey(userId: String): String? =
+        prefs.getString(customTtsApiKeyKey(userId), null)?.takeIf(String::isNotBlank)
+
+    fun saveCustomTtsApiKey(userId: String, key: String) {
+        val cleaned = key.trim()
+        prefs.edit {
+            if (cleaned.isBlank()) remove(customTtsApiKeyKey(userId))
+            else putString(customTtsApiKeyKey(userId), cleaned)
+        }
+    }
+
     fun getCricApiKey(userId: String): String? =
         prefs.getString(cricApiKeyKey(userId), null)?.takeIf(String::isNotBlank)
 
@@ -179,6 +190,8 @@ class ApiKeyStorage(context: Context) {
         const val SELECTED_PROVIDER_KEY = "selected_provider"
         const val CUSTOM_PROVIDER_MODEL_KEY = "custom_provider_model"
         const val CUSTOM_PROVIDER_BASE_URL_KEY = "custom_provider_base_url"
+
+        private fun customTtsApiKeyKey(userId: String) = "custom_tts_api_key_${userId.lowercase(Locale.ROOT)}"
 
         fun selectedProviderKey(userId: String?) =
             userId?.let { "selected_provider_${it.lowercase(Locale.ROOT)}" }

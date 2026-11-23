@@ -48,6 +48,7 @@ import com.naira.assistant.presentation.settings.component.TrailingBadge
 import com.naira.assistant.presentation.settings.component.TrailingChevron
 import com.naira.assistant.presentation.settings.component.TrailingSwitch
 import com.naira.assistant.presentation.settings.component.TrailingValue
+import com.naira.assistant.presentation.settings.component.WakeWordSensitivityDropdown
 import com.naira.assistant.presentation.settings.component.ThemeDropdownTrailing
 import com.naira.assistant.presentation.settings.component.accent
 import com.naira.assistant.presentation.settings.component.icon
@@ -71,6 +72,8 @@ internal fun buildTree(
     onEditKey: (AssistantProvider) -> Unit,
     onEditCricketApiKey: () -> Unit,
     onEditWeatherApiKey: () -> Unit,
+    onEditCustomTtsApiKey: () -> Unit,
+    onDataManagementAction: (String) -> Unit,
     onEditField: (EditField) -> Unit,
     onSaveGender: (Gender) -> Unit,
     onSaveAssistantName: (String) -> Unit,
@@ -78,8 +81,6 @@ internal fun buildTree(
     onSaveLanguage: (AssistantLanguage) -> Unit,
     onSaveAssistantThinkingMode: (AssistantThinkingMode) -> Unit,
     onSaveSpeechEngine: (SpeechEngine) -> Unit,
-    backgroundVoiceEnabled: Boolean,
-    onToggleBackgroundVoice: () -> Unit,
     onSaveTheme: (String) -> Unit,
     onLogout: () -> Unit,
 ): SettingsNode.Category = SettingsNode.Category(
@@ -106,74 +107,12 @@ internal fun buildTree(
                 SettingsNode.Category(
                     id = "general", title = "General", subtitle = "Assistant behavior",
                     icon = Icons.Outlined.Settings,
-                    children = listOf(
-                        SettingsNode.Item(
-                            id = "background-voice",
-                            title = "Background wake-word detection",
-                            subtitle = if (backgroundVoiceEnabled) {
-                                "Wake-word listening is enabled"
-                            } else {
-                                "Wake-word listening is paused"
-                            },
-                            icon = Icons.Outlined.SettingsVoice,
-                            onClick = onToggleBackgroundVoice,
-                            trailing = {
-                                TrailingSwitch(
-                                    label = "Background wake-word detection",
-                                    checked = backgroundVoiceEnabled,
-                                    onCheckedChange = { onToggleBackgroundVoice() },
-                                )
-                            },
-                        ),
-                    ),
+                    children = emptyList(),
                 ),
                 SettingsNode.Category(
                     id = "interface", title = "Interface", subtitle = "Chat display",
                     icon = Icons.Outlined.Tune,
-                    children = listOf(
-                        SettingsNode.Item(
-                            id = "show-avatar", title = "Show assistant avatar",
-                            subtitle = if (state.showAssistantAvatar) "Shown on the home screen" else "Hidden on the home screen",
-                            icon = Icons.Outlined.SmartToy,
-                            onClick = { state.saveShowAssistantAvatar(!state.showAssistantAvatar) },
-                            trailing = {
-                                TrailingSwitch("Show assistant avatar", state.showAssistantAvatar, state::saveShowAssistantAvatar)
-                            },
-                        ),
-                        SettingsNode.Item(
-                            id = "code-wrap", title = "Code block word wrap",
-                            subtitle = if (state.codeWordWrap) "Long lines wrap to fit" else "Long lines scroll horizontally",
-                            icon = Icons.Outlined.Settings,
-                            onClick = { state.saveCodeWordWrap(!state.codeWordWrap) },
-                            trailing = { TrailingSwitch("Code block word wrap", state.codeWordWrap, state::saveCodeWordWrap) },
-                        ),
-                        SettingsNode.Item(
-                            id = "collapse-code", title = "Automatically collapse code blocks",
-                            subtitle = if (state.collapseCodeBlocks) "Code starts collapsed" else "Code starts expanded",
-                            icon = Icons.Outlined.Settings,
-                            onClick = { state.saveCollapseCodeBlocks(!state.collapseCodeBlocks) },
-                            trailing = {
-                                TrailingSwitch(
-                                    "Automatically collapse code blocks",
-                                    state.collapseCodeBlocks,
-                                    state::saveCollapseCodeBlocks,
-                                )
-                            },
-                        ),
-                        SettingsNode.Item(
-                            id = "line-numbers", title = "Show line numbers in code blocks",
-                            subtitle = if (state.showCodeLineNumbers) "Line numbers shown" else "Line numbers hidden",
-                            icon = Icons.Outlined.Settings,
-                            onClick = { state.saveShowCodeLineNumbers(!state.showCodeLineNumbers) },
-                            trailing = {
-                                TrailingSwitch(
-                                    "Show line numbers in code blocks",
-                                    state.showCodeLineNumbers,
-                                    state::saveShowCodeLineNumbers,
-                                )
-                            },
-                        ),
-                    ),
+                    children = emptyList(),
                 ),
                 SettingsNode.Category(
                     id = "network", title = "Network", subtitle = "Connection preferences",
@@ -291,28 +230,63 @@ internal fun buildTree(
                     },
                     children = listOf(
                         SettingsNode.Item(
+                            id = "gemini-tts-key", title = "API key",
+                            subtitle = "Use the Gemini API key saved in Providers & API Keys",
+                            icon = Icons.Outlined.Key,
+                            onClick = { onEditKey(AssistantProvider.GEMINI) },
+                        ),
+                        SettingsNode.Item(
+                            id = "gemini-tts-model", title = "Model selection",
+                            subtitle = state.geminiTtsModel,
+                            icon = Icons.Outlined.AutoAwesome,
+                            onClick = { onEditField(EditField.GEMINI_TTS_MODEL) },
+                        ),
+                        SettingsNode.Item(
                             id = "gemini-tts-voice", title = "Voice selection",
-                            subtitle = "${AssistantCharacter.fromName(state.assistantName).voice.geminiVoiceName} · follows the selected assistant",
+                            subtitle = state.geminiTtsVoice,
                             icon = Icons.Outlined.GraphicEq,
+                            onClick = { onEditField(EditField.GEMINI_TTS_VOICE) },
                         ),
                     ),
                 ),
                 SettingsNode.Category(
-                    id = "custom-tts", title = "Custom TTS Provider", subtitle = "Custom speech service",
+                    id = "custom-tts", title = "Custom TTS Provider",
+                    subtitle = if (state.speechEngine == SpeechEngine.CUSTOM) "Enabled" else "Disabled",
                     icon = Icons.Outlined.GraphicEq,
                     trailing = {
                         TrailingSwitch(
-                            label = "Custom TTS is not available yet",
-                            checked = false,
-                            onCheckedChange = {},
-                            enabled = false,
+                            label = "Custom TTS Provider",
+                            checked = state.speechEngine == SpeechEngine.CUSTOM,
+                            onCheckedChange = { enabled ->
+                                onSaveSpeechEngine(if (enabled) SpeechEngine.CUSTOM else SpeechEngine.SYSTEM)
+                            },
                         )
                     },
                     children = listOf(
-                        SettingsNode.Item("custom-tts-url", "API base URL", "Not available yet", Icons.Outlined.Settings),
-                        SettingsNode.Item("custom-tts-key", "API key", "Not available yet", Icons.Outlined.Key),
-                        SettingsNode.Item("custom-tts-model", "Model selection", "Not available yet", Icons.Outlined.AutoAwesome),
-                        SettingsNode.Item("custom-tts-voice", "Voice selection", "Not available yet", Icons.Outlined.GraphicEq),
+                        SettingsNode.Item(
+                            id = "custom-tts-url", title = "API base URL",
+                            subtitle = state.customTtsBaseUrl.ifBlank { "Set your OpenAI-compatible API URL" },
+                            icon = Icons.Outlined.Settings,
+                            onClick = { onEditField(EditField.CUSTOM_TTS_BASE_URL) },
+                        ),
+                        SettingsNode.Item(
+                            id = "custom-tts-key", title = "API key",
+                            subtitle = if (state.customTtsApiKey.isBlank()) "Not configured" else "Configured",
+                            icon = Icons.Outlined.Key,
+                            onClick = onEditCustomTtsApiKey,
+                        ),
+                        SettingsNode.Item(
+                            id = "custom-tts-model", title = "Model selection",
+                            subtitle = state.customTtsModel.ifBlank { "Set your model ID" },
+                            icon = Icons.Outlined.AutoAwesome,
+                            onClick = { onEditField(EditField.CUSTOM_TTS_MODEL) },
+                        ),
+                        SettingsNode.Item(
+                            id = "custom-tts-voice", title = "Voice selection",
+                            subtitle = state.customTtsVoice,
+                            icon = Icons.Outlined.GraphicEq,
+                            onClick = { onEditField(EditField.CUSTOM_TTS_VOICE) },
+                        ),
                     ),
                 ),
             )
@@ -551,8 +525,51 @@ internal fun buildTree(
             id = "data", title = "Data Management", subtitle = "Back up or restore your data",
             icon = Icons.Outlined.FolderOpen,
             children = listOf(
-                SettingsNode.Item("export-data", "Export Data (Backup)", "Not available yet", Icons.Outlined.FolderOpen),
-                SettingsNode.Item("import-data", "Import Data (Restore)", "Not available yet", Icons.Outlined.FolderOpen),
+                SettingsNode.Item(
+                    id = "export-data", title = "Export Data (Backup)",
+                    subtitle = "Not available yet",
+                    icon = Icons.Outlined.FolderOpen,
+                    onClick = { onDataManagementAction("Export Data (Backup)") },
+                    trailing = { TrailingChevron() },
+                ),
+                SettingsNode.Item(
+                    id = "import-data", title = "Import Data (Restore)",
+                    subtitle = "Not available yet",
+                    icon = Icons.Outlined.FolderOpen,
+                    onClick = { onDataManagementAction("Import Data (Restore)") },
+                    trailing = { TrailingChevron() },
+                ),
+            ),
+        ),
+        SettingsNode.Category(
+            id = "advanced-settings", title = "Advanced Settings",
+            subtitle = "Background wake-up detection model",
+            icon = Icons.Outlined.Settings,
+            children = listOf(
+                SettingsNode.Item(
+                    id = "wake-word-model",
+                    title = "Wake-word model",
+                    subtitle = "Sherpa-ONNX Zipformer2 · runs on-device",
+                    icon = Icons.Outlined.SettingsVoice,
+                ),
+                SettingsNode.Item(
+                    id = "wake-word-phrases",
+                    title = "Wake phrases",
+                    subtitle = "Hey Assistant · Hello Assistant · Wakeup Assistant",
+                    icon = Icons.Outlined.Mic,
+                ),
+                SettingsNode.Item(
+                    id = "wake-word-sensitivity",
+                    title = "Detection sensitivity",
+                    subtitle = "Higher sensitivity may trigger more often in background noise",
+                    icon = Icons.Outlined.Tune,
+                    trailing = {
+                        WakeWordSensitivityDropdown(
+                            selectedThreshold = state.wakeWordDetectionThreshold,
+                            onSelect = state::saveWakeWordDetectionThreshold,
+                        )
+                    },
+                ),
             ),
         ),
         SettingsNode.Category(

@@ -13,6 +13,7 @@ import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
+import com.naira.assistant.domain.settings.BackgroundWakeWordSettingsStorage
 import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.InterfaceSettingsStorage
@@ -34,6 +35,8 @@ internal class SettingsState(
     private val currentUserId: () -> String?,
 ) {
     private val userSettingsStorage = UserSettingsStorage()
+    private val speechStorage = SpeechSettingsStorage(context)
+    private val backgroundWakeWordSettingsStorage = BackgroundWakeWordSettingsStorage(context)
     var theme by mutableStateOf(userSettingsStorage.getTheme())
     var fontSize by mutableStateOf(userSettingsStorage.getFontSize())
     var selectedProvider by mutableStateOf(storage.getSelectedProvider(currentUserId()))
@@ -49,6 +52,7 @@ internal class SettingsState(
     private var customProviderKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.CUSTOM.name, it) }.orEmpty()
     )
+    var customTtsApiKey by mutableStateOf(currentUserId()?.let(storage::getCustomTtsApiKey).orEmpty())
     var cricketApiKey by mutableStateOf(
         currentUserId()?.let(storage::getCricApiKey).orEmpty()
     )
@@ -62,7 +66,8 @@ internal class SettingsState(
     var groqBaseUrl by mutableStateOf(storage.getGroqBaseUrl(currentUserId()))
     var customProviderModelId by mutableStateOf(storage.getCustomProviderModelId())
     var customProviderBaseUrl by mutableStateOf(storage.getCustomProviderBaseUrl())
-    private val speechStorage = SpeechSettingsStorage(context)
+    var customTtsModel by mutableStateOf(speechStorage.getCustomTtsModel())
+    var customTtsBaseUrl by mutableStateOf(speechStorage.getCustomTtsBaseUrl())
     private val accountStorage = AccountSettingsStorage(context)
     private val assistantStorage = AssistantSettingsStorage(context)
     private val interfaceSettingsStorage = InterfaceSettingsStorage(context)
@@ -84,6 +89,32 @@ internal class SettingsState(
         runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
     )
+    var wakeWordDetectionThreshold by mutableStateOf(
+        backgroundWakeWordSettingsStorage.getDetectionThreshold(),
+    )
+    var geminiTtsModel by mutableStateOf(speechStorage.getGeminiTtsModel())
+    var geminiTtsVoice by mutableStateOf(speechStorage.getGeminiTtsVoice())
+    var customTtsVoice by mutableStateOf(speechStorage.getCustomTtsVoice())
+
+    fun saveGeminiTtsModel(value: String) {
+        speechStorage.setGeminiTtsModel(value)
+        geminiTtsModel = speechStorage.getGeminiTtsModel()
+    }
+
+    fun saveGeminiTtsVoice(value: String) {
+        speechStorage.setGeminiTtsVoice(value)
+        geminiTtsVoice = speechStorage.getGeminiTtsVoice()
+    }
+
+    fun saveCustomTtsVoice(value: String) {
+        speechStorage.setCustomTtsVoice(value)
+        customTtsVoice = speechStorage.getCustomTtsVoice()
+    }
+
+    fun saveWakeWordDetectionThreshold(value: Float) {
+        backgroundWakeWordSettingsStorage.setDetectionThreshold(value)
+        wakeWordDetectionThreshold = backgroundWakeWordSettingsStorage.getDetectionThreshold()
+    }
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
@@ -159,6 +190,22 @@ internal class SettingsState(
         val cleaned = value.trim()
         storage.saveCustomProviderBaseUrl(cleaned)
         customProviderBaseUrl = cleaned
+    }
+
+    fun saveCustomTtsApiKey(value: String) {
+        val cleaned = value.trim()
+        customTtsApiKey = cleaned
+        currentUserId()?.let { storage.saveCustomTtsApiKey(it, cleaned) }
+    }
+
+    fun saveCustomTtsModel(value: String) {
+        speechStorage.setCustomTtsModel(value)
+        customTtsModel = speechStorage.getCustomTtsModel()
+    }
+
+    fun saveCustomTtsBaseUrl(value: String) {
+        speechStorage.setCustomTtsBaseUrl(value)
+        customTtsBaseUrl = speechStorage.getCustomTtsBaseUrl()
     }
 
     fun saveSpeechEngine(engine: SpeechEngine) {

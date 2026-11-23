@@ -8,6 +8,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,6 +33,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSManager
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -43,6 +46,14 @@ import me.rerere.ai.agent.AgentRequest
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.registry.ModelRegistry
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import org.json.JSONObject
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class AssistantToolResult(
     val response: JsonObject,
@@ -286,6 +297,77 @@ class AssistantApiService(context: Context) : AutoCloseable {
             ),
             request = TTSRequest(text = text),
         )
+    }
+
+    fun generateCustomSpeech(
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        voice: String,
+        text: String,
+    ): Flow<AudioChunk> {
+        require(apiKey.isNotBlank()) { "Custom TTS API key must not be blank" }
+        require(baseUrl.isNotBlank()) { "Custom TTS API base URL must not be blank" }
+        require(model.isNotBlank()) { "Custom TTS model must not be blank" }
+        require(voice.isNotBlank()) { "Custom TTS voice must not be blank" }
+        require(text.isNotBlank()) { "Speech text must not be blank" }
+        return flow {
+            val requestBody = JSONObject()
+                .put("model", model.trim())
+                .put("input", text)
+                .put("voice", voice.trim())
+                .put("response_format", "mp3")
+                .toString()
+                .toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("${baseUrl.trim().trimEnd('/')}/audio/speech")
+                .header("Authorization", "Bearer ${apiKey.trim()}")
+                .header("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+            val audio = executeCustomTtsRequest(request, model.trim(), voice.trim())
+            emit(audio)
+        }
+    }
+
+    private suspend fun executeCustomTtsRequest(
+        request: Request,
+        model: String,
+        voice: String,
+    ): AudioChunk = suspendCancellableCoroutine { continuation ->
+        val call = httpClient.newCall(request)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: java.io.IOException) {
+                if (continuation.isActive) continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (!it.isSuccessful) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            TTSProviderException("Custom TTS request failed (${it.code}).", it.code)
+                        )
+                        return
+                    }
+                    val bytes = it.body.bytes()
+                    if (bytes.isEmpty()) {
+                        if (continuation.isActive) continuation.resumeWithException(
+                            IllegalStateException("Custom TTS returned no audio.")
+                        )
+                        return
+                    }
+                    if (continuation.isActive) continuation.resume(
+                        AudioChunk(
+                            data = bytes,
+                            format = me.rerere.tts.model.AudioFormat.MP3,
+                            isLast = true,
+                            metadata = mapOf("provider" to "custom", "model" to model, "voice" to voice),
+                        )
+                    )
+                }
+            }
+        })
     }
 
     override fun close() {

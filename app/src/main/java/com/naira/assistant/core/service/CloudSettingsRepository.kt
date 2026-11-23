@@ -618,6 +618,7 @@ internal class FirebaseCloudSettingsRemoteStore(
         return CloudSettings(
             speechEngine = when ((data["speechEngine"] as? String)?.lowercase()) {
                 "gemini", "advanced" -> SpeechEngine.ADVANCED
+                "custom" -> SpeechEngine.CUSTOM
                 else -> SpeechEngine.SYSTEM
             },
             activeProvider = AssistantProvider.fromStorageValue(data["activeProvider"] as? String),
@@ -643,7 +644,11 @@ internal class FirebaseCloudSettingsRemoteStore(
     }
 
     private fun CloudSettings.toFirebaseMap(): Map<String, Any> = mapOf(
-        "speechEngine" to if (speechEngine == SpeechEngine.ADVANCED) "gemini" else "system",
+        "speechEngine" to when (speechEngine) {
+            SpeechEngine.ADVANCED -> "gemini"
+            SpeechEngine.CUSTOM -> "custom"
+            SpeechEngine.SYSTEM -> "system"
+        },
         "activeProvider" to activeProvider.name.lowercase(),
         "theme" to theme,
         "fontSize" to fontSize,
@@ -659,7 +664,13 @@ internal class FirebaseCloudSettingsRemoteStore(
             fun settings(field: String, value: Any?) {
                 put("user_settings/$userId/$field", value)
             }
-            patch.speechEngine?.let { settings("speechEngine", if (it == SpeechEngine.ADVANCED) "gemini" else "system") }
+            patch.speechEngine?.let { engine ->
+                settings("speechEngine", when (engine) {
+                    SpeechEngine.ADVANCED -> "gemini"
+                    SpeechEngine.CUSTOM -> "custom"
+                    SpeechEngine.SYSTEM -> "system"
+                })
+            }
             patch.activeProvider?.let { settings("activeProvider", it.name.lowercase()) }
             patch.theme?.let { settings("theme", it) }
             patch.fontSize?.let { settings("fontSize", it) }

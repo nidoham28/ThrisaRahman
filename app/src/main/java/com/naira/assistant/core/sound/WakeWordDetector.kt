@@ -11,6 +11,7 @@ import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
+import com.naira.assistant.domain.settings.BackgroundWakeWordSettingsStorage
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.KeywordSpotter
 import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
@@ -26,6 +27,7 @@ import kotlinx.coroutines.withContext
 internal class WakeWordDetector(context: Context) {
 
     private val appContext = context.applicationContext
+    private val wakeWordSettings = BackgroundWakeWordSettingsStorage(appContext)
 
     suspend fun awaitWakeWord(onListening: suspend () -> Unit) = withContext(Dispatchers.IO) {
         if (ContextCompat.checkSelfPermission(
@@ -198,7 +200,7 @@ internal class WakeWordDetector(context: Context) {
             ),
             keywordsFile = KEYWORDS_FILE,
             keywordsScore = KEYWORD_SCORE,
-            keywordsThreshold = KEYWORD_THRESHOLD,
+            keywordsThreshold = wakeWordSettings.getDetectionThreshold(),
             numTrailingBlanks = NUM_TRAILING_BLANKS,
         ),
     )
@@ -218,7 +220,6 @@ internal class WakeWordDetector(context: Context) {
         const val KEYWORDS_FILE = "wake-word/keywords.txt"
         // Sherpa-ONNX's keyword spotting example values for streaming wake words.
         const val KEYWORD_SCORE = 3.0f
-        const val KEYWORD_THRESHOLD = 0.25f
         const val NUM_TRAILING_BLANKS = 2
         const val INITIAL_RESTART_DELAY_MILLIS = 250L
         const val MAX_RESTART_DELAY_MILLIS = 4_000L

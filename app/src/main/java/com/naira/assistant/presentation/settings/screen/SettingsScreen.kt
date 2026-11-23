@@ -67,7 +67,6 @@ import com.naira.assistant.presentation.settings.component.TopBar
 import com.naira.assistant.presentation.settings.model.EditField
 import com.naira.assistant.presentation.settings.permission.PermissionActions
 import com.naira.assistant.presentation.settings.permission.checkPermissions
-import com.naira.assistant.presentation.main.WakeWordForegroundService
 import com.naira.assistant.presentation.settings.permission.mediaReadPermissions
 import com.naira.assistant.presentation.settings.permission.openAccessibilitySettings
 import com.naira.assistant.presentation.settings.permission.openAllFilesAccessSettings
@@ -116,6 +115,7 @@ fun SettingsScreen(
         AssistantProvider.entries.firstOrNull { it.name == name }
     }
     var editingCricketApiKey by rememberSaveable { mutableStateOf(false) }
+    var editingCustomTtsApiKey by rememberSaveable { mutableStateOf(false) }
     var editingWeatherApiKey by rememberSaveable { mutableStateOf(false) }
     var editingFieldName by rememberSaveable { mutableStateOf<String?>(null) }
     val editingField = editingFieldName?.let { name ->
@@ -125,12 +125,9 @@ fun SettingsScreen(
     var awaitingAccessibilityGrant by remember { mutableStateOf(false) }
     var showAccessibilityHelp by remember { mutableStateOf(false) }
     var showLogoutConfirmation by rememberSaveable { mutableStateOf(false) }
+    var dataManagementAction by rememberSaveable { mutableStateOf<String?>(null) }
 
     var refreshPermissionsTrigger by remember { mutableIntStateOf(0) }
-    var backgroundVoiceEnabled by remember {
-        mutableStateOf(context.getSharedPreferences("background_voice", android.content.Context.MODE_PRIVATE)
-            .getBoolean("monitoring_requested", false))
-    }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
     val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
 
@@ -139,9 +136,6 @@ fun SettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 refreshPermissionsTrigger++
-                backgroundVoiceEnabled = context.getSharedPreferences(
-                    "background_voice", android.content.Context.MODE_PRIVATE,
-                ).getBoolean("monitoring_requested", false)
             }
         }
         lifecycle.addObserver(observer)
@@ -257,6 +251,20 @@ fun SettingsScreen(
             syncServiceApiKey("weatherapi", key)
         } catch (e: Exception) {
             Toast.makeText(context, e.message ?: "Couldn't save the WeatherAPI key.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun saveCustomTtsCredential(key: String) {
+        if (userId == null) {
+            Toast.makeText(context, "Sign in before saving an API key.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            state.saveCustomTtsApiKey(key)
+            editingCustomTtsApiKey = false
+            syncServiceApiKey("custom_tts", key)
+        } catch (e: Exception) {
+            Toast.makeText(context, e.message ?: "Couldn't save the Custom TTS key.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -452,6 +460,8 @@ fun SettingsScreen(
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
         onEditWeatherApiKey = { editingWeatherApiKey = true },
+        onEditCustomTtsApiKey = { editingCustomTtsApiKey = true },
+        onDataManagementAction = { dataManagementAction = it },
         onEditField = { editingFieldName = it.name },
         onSaveGender = { value ->
             state.saveGender(value)
@@ -486,16 +496,6 @@ fun SettingsScreen(
             state.saveSpeechEngine(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(speechEngine = value))
             synchronizeCloudSettings()
-        },
-        backgroundVoiceEnabled = backgroundVoiceEnabled,
-        onToggleBackgroundVoice = {
-            try {
-                if (backgroundVoiceEnabled) WakeWordForegroundService.stop(context)
-                else WakeWordForegroundService.start(context)
-                backgroundVoiceEnabled = !backgroundVoiceEnabled
-            } catch (_: Exception) {
-                Toast.makeText(context, "Grant microphone and notification permissions to control background voice.", Toast.LENGTH_LONG).show()
-            }
         },
         onSaveTheme = { value ->
             state.saveTheme(value)
@@ -567,12 +567,29 @@ fun SettingsScreen(
         )
     }
 
+    if (editingCustomTtsApiKey) {
+        ApiKeyDialog(
+            title = "Custom TTS API Key",
+            placeholder = "Enter your TTS provider API key",
+            description = "Stored on this device for your signed-in account and synced with your service keys.",
+            initialKey = state.customTtsApiKey,
+            onSave = ::saveCustomTtsCredential,
+            onRemove = { saveCustomTtsCredential("") },
+            onDismiss = { editingCustomTtsApiKey = false },
+        )
+    }
+
     editingField?.let { field ->
         val initialValue = when (field) {
             EditField.USERNAME -> state.username
             EditField.PHONE -> state.phone
             EditField.CUSTOM_USER_AGENT -> state.customUserAgent
             EditField.GEMINI_MODEL -> state.geminiModelId
+            EditField.GEMINI_TTS_MODEL -> state.geminiTtsModel
+            EditField.GEMINI_TTS_VOICE -> state.geminiTtsVoice
+            EditField.CUSTOM_TTS_VOICE -> state.customTtsVoice
+            EditField.CUSTOM_TTS_MODEL -> state.customTtsModel
+            EditField.CUSTOM_TTS_BASE_URL -> state.customTtsBaseUrl
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
             EditField.OPENROUTER_BASE_URL -> state.openRouterBaseUrl
             EditField.GROQ_MODEL -> state.groqModelId
@@ -586,6 +603,16 @@ fun SettingsScreen(
             onSave = { value: String ->
                 if (field == EditField.GEMINI_MODEL) {
                     state.saveGeminiModelId(value)
+                } else if (field == EditField.GEMINI_TTS_MODEL) {
+                    state.saveGeminiTtsModel(value)
+                } else if (field == EditField.GEMINI_TTS_VOICE) {
+                    state.saveGeminiTtsVoice(value)
+                } else if (field == EditField.CUSTOM_TTS_VOICE) {
+                    state.saveCustomTtsVoice(value)
+                } else if (field == EditField.CUSTOM_TTS_MODEL) {
+                    state.saveCustomTtsModel(value)
+                } else if (field == EditField.CUSTOM_TTS_BASE_URL) {
+                    state.saveCustomTtsBaseUrl(value)
                 } else if (field == EditField.OPENROUTER_MODEL) {
                     state.saveOpenRouterModelId(value)
                     cloudSettingsRepository.recordChange(
@@ -611,6 +638,11 @@ fun SettingsScreen(
                         EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
                         EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
                         EditField.GEMINI_MODEL -> CloudSettingsPatch()
+                        EditField.GEMINI_TTS_MODEL -> CloudSettingsPatch()
+                        EditField.GEMINI_TTS_VOICE -> CloudSettingsPatch()
+                        EditField.CUSTOM_TTS_VOICE -> CloudSettingsPatch()
+                        EditField.CUSTOM_TTS_MODEL -> CloudSettingsPatch()
+                        EditField.CUSTOM_TTS_BASE_URL -> CloudSettingsPatch()
                         EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
                         EditField.OPENROUTER_BASE_URL -> CloudSettingsPatch()
                         EditField.GROQ_MODEL -> CloudSettingsPatch()
@@ -624,6 +656,17 @@ fun SettingsScreen(
                 editingFieldName = null
             },
             onDismiss = { editingFieldName = null },
+        )
+    }
+
+    dataManagementAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { dataManagementAction = null },
+            title = { Text(action) },
+            text = { Text("Backup export and restore are not available yet.") },
+            confirmButton = {
+                TextButton(onClick = { dataManagementAction = null }) { Text("OK") }
+            },
         )
     }
 
