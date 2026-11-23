@@ -33,22 +33,22 @@ internal object PreferencesSettingsPage : CategoryNameUi() {
                     ),
                 ),
                 SettingsNode.Category(
-                    id = "general", title = "General", subtitle = "Assistant behavior",
+                    id = "general", title = "General", subtitle = "Manage general app prefrences.",
                     icon = Icons.Outlined.Settings,
                     children = emptyList(),
                 ),
                 SettingsNode.Category(
-                    id = "interface", title = "Interface", subtitle = "Chat display",
+                    id = "interface", title = "Interface", subtitle = "Customize app apperance and layout.",
                     icon = Icons.Outlined.Tune,
                     children = emptyList(),
                 ),
                 SettingsNode.Category(
-                    id = "network", title = "Network", subtitle = "Connection preferences",
+                    id = "network", title = "Network", subtitle = "Manage network settings and connectivity.",
                     icon = Icons.Outlined.Settings,
                     children = listOf(
                         SettingsNode.Item(
-                            id = "custom-user-agent",
-                            title = "Custom user-agent",
+                            id = "User Agent",
+                            title = "Customize your browser identity.",
                             subtitle = state.customUserAgent.ifBlank { "Use the default browser identity" },
                             icon = Icons.Outlined.Settings,
                             onClick = { onEditField(EditField.CUSTOM_USER_AGENT) },
