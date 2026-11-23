@@ -20,7 +20,7 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "voice", title = "Speech & Voice", subtitle = "Speech input and output",
+            id = "voice", title = "Speech Services", subtitle = "Manage speech and voice settings.",
             icon = Icons.Outlined.SettingsVoice,
             children = listOf(
                 SettingsNode.Item(

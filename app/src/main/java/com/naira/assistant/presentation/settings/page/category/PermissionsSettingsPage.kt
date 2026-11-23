@@ -29,7 +29,7 @@ internal object PermissionsSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "privacy", title = "Permissions", subtitle = "App and assistant access",
+            id = "privacy", title = "Permissions", subtitle = "Manage app access permissions.",
             icon = Icons.Outlined.Lock,
             accent = Aqua,
             children = listOf(

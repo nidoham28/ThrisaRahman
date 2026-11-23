@@ -15,7 +15,7 @@ internal object ApiIntegrationsSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "integrations", title = "API Integrations", subtitle = "Weather and cricket services",
+            id = "integrations", title = "API Integrations", subtitle = "Manage API keys for external services.",
             icon = Icons.Outlined.Key,
             children = listOf(
                 SettingsNode.Item(

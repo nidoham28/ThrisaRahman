@@ -18,7 +18,7 @@ internal object AdvancedSettingsPage : CategoryNameUi() {
         val state = this.state
         SettingsNode.Category(
             id = "advanced-settings", title = "Advanced Settings",
-            subtitle = "Background wake-up detection model",
+            subtitle = "Configure advanced app settings.",
             icon = Icons.Outlined.Settings,
             children = listOf(
                 SettingsNode.Item(

@@ -16,7 +16,7 @@ import com.naira.assistant.presentation.settings.page.SettingsPageContext
 internal object AboutSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         SettingsNode.Category(
-            id = "about", title = "About", subtitle = "App information",
+            id = "about", title = "About", subtitle = "About this app",
             icon = Icons.Outlined.Info,
             children = listOf(
                 SettingsNode.Item(

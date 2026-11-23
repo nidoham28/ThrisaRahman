@@ -180,8 +180,7 @@ fun SettingsScreen(
     }
 
     fun saveProviderCredential(provider: AssistantProvider, key: String) {
-        val uid = userId
-        if (uid == null) {
+        if (userId == null) {
             Toast.makeText(context, "Sign in before saving provider keys.", Toast.LENGTH_LONG).show()
             return
         }

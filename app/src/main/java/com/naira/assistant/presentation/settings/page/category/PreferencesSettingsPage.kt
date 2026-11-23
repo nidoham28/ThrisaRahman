@@ -17,7 +17,7 @@ internal object PreferencesSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "preferences", title = "Preferences", subtitle = "Appearance and general behavior",
+            id = "preferences", title = "Preferences", subtitle = "Customize your app experience.",
             icon = Icons.Outlined.Tune,
             children = listOf(
                 SettingsNode.Category(

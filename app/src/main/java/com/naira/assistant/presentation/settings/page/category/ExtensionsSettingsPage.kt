@@ -15,7 +15,7 @@ import com.naira.assistant.presentation.settings.page.SettingsPageContext
 internal object ExtensionsSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         SettingsNode.Category(
-            id = "extensions", title = "Extensions", subtitle = "Skills and workspace",
+            id = "extensions", title = "Extensions", subtitle = "Manage installed extenstions.",
             icon = Icons.Outlined.FolderOpen,
             children = listOf(
                 SettingsNode.Category("agent-skills", "Agent Skills", "Installed skills and permissions", Icons.Outlined.AutoAwesome,

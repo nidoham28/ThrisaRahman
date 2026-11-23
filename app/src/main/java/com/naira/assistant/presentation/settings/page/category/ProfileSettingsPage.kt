@@ -15,7 +15,7 @@ internal object ProfileSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "profile", title = "Profile", subtitle = "Personal information",
+            id = "profile", title = "Profile", subtitle = "Manage your account information.",
             icon = Icons.Outlined.Person,
             children = listOf(
                 SettingsNode.Item(

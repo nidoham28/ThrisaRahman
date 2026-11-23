@@ -20,8 +20,9 @@ internal object AssistantSettingsPage : CategoryNameUi() {
         val state = this.state
         SettingsNode.Category(
             id = "assistant",
-            title = "Assistants",
-            subtitle = "${AssistantCharacter.fromName(state.assistantName).displayName} is active",
+            title = "Assistant",
+            subtitle = "Set-up personalized assistent (agents)",
+            //subtitle = "${AssistantCharacter.fromName(state.assistantName).displayName} is active",
             icon = Icons.Outlined.AutoAwesome,
             children = buildList {
                 AssistantCharacter.entries.forEach { character ->

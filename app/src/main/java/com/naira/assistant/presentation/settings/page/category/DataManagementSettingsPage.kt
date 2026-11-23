@@ -12,7 +12,7 @@ import com.naira.assistant.presentation.settings.page.SettingsPageContext
 internal object DataManagementSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         SettingsNode.Category(
-            id = "data", title = "Data Management", subtitle = "Back up or restore your data",
+            id = "data", title = "Data Backup", subtitle = "Backup and restore app data",
             icon = Icons.Outlined.FolderOpen,
             children = listOf(
                 SettingsNode.Item(

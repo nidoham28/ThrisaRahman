@@ -22,7 +22,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "providers", title = "AI Providers", subtitle = "Models and API keys",
+            id = "providers", title = "Providers", subtitle = "Configure AI providers",
             icon = Icons.Outlined.VpnKey,
             children = AssistantProvider.entries.filter { it != AssistantProvider.CUSTOM }.map { provider ->
                 SettingsNode.Category(
