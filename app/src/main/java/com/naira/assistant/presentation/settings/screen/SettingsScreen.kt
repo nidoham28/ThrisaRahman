@@ -452,7 +452,7 @@ fun SettingsScreen(
         )
     }
 
-    val root = buildTree(
+    val pageContext = SettingsPageContext(
         state = state,
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
@@ -504,6 +504,7 @@ fun SettingsScreen(
         },
         onLogout = { showLogoutConfirmation = true },
     )
+    val root = buildTree(pageContext)
     val current = resolveCategory(root, pathIds)
     val isRoot = pathIds.isEmpty()
 
