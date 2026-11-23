@@ -282,15 +282,16 @@ fun SettingsScreen(
     }
 
     DisposableEffect(userId, cloudSettingsRepository) {
-        val uid = userId
-        if (uid == null) return@DisposableEffect onDispose { }
+        if (userId == null) {
+            return@DisposableEffect onDispose { }
+        }
         val database = FirebaseDatabase.getInstance(
             "https://naira-assistant-default-rtdb.asia-southeast1.firebasedatabase.app",
         )
         val settingsRefs = listOf(
-            FirebasePaths.user(database, uid),
-            FirebasePaths.assistants(database, uid),
-            FirebasePaths.cloudSettings(database, uid),
+            FirebasePaths.user(database, userId),
+            FirebasePaths.assistants(database, userId),
+            FirebasePaths.cloudSettings(database, userId),
         )
         val settingsListeners = settingsRefs.map { reference ->
             val listener = object : ValueEventListener {
@@ -304,7 +305,7 @@ fun SettingsScreen(
             reference.addValueEventListener(listener)
             reference to listener
         }
-        val keysReference = FirebasePaths.providerKeys(database, uid)
+        val keysReference = FirebasePaths.providerKeys(database, userId)
         val keysListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 coroutineScope.launch {
@@ -646,57 +647,72 @@ fun SettingsScreen(
             field = field,
             initialValue = initialValue,
             onSave = { value: String ->
-                if (field == EditField.GEMINI_MODEL) {
-                    state.saveGeminiModelId(value)
-                } else if (field == EditField.GEMINI_TTS_MODEL) {
-                    state.saveGeminiTtsModel(value)
-                } else if (field == EditField.GEMINI_TTS_VOICE) {
-                    state.saveGeminiTtsVoice(value)
-                } else if (field == EditField.CUSTOM_TTS_VOICE) {
-                    state.saveCustomTtsVoice(value)
-                } else if (field == EditField.CUSTOM_TTS_MODEL) {
-                    state.saveCustomTtsModel(value)
-                } else if (field == EditField.CUSTOM_TTS_BASE_URL) {
-                    state.saveCustomTtsBaseUrl(value)
-                } else if (field == EditField.OPENROUTER_MODEL) {
-                    state.saveOpenRouterModelId(value)
-                    cloudSettingsRepository.recordChange(
-                        CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
-                    )
-                    synchronizeCloudSettings()
-                } else if (field == EditField.OPENROUTER_BASE_URL) {
-                    state.saveOpenRouterBaseUrl(value)
-                } else if (field == EditField.GROQ_MODEL) {
-                    state.saveGroqModelId(value)
-                } else if (field == EditField.GROQ_BASE_URL) {
-                    state.saveGroqBaseUrl(value)
-                } else if (field == EditField.CUSTOM_USER_AGENT) {
-                    state.saveCustomUserAgent(value)
-                } else if (field == EditField.CUSTOM_PROVIDER_MODEL) {
-                    state.saveCustomProviderModelId(value)
-                } else if (field == EditField.CUSTOM_PROVIDER_BASE_URL) {
-                    state.saveCustomProviderBaseUrl(value)
-                } else {
-                    state.saveProfileField(field, value)
-                    val patch = when (field) {
-                        EditField.USERNAME -> CloudSettingsPatch(username = state.username)
-                        EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
-                        EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
-                        EditField.GEMINI_MODEL -> CloudSettingsPatch()
-                        EditField.GEMINI_TTS_MODEL -> CloudSettingsPatch()
-                        EditField.GEMINI_TTS_VOICE -> CloudSettingsPatch()
-                        EditField.CUSTOM_TTS_VOICE -> CloudSettingsPatch()
-                        EditField.CUSTOM_TTS_MODEL -> CloudSettingsPatch()
-                        EditField.CUSTOM_TTS_BASE_URL -> CloudSettingsPatch()
-                        EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
-                        EditField.OPENROUTER_BASE_URL -> CloudSettingsPatch()
-                        EditField.GROQ_MODEL -> CloudSettingsPatch()
-                        EditField.GROQ_BASE_URL -> CloudSettingsPatch()
-                        EditField.CUSTOM_PROVIDER_MODEL -> CloudSettingsPatch()
-                        EditField.CUSTOM_PROVIDER_BASE_URL -> CloudSettingsPatch()
+                when (field) {
+                    EditField.GEMINI_MODEL -> {
+                        state.saveGeminiModelId(value)
                     }
-                    cloudSettingsRepository.recordChange(patch)
-                    synchronizeCloudSettings()
+                    EditField.GEMINI_TTS_MODEL -> {
+                        state.saveGeminiTtsModel(value)
+                    }
+                    EditField.GEMINI_TTS_VOICE -> {
+                        state.saveGeminiTtsVoice(value)
+                    }
+                    EditField.CUSTOM_TTS_VOICE -> {
+                        state.saveCustomTtsVoice(value)
+                    }
+                    EditField.CUSTOM_TTS_MODEL -> {
+                        state.saveCustomTtsModel(value)
+                    }
+                    EditField.CUSTOM_TTS_BASE_URL -> {
+                        state.saveCustomTtsBaseUrl(value)
+                    }
+                    EditField.OPENROUTER_MODEL -> {
+                        state.saveOpenRouterModelId(value)
+                        cloudSettingsRepository.recordChange(
+                            CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
+                        )
+                        synchronizeCloudSettings()
+                    }
+                    EditField.OPENROUTER_BASE_URL -> {
+                        state.saveOpenRouterBaseUrl(value)
+                    }
+                    EditField.GROQ_MODEL -> {
+                        state.saveGroqModelId(value)
+                    }
+                    EditField.GROQ_BASE_URL -> {
+                        state.saveGroqBaseUrl(value)
+                    }
+                    EditField.CUSTOM_USER_AGENT -> {
+                        state.saveCustomUserAgent(value)
+                    }
+                    EditField.CUSTOM_PROVIDER_MODEL -> {
+                        state.saveCustomProviderModelId(value)
+                    }
+                    EditField.CUSTOM_PROVIDER_BASE_URL -> {
+                        state.saveCustomProviderBaseUrl(value)
+                    }
+                    else -> {
+                        state.saveProfileField(field, value)
+                        val patch = when (field) {
+                            EditField.USERNAME -> CloudSettingsPatch(username = state.username)
+                            EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
+                            EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
+                            EditField.GEMINI_MODEL -> CloudSettingsPatch()
+                            EditField.GEMINI_TTS_MODEL -> CloudSettingsPatch()
+                            EditField.GEMINI_TTS_VOICE -> CloudSettingsPatch()
+                            EditField.CUSTOM_TTS_VOICE -> CloudSettingsPatch()
+                            EditField.CUSTOM_TTS_MODEL -> CloudSettingsPatch()
+                            EditField.CUSTOM_TTS_BASE_URL -> CloudSettingsPatch()
+                            EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
+                            EditField.OPENROUTER_BASE_URL -> CloudSettingsPatch()
+                            EditField.GROQ_MODEL -> CloudSettingsPatch()
+                            EditField.GROQ_BASE_URL -> CloudSettingsPatch()
+                            EditField.CUSTOM_PROVIDER_MODEL -> CloudSettingsPatch()
+                            EditField.CUSTOM_PROVIDER_BASE_URL -> CloudSettingsPatch()
+                        }
+                        cloudSettingsRepository.recordChange(patch)
+                        synchronizeCloudSettings()
+                    }
                 }
                 editingFieldName = null
             },
