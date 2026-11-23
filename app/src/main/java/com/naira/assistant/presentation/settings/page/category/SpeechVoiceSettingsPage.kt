@@ -20,12 +20,14 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "voice", title = "Speech Services", subtitle = "Manage speech and voice settings.",
+            id = "voice",
+            title = "Speech Services",
+            subtitle = "Manage speech and voice settings.",
             icon = Icons.Outlined.SettingsVoice,
             children = listOf(
                 SettingsNode.Item(
-                    id = "system-tts", title = "System text-to-speech",
-                    subtitle = if (state.speechEngine == SpeechEngine.SYSTEM) "Enabled on this device" else "Disabled",
+                    id = "system-tts", title = "System Text-to-Speech",
+                    subtitle = "Configure system speech output.",
                     icon = Icons.Outlined.GraphicEq,
                     onClick = {
                         onSaveSpeechEngine(
@@ -35,7 +37,7 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                     },
                     trailing = {
                         TrailingSwitch(
-                            label = "System text-to-speech",
+                            label = "System Text-to-Speech",
                             checked = state.speechEngine == SpeechEngine.SYSTEM,
                             onCheckedChange = { enabled ->
                                 onSaveSpeechEngine(
@@ -46,8 +48,8 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                     },
                 ),
                 SettingsNode.Category(
-                    id = "gemini-tts", title = "Google Gemini TTS",
-                    subtitle = if (state.speechEngine == SpeechEngine.ADVANCED) "Enabled" else "Disabled",
+                    id = "gemini-tts", title = "Gemini Text-to-Speech",
+                    subtitle = "Configure Gemini speech output.",
                     icon = Icons.Outlined.GraphicEq,
                     trailing = {
                         TrailingSwitch(
@@ -63,18 +65,18 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                     children = listOf(
                         SettingsNode.Item(
                             id = "gemini-tts-key", title = "API key",
-                            subtitle = "Use the Gemini API key saved in Providers & API Keys",
+                            subtitle = "Enter your API key.",
                             icon = Icons.Outlined.Key,
                             onClick = { onEditKey(AssistantProvider.GEMINI) },
                         ),
                         SettingsNode.Item(
-                            id = "gemini-tts-model", title = "Model selection",
+                            id = "gemini-tts-model", title = "Model Name",
                             subtitle = state.geminiTtsModel,
                             icon = Icons.Outlined.AutoAwesome,
                             onClick = { onEditField(EditField.GEMINI_TTS_MODEL) },
                         ),
                         SettingsNode.Item(
-                            id = "gemini-tts-voice", title = "Voice selection",
+                            id = "gemini-tts-voice", title = "Voice",
                             subtitle = state.geminiTtsVoice,
                             icon = Icons.Outlined.GraphicEq,
                             onClick = { onEditField(EditField.GEMINI_TTS_VOICE) },
@@ -82,8 +84,8 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                     ),
                 ),
                 SettingsNode.Category(
-                    id = "custom-tts", title = "Custom TTS Provider",
-                    subtitle = if (state.speechEngine == SpeechEngine.CUSTOM) "Enabled" else "Disabled",
+                    id = "custom-tts", title = "Custom Text-to-Speech",
+                    subtitle = "Configure custom speech output.",
                     icon = Icons.Outlined.GraphicEq,
                     trailing = {
                         TrailingSwitch(
@@ -96,8 +98,8 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                     },
                     children = listOf(
                         SettingsNode.Item(
-                            id = "custom-tts-url", title = "API base URL",
-                            subtitle = state.customTtsBaseUrl.ifBlank { "Set your OpenAI-compatible API URL" },
+                            id = "custom-tts-url", title = "API Endpoint",
+                            subtitle = state.customTtsBaseUrl.ifBlank { "Set the OpenAI-compatible API base URL." },
                             icon = Icons.Outlined.Settings,
                             onClick = { onEditField(EditField.CUSTOM_TTS_BASE_URL) },
                         ),
@@ -108,13 +110,13 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                             onClick = onEditCustomTtsApiKey,
                         ),
                         SettingsNode.Item(
-                            id = "custom-tts-model", title = "Model selection",
-                            subtitle = state.customTtsModel.ifBlank { "Set your model ID" },
+                            id = "custom-tts-model", title = "Model Name",
+                            subtitle = state.customTtsModel.ifBlank { "Enter a model name." },
                             icon = Icons.Outlined.AutoAwesome,
                             onClick = { onEditField(EditField.CUSTOM_TTS_MODEL) },
                         ),
                         SettingsNode.Item(
-                            id = "custom-tts-voice", title = "Voice selection",
+                            id = "custom-tts-voice", title = "Voice",
                             subtitle = state.customTtsVoice,
                             icon = Icons.Outlined.GraphicEq,
                             onClick = { onEditField(EditField.CUSTOM_TTS_VOICE) },

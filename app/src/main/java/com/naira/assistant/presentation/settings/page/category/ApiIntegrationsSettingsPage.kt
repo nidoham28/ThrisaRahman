@@ -20,11 +20,11 @@ internal object ApiIntegrationsSettingsPage : CategoryNameUi() {
             children = listOf(
                 SettingsNode.Item(
                     id = "weatherapi-key",
-                    title = "Weather service API key",
+                    title = "Weather API Key",
                     subtitle = if (state.weatherApiKey.isBlank()) {
-                        "Not configured"
+                        "Enter your weather API key."
                     } else {
-                        "Configured · synced to your account"
+                        "Configured"
                     },
                     icon = Icons.Outlined.Key,
                     onClick = onEditWeatherApiKey,
@@ -37,8 +37,8 @@ internal object ApiIntegrationsSettingsPage : CategoryNameUi() {
                 ),
                 SettingsNode.Item(
                     id = "cricapi-key",
-                    title = "Cricket service API key",
-                    subtitle = if (state.cricketApiKey.isBlank()) "Not configured" else "Configured",
+                    title = "Cricket API Key",
+                    subtitle = if (state.cricketApiKey.isBlank()) "Enter your cricket API key." else "Configured",
                     icon = Icons.Outlined.Key,
                     onClick = onEditCricketApiKey,
                     trailing = {

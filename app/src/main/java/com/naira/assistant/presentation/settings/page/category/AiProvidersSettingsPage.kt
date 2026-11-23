@@ -22,120 +22,121 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
     override fun build(context: SettingsPageContext): SettingsNode.Category = with(context) {
         val state = this.state
         SettingsNode.Category(
-            id = "providers", title = "Providers", subtitle = "Configure AI providers",
+            id = "providers",
+            title = "Providers",
+            subtitle = "Configure AI providers",
             icon = Icons.Outlined.VpnKey,
-            children = AssistantProvider.entries.filter { it != AssistantProvider.CUSTOM }.map { provider ->
-                SettingsNode.Category(
-                    id = "provider-${provider.name.lowercase()}",
-                    title = provider.displayName,
-                    subtitle = if (state.selectedProvider == provider) "Active provider" else "Provider settings",
-                    icon = Icons.Outlined.VpnKey,
-                    trailing = {
-                        TrailingSwitch(
-                            label = "Select ${provider.displayName}",
-                            checked = state.selectedProvider == provider,
-                            onCheckedChange = { checked ->
-                                if (checked) onSaveActiveProvider(provider)
-                            },
-                        )
-                    },
-                    children = buildList {
-                        add(
-                            SettingsNode.Item(
-                                id = "model-${provider.name.lowercase()}",
-                                title = "Model selection",
-                                subtitle = when (provider) {
-                                    AssistantProvider.GEMINI -> state.geminiModelId
-                                    AssistantProvider.OPENROUTER -> state.openRouterModelId
-                                    AssistantProvider.GROQ -> state.groqModelId
-                                    AssistantProvider.CUSTOM -> provider.defaultModelId
-                                },
-                                icon = Icons.Outlined.AutoAwesome,
-                                onClick = when (provider) {
-                                    AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
-                                    AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
-                                    AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
-                                    AssistantProvider.CUSTOM -> null
+            children = AssistantProvider.entries.filter { it != AssistantProvider.CUSTOM }
+                .map { provider ->
+                    SettingsNode.Category(
+                        id = "provider-${provider.name.lowercase()}",
+                        title = provider.displayName,
+                        subtitle = "Configure $provider API settings.",
+                        icon = Icons.Outlined.VpnKey,
+                        trailing = {
+                            TrailingSwitch(
+                                label = "Select ${provider.displayName}",
+                                checked = state.selectedProvider == provider,
+                                onCheckedChange = { checked ->
+                                    if (checked) onSaveActiveProvider(provider)
                                 },
                             )
-                        )
-                        if (provider == AssistantProvider.OPENROUTER || provider == AssistantProvider.GROQ) {
-                            val baseUrl = if (provider == AssistantProvider.OPENROUTER) {
-                                state.openRouterBaseUrl
-                            } else {
-                                state.groqBaseUrl
+                        },
+                        children = buildList {
+                            add(
+                                SettingsNode.Item(
+                                    id = "model-${provider.name.lowercase()}",
+                                    title = "Model Name",
+                                    subtitle = when (provider) {
+                                        AssistantProvider.GEMINI -> state.geminiModelId
+                                        AssistantProvider.OPENROUTER -> state.openRouterModelId
+                                        AssistantProvider.GROQ -> state.groqModelId
+                                        AssistantProvider.CUSTOM -> provider.defaultModelId
+                                    },
+                                    icon = Icons.Outlined.AutoAwesome,
+                                    onClick = when (provider) {
+                                        AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
+                                        AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
+                                        AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
+                                        AssistantProvider.CUSTOM -> null
+                                    },
+                                )
+                            )
+                            if (provider == AssistantProvider.OPENROUTER || provider == AssistantProvider.GROQ) {
+                                val baseUrl = if (provider == AssistantProvider.OPENROUTER) {
+                                    state.openRouterBaseUrl
+                                } else {
+                                    state.groqBaseUrl
+                                }
+                                add(
+                                    SettingsNode.Item(
+                                        id = "api-url-${provider.name.lowercase()}",
+                                        title = "API base URL",
+                                        subtitle = baseUrl.ifBlank { "Default · tap to override" },
+                                        icon = Icons.Outlined.Settings,
+                                        onClick = {
+                                            onEditField(
+                                                if (provider == AssistantProvider.OPENROUTER) {
+                                                    EditField.OPENROUTER_BASE_URL
+                                                } else {
+                                                    EditField.GROQ_BASE_URL
+                                                },
+                                            )
+                                        },
+                                    ),
+                                )
                             }
                             add(
                                 SettingsNode.Item(
-                                    id = "api-url-${provider.name.lowercase()}",
-                                    title = "API base URL",
-                                    subtitle = baseUrl.ifBlank { "Default · tap to override" },
-                                    icon = Icons.Outlined.Settings,
+                                    id = "reasoning-${provider.name.lowercase()}",
+                                    title = "Reasoning Mode",
+                                    subtitle = "Enable advanced reasoning capabilities.",
+                                    icon = Icons.Outlined.AutoAwesome,
                                     onClick = {
-                                        onEditField(
-                                            if (provider == AssistantProvider.OPENROUTER) {
-                                                EditField.OPENROUTER_BASE_URL
+                                        onSaveAssistantThinkingMode(
+                                            if (state.assistantThinkingMode == AssistantThinkingMode.OFF) {
+                                                AssistantThinkingMode.AUTO
                                             } else {
-                                                EditField.GROQ_BASE_URL
+                                                AssistantThinkingMode.OFF
                                             },
                                         )
                                     },
-                                ),
+                                    trailing = {
+                                        TrailingSwitch(
+                                            label = "Enable reasoning",
+                                            checked = state.assistantThinkingMode != AssistantThinkingMode.OFF,
+                                            onCheckedChange = { enabled ->
+                                                onSaveAssistantThinkingMode(
+                                                    if (enabled) AssistantThinkingMode.AUTO else AssistantThinkingMode.OFF,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
                             )
-                        }
-                        add(
-                            SettingsNode.Item(
-                                id = "reasoning-${provider.name.lowercase()}",
-                                title = "Enable reasoning",
-                                subtitle = if (state.assistantThinkingMode == AssistantThinkingMode.OFF) {
-                                    "Disabled"
-                                } else {
-                                    "Enabled · shared across providers"
-                                },
-                                icon = Icons.Outlined.AutoAwesome,
-                                onClick = {
-                                    onSaveAssistantThinkingMode(
-                                        if (state.assistantThinkingMode == AssistantThinkingMode.OFF) {
-                                            AssistantThinkingMode.AUTO
-                                        } else {
-                                            AssistantThinkingMode.OFF
-                                        },
-                                    )
-                                },
-                                trailing = {
-                                    TrailingSwitch(
-                                        label = "Enable reasoning",
-                                        checked = state.assistantThinkingMode != AssistantThinkingMode.OFF,
-                                        onCheckedChange = { enabled ->
-                                            onSaveAssistantThinkingMode(
-                                                if (enabled) AssistantThinkingMode.AUTO else AssistantThinkingMode.OFF,
-                                            )
-                                        },
-                                    )
-                                },
+                            add(
+                                SettingsNode.Item(
+                                    id = "key-${provider.name.lowercase()}",
+                                    title = "API key",
+                                    subtitle = if (state.keyFor(provider)
+                                            .isBlank()
+                                    ) "Not configured" else "Configured",
+                                    icon = Icons.Outlined.Key,
+                                    onClick = { onEditKey(provider) },
+                                    trailing = {
+                                        TrailingBadge(
+                                            if (state.keyFor(provider)
+                                                    .isBlank()
+                                            ) "SET UP" else "SAVED",
+                                            if (state.keyFor(provider).isBlank()) Aqua else Success,
+                                        )
+                                    })
                             )
-                        )
-                        add(
-                            SettingsNode.Item(
-                                id = "key-${provider.name.lowercase()}",
-                                title = "API key",
-                                subtitle = if (state.keyFor(provider).isBlank()) "Not configured" else "Configured",
-                                icon = Icons.Outlined.Key,
-                                onClick = { onEditKey(provider) },
-                                trailing = {
-                                    TrailingBadge(
-                                        if (state.keyFor(provider).isBlank()) "SET UP" else "SAVED",
-                                        if (state.keyFor(provider).isBlank()) Aqua else Success,
-                                    )
-                                }
-                            )
-                        )
-                    }
-                )
-            } + SettingsNode.Category(
-                id = "provider-custom",
+                        })
+                } + SettingsNode.Category(
+                id = "Custom Provider",
                 title = AssistantProvider.CUSTOM.displayName,
-                subtitle = if (state.selectedProvider == AssistantProvider.CUSTOM) "Active provider" else "Custom endpoint settings",
+                subtitle = "Configure custom AI providers.",
                 icon = Icons.Outlined.VpnKey,
                 trailing = {
                     TrailingSwitch(
@@ -149,35 +150,41 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                 children = listOf(
                     SettingsNode.Item(
                         id = "custom-provider-model",
-                        title = "Model name",
-                        subtitle = state.customProviderModelId.ifBlank { "Set your model ID" },
+                        title = "Model Name",
+                        subtitle = state.customProviderModelId.ifBlank { "Enter a model name." },
                         icon = Icons.Outlined.AutoAwesome,
                         onClick = { onEditField(EditField.CUSTOM_PROVIDER_MODEL) },
                     ),
                     SettingsNode.Item(
                         id = "custom-provider-url",
-                        title = "API base URL",
-                        subtitle = state.customProviderBaseUrl.ifBlank { "Set your HTTPS API URL" },
+                        title = "API Endpoint",
+                        subtitle = state.customProviderBaseUrl.ifBlank { "Set the API base URL." },
                         icon = Icons.Outlined.Settings,
                         onClick = { onEditField(EditField.CUSTOM_PROVIDER_BASE_URL) },
                     ),
                     SettingsNode.Item(
                         id = "custom-provider-key",
                         title = "API key",
-                        subtitle = if (state.keyFor(AssistantProvider.CUSTOM).isBlank()) "Not configured" else "Configured",
+                        subtitle = if (state.keyFor(AssistantProvider.CUSTOM)
+                                .isBlank()
+                        ) "Enter your API keys." else "Configured",
                         icon = Icons.Outlined.Key,
                         onClick = { onEditKey(AssistantProvider.CUSTOM) },
                         trailing = {
                             TrailingBadge(
-                                if (state.keyFor(AssistantProvider.CUSTOM).isBlank()) "SET UP" else "SAVED",
-                                if (state.keyFor(AssistantProvider.CUSTOM).isBlank()) Aqua else Success,
+                                if (state.keyFor(AssistantProvider.CUSTOM)
+                                        .isBlank()
+                                ) "SET UP" else "SAVED",
+                                if (state.keyFor(AssistantProvider.CUSTOM)
+                                        .isBlank()
+                                ) Aqua else Success,
                             )
                         },
                     ),
                     SettingsNode.Item(
                         id = "custom-provider-reasoning",
-                        title = "Enable reasoning",
-                        subtitle = if (state.assistantThinkingMode == AssistantThinkingMode.OFF) "Disabled" else "Enabled · shared across providers",
+                        title = "Reasoning Mode",
+                        subtitle = "Enable advanced reasoning capabilities.",
                         icon = Icons.Outlined.AutoAwesome,
                         onClick = {
                             onSaveAssistantThinkingMode(
