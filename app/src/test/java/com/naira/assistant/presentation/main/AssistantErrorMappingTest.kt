@@ -49,4 +49,27 @@ class AssistantErrorMappingTest {
 
         assertEquals("Model not found", text)
     }
+
+    @Test
+    fun `reports reaching the tool limit when no response text was produced`() {
+        assertTrue(
+            assistantResponseText(
+                response = null,
+                currentText = "",
+                stepLimitReached = true,
+            ).contains("tool-call limit"),
+        )
+    }
+
+    @Test
+    fun `reports the tool limit after a partial response`() {
+        val text = assistantResponseText(
+            response = null,
+            currentText = "I found part of the answer.",
+            stepLimitReached = true,
+        )
+
+        assertTrue(text.startsWith("I found part of the answer."))
+        assertTrue(text.contains("tool-call limit"))
+    }
 }

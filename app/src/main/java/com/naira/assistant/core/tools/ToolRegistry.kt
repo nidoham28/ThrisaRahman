@@ -114,7 +114,6 @@ object ToolRegistry {
         /**
          * Device declarations
          */
-        "get_current_time",
         "get_device_info",
         "control_flashlight",
         "control_bluetooth",

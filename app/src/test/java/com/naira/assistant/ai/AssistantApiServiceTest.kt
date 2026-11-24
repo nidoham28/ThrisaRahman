@@ -259,6 +259,24 @@ class AssistantApiServiceTest {
     }
 
     @Test
+    fun `filters tools unavailable under the current sensitive action setting`() {
+        val allTools = listOf(
+            ToolDefinition("capture_screen", "Capture the screen", buildJsonObject {}),
+            ToolDefinition("get_current_time", "Get local time", buildJsonObject {}),
+            ToolDefinition("create_note", "Create a note", buildJsonObject {}),
+        )
+
+        assertEquals(
+            listOf("get_current_time", "create_note"),
+            filterToolDefinitionsForPermissions(allTools, sensitiveActionsEnabled = false).map { it.name },
+        )
+        assertEquals(
+            allTools,
+            filterToolDefinitionsForPermissions(allTools, sensitiveActionsEnabled = true),
+        )
+    }
+
+    @Test
     fun `adds bounded delegation tool schema`() {
         val definition = AgentOrchestrator.toolDefinition()
         val taskSchema = definition.parameters["properties"]!!.jsonObject

@@ -38,6 +38,7 @@ import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import com.naira.assistant.core.tools.ToolDefinition
+import com.naira.assistant.core.tools.ToolRegistry
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.AssistantVoice
@@ -113,13 +114,15 @@ class AssistantApiService(context: Context) : AutoCloseable {
         modelId: String = provider.defaultModelId,
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
         providerBaseUrl: String? = null,
+        sensitiveActionsEnabled: Boolean = true,
     ): Flow<AgentEvent> {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
         val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
         val model = createAssistantModel(modelId)
-        val tools = (toolDefinitions + AgentOrchestrator.toolDefinition())
+        val tools = (filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled) +
+            AgentOrchestrator.toolDefinition())
             .map { it.toAgentTool(executeTool) }
         val provider = providerManager.getProviderByType(setting)
         val request = AgentRequest(
@@ -384,8 +387,17 @@ class AssistantApiService(context: Context) : AutoCloseable {
         const val GROQ_BASE_URL = "https://api.groq.com/openai/v1"
         const val TOKENS_BD_BASE_URL = "https://tokens.bd/v1"
         const val DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
-        private const val MAX_AGENT_STEPS = 33
+        private const val MAX_AGENT_STEPS = 8
     }
+}
+
+internal fun filterToolDefinitionsForPermissions(
+    toolDefinitions: List<ToolDefinition>,
+    sensitiveActionsEnabled: Boolean,
+): List<ToolDefinition> = if (sensitiveActionsEnabled) {
+    toolDefinitions
+} else {
+    toolDefinitions.filterNot { it.name in ToolRegistry.settingsPermissionRequiredNames }
 }
 
 /**

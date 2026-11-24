@@ -52,6 +52,7 @@ import me.rerere.ai.ui.UIMessage as AgentMessage
 import me.rerere.ai.ui.UIMessagePart as AgentPart
 import androidx.core.net.toUri
 import com.naira.assistant.ai.AssistantToolResult
+import com.naira.assistant.ai.compactConversationHistory
 import java.util.concurrent.atomic.AtomicInteger
 
 /** One bubble in the chat UI. Kept separate from the AI module's message model. */
@@ -91,6 +92,8 @@ private data class AgentRunContext(
 )
 
 private val toolDisplayJson = Json { prettyPrint = true }
+private const val AGENT_STEP_LIMIT_MESSAGE =
+    "I reached the tool-call limit for this turn before completing the request. Please ask me to continue or split the task."
 
 /** Pretty-prints a JSON string; returns null when the text is not valid JSON. */
 private fun String.toPrettyJsonOrNull(): String? = runCatching {
@@ -185,6 +188,20 @@ internal fun assistantErrorText(t: Throwable, provider: AssistantProvider): Stri
             "Network error. Check your connection and try again.\n$message"
         message.isNotBlank() -> message
         else -> "Unexpected error: ${t::class.simpleName}"
+    }
+}
+
+internal fun assistantResponseText(
+    response: String?,
+    currentText: String,
+    stepLimitReached: Boolean,
+): String {
+    response?.takeIf(String::isNotBlank)?.let { return it }
+    if (!stepLimitReached) return currentText
+    return if (currentText.isBlank()) {
+        AGENT_STEP_LIMIT_MESSAGE
+    } else {
+        "$currentText\n\n$AGENT_STEP_LIMIT_MESSAGE"
     }
 }
 
@@ -504,10 +521,11 @@ class AssistantViewModel(
         val completedSpecialists = AtomicInteger()
         var delegatedSpecialists = 0
         val requestHistory = context.requestHistory
+        val sensitiveActionsEnabled = assistantSettingsStorage.getSensitiveToolAccessEnabled()
 
         val toolDispatcher = ToolCallDispatcher(
             context = appContext,
-            sensitiveActionsEnabled = assistantSettingsStorage.getSensitiveToolAccessEnabled(),
+            sensitiveActionsEnabled = sensitiveActionsEnabled,
             executeRegisteredTool = toolExecutor,
             executeSpecialists = { call ->
                 val delegation = AgentOrchestrator.parseRequest(call.args)
@@ -570,6 +588,7 @@ class AssistantViewModel(
             modelId = context.modelId,
             reasoningLevel = context.reasoningLevel,
             providerBaseUrl = context.providerBaseUrl,
+            sensitiveActionsEnabled = sensitiveActionsEnabled,
         ).collect { event ->
             val assistantMessage = when (event) {
                 is AgentEvent.MessageUpdated -> event.message
@@ -620,21 +639,27 @@ class AssistantViewModel(
             }
 
             if (context.requestGeneration == chatGeneration) {
-                renderAgentMessage(context, assistantMessage, event is AgentEvent.Finished)
+                renderAgentMessage(
+                    context = context,
+                    message = assistantMessage,
+                    isFinal = event is AgentEvent.Finished,
+                    stepLimitReached = event is AgentEvent.Finished &&
+                        event.reason == AgentFinishReason.StepLimitReached,
+                )
             }
         }
 
         val finalMessage = finishedMessage ?: return
         if (context.requestGeneration != chatGeneration) return
         modelHistory.clear()
-        modelHistory += context.requestHistory
-        modelHistory += finalMessage
+        modelHistory += compactConversationHistory(context.requestHistory + finalMessage)
     }
 
     private fun renderAgentMessage(
         context: AgentRunContext,
         message: AgentMessage,
         isFinal: Boolean,
+        stepLimitReached: Boolean,
     ) {
         val decoded = decodeAssistantResponse(message.toText(), isFinal)
         _messages.update { current ->
@@ -645,7 +670,7 @@ class AssistantViewModel(
                 } else {
                     found = true
                     item.copy(
-                        text = decoded?.response ?: item.text,
+                        text = assistantResponseText(decoded?.response, item.text, stepLimitReached),
                         imageUri = context.generatedImageUri ?: item.imageUri,
                         imageSavedTo = context.generatedImageSavedTo ?: item.imageSavedTo,
                         toolCalls = message.getTools().toUiToolCalls(),
@@ -654,7 +679,7 @@ class AssistantViewModel(
             }
             if (found) updated else updated + UiMessage(
                 id = context.assistantId,
-                text = decoded?.response.orEmpty(),
+                text = assistantResponseText(decoded?.response, "", stepLimitReached),
                 isUser = false,
                 imageUri = context.generatedImageUri,
                 imageSavedTo = context.generatedImageSavedTo,

@@ -37,8 +37,12 @@ class TerminalArithmeticTest {
         assertThrows(IllegalArgumentException::class.java) {
             parseTerminalArithmetic("10 / (3 - 3)")
         }
-        assertThrows(ArithmeticException::class.java) {
+        val overflow = assertThrows(IllegalArgumentException::class.java) {
             parseTerminalArithmetic("9223372036854775807 + 1")
         }
+        assertEquals(
+            "Calculation exceeds the supported 64-bit integer range.",
+            overflow.message,
+        )
     }
 }
