@@ -204,6 +204,16 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun knownAbilitiesDistinguishUnsupportedFromUnknownModels() {
+        assertEquals(null, ModelRegistry.getKnownAbilities("unknown-model-xyz"))
+        assertEquals(emptySet<ModelAbility>(), ModelRegistry.getKnownAbilities("gemini-2.5-flash-image"))
+        assertEquals(
+            setOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            ModelRegistry.getKnownAbilities("gemini-4-flash"),
+        )
+    }
+
+    @Test
     fun testContextLengthDsl() {
         val model = defineModel {
             tokens("custom", "ctx")

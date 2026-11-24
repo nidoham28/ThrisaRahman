@@ -10,7 +10,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun getWeatherReportTool() = ToolDefinition(
     name = "get_weather_report",
-    description = "For requested weather, get current conditions, 12-hour details, and a 3-day forecast for a named place. Requires a WeatherAPI key in Settings.",
+    description = universalToolDescription(
+        purpose = "Returns current conditions, 12-hour details, and a 3-day forecast for a location.",
+        trigger = "The user asks for current weather or a near-term forecast for a place.",
+        notFor = "Do not use for general climate or meteorology questions; never guess current conditions.",
+        prerequisite = "A specific `location` is required; clarify ambiguous places. A WeatherAPI key must be configured in Settings.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -22,4 +27,5 @@ fun getWeatherReportTool() = ToolDefinition(
         }
         putJsonArray("required") { add(JsonPrimitive("location")) }
     },
+    parallelizable = true,
 )

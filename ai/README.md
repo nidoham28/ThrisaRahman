@@ -212,6 +212,12 @@ SuperGrok 订阅，参照 can1357/oh-my-pi 的 xai-oauth，详见 `GrokProvider`
 | app    | `data/ai/account/ProviderAccountManager.kt`              | 实现 `AccountCredentialProvider`：登录、刷新、写回凭据、`preserveCredential`              |
 | app    | `ui/pages/setting/components/ProviderConfigure.kt`       | 账号登录界面                                                                   |
 
+### Agent 循环与工具执行
+
+`agent/Agent.kt` 提供有界的多步执行循环：每次模型响应中的本地工具结果会加入同一条助手消息，再用于下一步模型请求；不同步骤天然顺序执行。`AgentRequest.maxSteps` 限制模型请求次数，`retry` 只针对模型请求，`maxParallelToolCalls` 控制并发上限，`toolTimeoutMillis` 为每个本地工具设定超时。
+
+工具默认串行。只有明确无副作用且可并发的 `Tool` 才应设置 `parallelizable = true`；同一批连续的安全调用会按配置并行执行，遇到其他工具时先等待。工具调用不会自动重试，避免超时后重复执行写操作。取消会向上传播，已完成工具的结果会保留在助手消息中。
+
 ### 新增一个账号类提供商
 
 1. ai：新增 `ProviderSetting.Account` 的子类（不要加 `baseUrl` 之类可以改变请求地址的字段），实现对应的 `Provider`，

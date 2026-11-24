@@ -18,9 +18,12 @@ private val nairaInfoTopics = listOf(
 
 fun nairaDeveloperInfoTool() = ToolDefinition(
     name = "get_naira_info",
-    description = "Get public identity, purpose, or capability information about Naira and its " +
-        "developer. Never reveal source/internal details, private data, credentials, or secrets; " +
-        "do not use for general technical support.",
+    description = universalToolDescription(
+        purpose = "Returns public information about Naira Assistant's identity, purpose, capabilities, or developer.",
+        trigger = "The user asks who Naira is, what it is for/can do, or who developed it.",
+        notFor = "Do not use for general technical support or disclose private/internal details, source code, credentials, or secrets.",
+        prerequisite = "Select the matching declared `topic` enum value.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {

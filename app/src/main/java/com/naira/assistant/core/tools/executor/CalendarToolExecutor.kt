@@ -55,16 +55,43 @@ object CalendarToolExecutor {
             return error("Argument 'start_time_ms' must be a positive Unix timestamp in milliseconds.")
         }
 
-        val endTimeMs = extractLongArg(call, "end_time_ms")
-            ?: (startTimeMs + DEFAULT_DURATION_MS)
+        val allDay = if (call.args.containsKey("all_day")) {
+            extractBooleanArg(call, "all_day")
+                ?: return error("Argument 'all_day' must be a boolean.")
+        } else {
+            false
+        }
+        val localStartTimeMs = if (allDay) {
+            normalizeAllDayTimestamp(startTimeMs)
+        } else {
+            startTimeMs
+        }
+        val start = localStartTimeMs
+        val endTimeMs = if (call.args.containsKey("end_time_ms")) {
+            val requestedEnd = extractLongArg(call, "end_time_ms")
+                ?: return error("Argument 'end_time_ms' must be a valid integer.")
+            if (allDay) normalizeAllDayTimestamp(requestedEnd) else requestedEnd
+        } else {
+            defaultEndTimeMs(start, allDay)
+                ?: return error("The default event end time exceeds the supported date range.")
+        }
 
-        if (endTimeMs <= startTimeMs) {
+        if (endTimeMs <= start) {
             return error("Event end time must be later than its start time.")
         }
 
-        val allDay = extractBooleanArg(call, "all_day") ?: false
-        val description = jsonStringArg(call, "description")?.trim().orEmpty()
-        val location = jsonStringArg(call, "location")?.trim().orEmpty()
+        val description = if (call.args.containsKey("description")) {
+            rawStringArg(call, "description")
+                ?: return error("Argument 'description' must be a string.")
+        } else {
+            ""
+        }.trim()
+        val location = if (call.args.containsKey("location")) {
+            rawStringArg(call, "location")
+                ?: return error("Argument 'location' must be a string.")
+        } else {
+            ""
+        }.trim()
 
         return try {
             val calendarId = getPrimaryCalendarId(context)
@@ -83,7 +110,7 @@ object CalendarToolExecutor {
                 put(CalendarContract.Events.TITLE, title)
                 put(CalendarContract.Events.DESCRIPTION, description)
                 put(CalendarContract.Events.EVENT_LOCATION, location)
-                put(CalendarContract.Events.DTSTART, startTimeMs)
+                put(CalendarContract.Events.DTSTART, start)
                 put(CalendarContract.Events.DTEND, endTimeMs)
                 put(CalendarContract.Events.ALL_DAY, if (allDay) 1 else 0)
                 put(CalendarContract.Events.EVENT_TIMEZONE, timezone)
@@ -102,7 +129,7 @@ object CalendarToolExecutor {
                 put("action", "created")
                 put("event_id", eventId)
                 put("title", title)
-                put("start_time_ms", startTimeMs)
+                put("start_time_ms", start)
                 put("end_time_ms", endTimeMs)
                 put("description", description)
                 put("location", location)
@@ -126,19 +153,39 @@ object CalendarToolExecutor {
     ): JsonObject {
         val now = System.currentTimeMillis()
 
-        val startFromMs = extractLongArg(call, "start_from_ms")
-            ?: startOfToday()
+        val startFromMs = if (call.args.containsKey("start_from_ms")) {
+            extractLongArg(call, "start_from_ms")
+                ?: return error("Argument 'start_from_ms' must be an integer.")
+        } else {
+            startOfToday()
+        }
 
-        val endToMs = extractLongArg(call, "end_to_ms")
-            ?: (now + 30L * DAY_MS)
+        val endToMs = if (call.args.containsKey("end_to_ms")) {
+            extractLongArg(call, "end_to_ms")
+                ?: return error("Argument 'end_to_ms' must be an integer.")
+        } else {
+            now + 30L * DAY_MS
+        }
 
         if (startFromMs < 0L || endToMs <= startFromMs) {
             return error("Invalid date range. The end time must be later than the start time.")
         }
 
-        val query = jsonStringArg(call, "query")?.trim()
-        val limit = (extractIntArg(call, "limit") ?: DEFAULT_LIMIT)
-            .coerceIn(1, MAX_LIMIT)
+        val query = if (call.args.containsKey("query")) {
+            rawStringArg(call, "query")
+                ?: return error("Argument 'query' must be a string.")
+        } else {
+            null
+        }?.trim()
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit")
+                ?: return error("Argument 'limit' must be an integer.")
+        } else {
+            DEFAULT_LIMIT
+        }
+        if (limit !in 1..MAX_LIMIT) {
+            return error("Argument 'limit' must be between 1 and $MAX_LIMIT.")
+        }
 
         val selectionParts = mutableListOf<String>()
         val selectionArgs = mutableListOf<String>()
@@ -256,24 +303,43 @@ object CalendarToolExecutor {
 
         val values = ContentValues()
 
-        jsonStringArg(call, "title")?.let {
-            if (it.isBlank()) {
-                return error("Event title cannot be blank.")
-            }
-            values.put(CalendarContract.Events.TITLE, it.trim())
+        if (call.args.containsKey("title")) {
+            val title = rawStringArg(call, "title")
+                ?: return error("Argument 'title' must be a string.")
+            if (title.isBlank()) return error("Event title cannot be blank.")
+            values.put(CalendarContract.Events.TITLE, title.trim())
         }
 
-        jsonStringArg(call, "description")?.let {
-            values.put(CalendarContract.Events.DESCRIPTION, it.trim())
+        if (call.args.containsKey("description")) {
+            val description = rawStringArg(call, "description")
+                ?: return error("Argument 'description' must be a string.")
+            values.put(CalendarContract.Events.DESCRIPTION, description.trim())
         }
 
-        jsonStringArg(call, "location")?.let {
-            values.put(CalendarContract.Events.EVENT_LOCATION, it.trim())
+        if (call.args.containsKey("location")) {
+            val location = rawStringArg(call, "location")
+                ?: return error("Argument 'location' must be a string.")
+            values.put(CalendarContract.Events.EVENT_LOCATION, location.trim())
         }
 
-        val newStart = extractLongArg(call, "start_time_ms")
-        val newEnd = extractLongArg(call, "end_time_ms")
-        val newAllDay = extractBooleanArg(call, "all_day")
+        val newStart = if (call.args.containsKey("start_time_ms")) {
+            extractLongArg(call, "start_time_ms")
+                ?: return error("Argument 'start_time_ms' must be an integer.")
+        } else {
+            null
+        }
+        val newEnd = if (call.args.containsKey("end_time_ms")) {
+            extractLongArg(call, "end_time_ms")
+                ?: return error("Argument 'end_time_ms' must be an integer.")
+        } else {
+            null
+        }
+        val newAllDay = if (call.args.containsKey("all_day")) {
+            extractBooleanArg(call, "all_day")
+                ?: return error("Argument 'all_day' must be a boolean.")
+        } else {
+            null
+        }
 
         newStart?.let {
             if (it <= 0L) {
@@ -312,23 +378,61 @@ object CalendarToolExecutor {
                 uri,
                 arrayOf(
                     CalendarContract.Events.DTSTART,
-                    CalendarContract.Events.DTEND
+                    CalendarContract.Events.DTEND,
+                    CalendarContract.Events.ALL_DAY,
                 ),
                 null,
                 null,
                 null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
-                    cursor.getLong(0) to cursor.getLong(1)
+                    Triple(
+                        cursor.getLong(0),
+                        cursor.getLong(1),
+                        cursor.getInt(2) == 1,
+                    )
                 } else {
                     null
                 }
             } ?: return error("Calendar event with ID #$eventId was not found.")
 
-            val finalStart = newStart ?: existingTiming.first
-            val finalEnd = newEnd ?: existingTiming.second
+            val isAllDay = newAllDay ?: existingTiming.third
+            var adjustedStart = newStart ?: existingTiming.first
+            var adjustedEnd = newEnd ?: existingTiming.second
 
-            if (finalEnd <= finalStart) {
+            if (isAllDay) {
+                if (existingTiming.third) {
+                    if (newStart != null) {
+                        adjustedStart = normalizeAllDayTimestamp(newStart)
+                    }
+                    if (newEnd != null) {
+                        adjustedEnd = normalizeAllDayTimestamp(newEnd)
+                    }
+                } else {
+                    adjustedStart = normalizeAllDayTimestamp(adjustedStart)
+                    adjustedEnd = normalizeAllDayTimestamp(adjustedEnd)
+                }
+
+                if (adjustedEnd <= adjustedStart && newEnd == null) {
+                    adjustedEnd = defaultEndTimeMs(adjustedStart, allDay = true)
+                        ?: return error("The default event end time exceeds the supported date range.")
+                }
+                if (!existingTiming.third || newStart != null || newEnd != null) {
+                    values.put(CalendarContract.Events.DTSTART, adjustedStart)
+                    values.put(CalendarContract.Events.DTEND, adjustedEnd)
+                }
+            } else if (existingTiming.third && newAllDay == false) {
+                if (newStart == null) {
+                    adjustedStart = normalizeUtcAllDayTimestampToLocalMidnight(adjustedStart)
+                }
+                if (newEnd == null) {
+                    adjustedEnd = normalizeUtcAllDayTimestampToLocalMidnight(adjustedEnd)
+                }
+                values.put(CalendarContract.Events.DTSTART, adjustedStart)
+                values.put(CalendarContract.Events.DTEND, adjustedEnd)
+            }
+
+            if (adjustedEnd <= adjustedStart) {
                 return error("Event end time must be later than its start time.")
             }
 
@@ -344,8 +448,8 @@ object CalendarToolExecutor {
                     put("success", true)
                     put("action", "updated")
                     put("event_id", eventId)
-                    put("start_time_ms", finalStart)
-                    put("end_time_ms", finalEnd)
+                    put("start_time_ms", adjustedStart)
+                    put("end_time_ms", adjustedEnd)
                     put("message", "Calendar event #$eventId updated successfully.")
                 }
             } else {
@@ -507,6 +611,54 @@ object CalendarToolExecutor {
         element.jsonPrimitive.booleanOrNull
             ?: element.jsonPrimitive.content.trim().toBooleanStrictOrNull()
     }.getOrNull()
+
+    private fun rawStringArg(call: FunctionCall, key: String): String? {
+        val value = call.args[key] as? kotlinx.serialization.json.JsonPrimitive
+            ?: return null
+        return value.content.takeIf { value.isString }
+    }
+
+    internal fun defaultEndTimeMs(startTimeMs: Long, allDay: Boolean): Long? {
+        val duration = if (allDay) DAY_MS else DEFAULT_DURATION_MS
+        return runCatching { Math.addExact(startTimeMs, duration) }.getOrNull()
+    }
+
+    internal fun normalizeAllDayTimestamp(
+        timestampMs: Long,
+        localTimeZone: TimeZone = TimeZone.getDefault(),
+    ): Long {
+        val localDate = Calendar.getInstance(localTimeZone).apply {
+            timeInMillis = timestampMs
+        }
+        return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(
+                localDate.get(Calendar.YEAR),
+                localDate.get(Calendar.MONTH),
+                localDate.get(Calendar.DAY_OF_MONTH),
+                0,
+                0,
+                0,
+            )
+        }.timeInMillis
+    }
+
+    private fun normalizeUtcAllDayTimestampToLocalMidnight(timestampMs: Long): Long {
+        val utcDate = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = timestampMs
+        }
+        return Calendar.getInstance().apply {
+            clear()
+            set(
+                utcDate.get(Calendar.YEAR),
+                utcDate.get(Calendar.MONTH),
+                utcDate.get(Calendar.DAY_OF_MONTH),
+                0,
+                0,
+                0,
+            )
+        }.timeInMillis
+    }
 
     // ------------------------------------------------------------------
     // DATE HELPERS

@@ -24,6 +24,10 @@ data class AgentRequest(
     /** 最多请求模型的次数 */
     val maxSteps: Int = 256,
     val retry: RetryPolicy = RetryPolicy.NONE,
+    /** 同一批中最多并行执行的、显式声明安全的工具调用。 */
+    val maxParallelToolCalls: Int = 1,
+    /** 单个客户端工具调用的超时上限。 */
+    val toolTimeoutMillis: Long = 60_000,
 )
 
 /** 调用方在循环各个节点上的介入点 */
@@ -98,11 +102,14 @@ sealed interface AgentFinishReason {
 /**
  * 运行 agent 循环：请求模型 → 执行工具 → 再请求模型，直到模型不再调用工具、有工具需要审批、调用方要求暂停或达到步数上限。
  *
- * 工具按调用顺序逐个执行，有任意一个需要审批时，同一批的工具都等审批后再一起执行。
+ * 默认按调用顺序执行工具；只有显式标记为可并行的连续调用才会并发执行。
+ * 有任意一个工具需要审批时，同一批的工具都等审批后再一起执行。
  * 返回的 Flow 不切换调度器，Provider 请求和工具执行都在收集方的上下文里运行，需要时由调用方 flowOn。
  * 取消时直接抛出，最后一个 [AgentEvent.MessageUpdated] 就是取消前的状态，已经执行完的工具结果都在里面。
  */
 fun runAgent(request: AgentRequest, hooks: AgentHooks): Flow<AgentEvent> = flow {
     require(request.maxSteps > 0) { "maxSteps must be positive" }
+    require(request.maxParallelToolCalls > 0) { "maxParallelToolCalls must be positive" }
+    require(request.toolTimeoutMillis > 0) { "toolTimeoutMillis must be positive" }
     AgentLoop(request, hooks, this).run()
 }

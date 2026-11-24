@@ -34,7 +34,6 @@ internal fun executeNairaDeveloperInfo(call: FunctionCall): JsonObject {
             Developer: Nahid Islam
             Profession: Compose Multiplatform Developer
             Country: Bangladesh
-            Age: 22
             Education: Computer Science and Technology (CST) student.
 
             Nahid is the creator and developer behind Naira Assistant,

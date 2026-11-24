@@ -65,9 +65,12 @@ private fun booleanProperty(
 
 fun createNoteTool() = ToolDefinition(
     name = "create_note",
-    description = """
-        Save information as a note when requested. Use a concise title and include supplied content.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Saves a note with a title, supplied content, and optional tags/formatting.",
+        trigger = "The user asks to save information as a note.",
+        notFor = "Use `insert_memory` for useful persistent personal facts, `create_todo` for tasks, and `create_reminder` for timed alerts.",
+        prerequisite = "A meaningful `title` is required; do not invent content when none was supplied.",
+    ),
     parameters = noteParameters(
         properties = buildJsonObject {
             putJsonObject("title") {
@@ -114,10 +117,12 @@ fun createNoteTool() = ToolDefinition(
 
 fun updateNoteTool() = ToolDefinition(
     name = "update_note",
-    description = """
-        Update only requested fields of a note; preserve the rest. Find an unknown ID with
-        list_notes or search_notes.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Updates only supplied fields of an existing note and preserves omitted fields.",
+        trigger = "The user asks to edit a specific saved note.",
+        notFor = "Use `create_note` to add a note, `delete_note` to remove one, and `update_memory` to change a saved memory.",
+        prerequisite = "An exact note `id` is required; find an unknown ID with `list_notes` or `search_notes`.",
+    ),
     parameters = noteParameters(
         properties = buildJsonObject {
             put(
@@ -169,10 +174,12 @@ fun updateNoteTool() = ToolDefinition(
 
 fun deleteNoteTool() = ToolDefinition(
     name = "delete_note",
-    description = """
-        Permanently delete a note only on explicit request. Find its ID with list_notes or
-        search_notes if unknown.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Permanently deletes one note.",
+        trigger = "The user explicitly asks to delete a note.",
+        notFor = "Use `update_note` to edit a note and `remove_memory` to delete a memory.",
+        prerequisite = "An exact `id` is required; identify an unknown note with `list_notes`/`search_notes`.",
+    ),
     parameters = noteParameters(
         properties = buildJsonObject {
             put(
@@ -191,10 +198,12 @@ fun deleteNoteTool() = ToolDefinition(
 
 fun listNotesTool() = ToolDefinition(
     name = "list_notes",
-    description = """
-        List notes when requested; optionally filter by pin status and limit results. Default pin
-        filter: all.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Lists saved notes with optional pin-status and result-limit filters.",
+        trigger = "The user asks for a note overview/list or pinned notes.",
+        notFor = "Use `search_notes` for keyword lookup and `list_memories` for saved personal memories.",
+        prerequisite = "Pin-status and limit filters are optional; all pin states are included by default.",
+    ),
     parameters = noteParameters(
         properties = buildJsonObject {
             put(
@@ -216,16 +225,20 @@ fun listNotesTool() = ToolDefinition(
                 )
             )
         }
-    )
+    ),
+    parallelizable = true,
 )
 
 // SEARCH NOTES
 
 fun searchNotesTool() = ToolDefinition(
     name = "search_notes",
-    description = """
-        Find saved notes by terms in titles, content, or tags.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Searches saved note titles, content, and tags for matching terms.",
+        trigger = "The user asks to find a note by topic or keyword.",
+        notFor = "Use `list_notes` to browse without keywords and `search_memories` to search memories.",
+        prerequisite = "A meaningful `query` is required; clarify the target if multiple notes match.",
+    ),
     parameters = noteParameters(
         properties = buildJsonObject {
             putJsonObject("query") {
@@ -254,7 +267,8 @@ fun searchNotesTool() = ToolDefinition(
             )
         },
         required = listOf("query")
-    )
+    ),
+    parallelizable = true,
 )
 
 // ALL NOTE TOOLS

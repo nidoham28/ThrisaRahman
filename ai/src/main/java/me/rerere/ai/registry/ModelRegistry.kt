@@ -731,6 +731,13 @@ object ModelRegistry {
         this.catalog = catalog
     }
 
+    fun getKnownAbilities(modelId: String): Set<ModelAbility>? {
+        catalog?.find(modelId)?.let { return it.abilities }
+        val models = resolveModels(modelId)
+        if (models.isEmpty()) return null
+        return models.flatMap { it.abilities }.toSet()
+    }
+
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->
         val info = catalog?.find(modelId)
         if (info != null) {
@@ -750,10 +757,7 @@ object ModelRegistry {
     }
 
     val MODEL_ABILITIES = ModelData { modelId ->
-        val abilities = catalog?.find(modelId)?.abilities
-            ?: resolveModels(modelId)
-                .flatMap { it.abilities }
-                .toSet()
+        val abilities = getKnownAbilities(modelId).orEmpty()
         buildList {
             if (ModelAbility.TOOL in abilities) add(ModelAbility.TOOL)
             if (ModelAbility.REASONING in abilities) add(ModelAbility.REASONING)

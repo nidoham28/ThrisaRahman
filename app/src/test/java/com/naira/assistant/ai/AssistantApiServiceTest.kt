@@ -44,6 +44,37 @@ class AssistantApiServiceTest {
     }
 
     @Test
+    fun `keeps tool calling available for model IDs absent from the capability registry`() {
+        val unknownModel = createAssistantModel("unregistered-custom-model")
+        val openRouterAlias = createAssistantModel("openrouter/auto")
+        val customModel = createAssistantModel("custom-model")
+
+        assertTrue(ModelAbility.TOOL in unknownModel.abilities)
+        assertTrue(ModelAbility.TOOL in openRouterAlias.abilities)
+        assertTrue(ModelAbility.TOOL in customModel.abilities)
+    }
+
+    @Test
+    fun `does not advertise tool calling for a known model without tool support`() {
+        val imageGenerationModel = createAssistantModel("gemini-2.5-flash-image")
+
+        assertFalse(ModelAbility.TOOL in imageGenerationModel.abilities)
+    }
+
+    @Test
+    fun `tool-less models are instructed not to claim tool execution`() {
+        val prompt = "Base instructions".withToolCapabilityNotice(supportsTools = false)
+
+        assertTrue(prompt.startsWith("Base instructions"))
+        assertTrue(prompt.contains("cannot call tools"))
+        assertTrue(prompt.contains("tool-capable model"))
+        assertEquals(
+            "Base instructions",
+            "Base instructions".withToolCapabilityNotice(supportsTools = true),
+        )
+    }
+
+    @Test
     fun `normalizes OpenRouter authorization to one bearer header`() {
         val request = Request.Builder()
             .url("https://openrouter.ai/api/v1/chat/completions")
@@ -222,6 +253,7 @@ class AssistantApiServiceTest {
                     add(JsonPrimitive("query"))
                 })
             },
+            parallelizable = true,
         )
 
         val tool = definition.toAgentTool { call ->
@@ -230,6 +262,7 @@ class AssistantApiServiceTest {
         }
 
         val schema = tool.parameters() as InputSchema.Obj
+        assertTrue(tool.parallelizable)
         assertEquals("string", schema.properties.getValue("query").jsonObject.getValue("type").jsonPrimitive.content)
         assertEquals(listOf("query"), schema.required)
         val result = tool.execute(buildJsonObject { put("query", "test") })
@@ -326,6 +359,20 @@ class AssistantApiServiceTest {
             allTools,
             filterToolDefinitionsForPermissions(allTools, sensitiveActionsEnabled = true),
         )
+    }
+
+    @Test
+    fun `only read-only app tools are marked safe for parallel execution`() {
+        val parallelToolNames = ToolRegistry.definitions
+            .filter { it.parallelizable }
+            .map { it.name }
+            .toSet()
+
+        assertTrue("search_notes" in parallelToolNames)
+        assertTrue("list_calendar_events" in parallelToolNames)
+        assertFalse("create_note" in parallelToolNames)
+        assertFalse("delete_todo" in parallelToolNames)
+        assertFalse("open_app" in parallelToolNames)
     }
 
     @Test

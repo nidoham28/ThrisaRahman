@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.agent.AgentEvent
 import me.rerere.ai.agent.AgentHooks
+import me.rerere.ai.agent.RetryPolicy
 import me.rerere.ai.agent.StepRequest
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.Tool as AiTool
@@ -117,23 +118,39 @@ class AssistantApiService(context: Context) : AutoCloseable {
         reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
         providerBaseUrl: String? = null,
         sensitiveActionsEnabled: Boolean = true,
+        maxSteps: Int = MAX_AGENT_STEPS,
+        maxParallelToolCalls: Int = MAX_PARALLEL_TOOL_CALLS,
+        toolTimeoutMillis: Long = TOOL_TIMEOUT_MILLIS,
     ): Flow<AgentEvent> {
         require(apiKey.isNotBlank()) { "${provider.displayName} API key must not be blank" }
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
         val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
         val model = createAssistantModel(modelId)
-        val tools = (filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled) +
-            AgentOrchestrator.toolDefinition())
-            .map { it.toAgentTool(executeTool) }
+        val tools = if (ModelAbility.TOOL in model.abilities) {
+            (filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled) +
+                AgentOrchestrator.toolDefinition())
+                .map { it.toAgentTool(executeTool) }
+        } else {
+            emptyList()
+        }
         val provider = providerManager.getProviderByType(setting)
         val request = AgentRequest(
             provider = provider,
             providerSetting = setting,
-            messages = listOf(UIMessage.system(systemPrompt)) + messages,
+            messages = listOf(
+                UIMessage.system(
+                    systemPrompt.withToolCapabilityNotice(
+                        supportsTools = ModelAbility.TOOL in model.abilities,
+                    ),
+                ),
+            ) + messages,
             tools = tools,
             stream = streaming,
-            maxSteps = MAX_AGENT_STEPS,
+            maxSteps = maxSteps,
+            retry = RetryPolicy.NETWORK,
+            maxParallelToolCalls = maxParallelToolCalls,
+            toolTimeoutMillis = toolTimeoutMillis,
         )
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>) = StepRequest(
@@ -212,6 +229,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
                         tools = emptyList(),
                         stream = true,
                         maxSteps = AgentOrchestrator.SPECIALIST_MAX_STEPS,
+                        retry = RetryPolicy.NETWORK,
                     )
                     val hooks = object : AgentHooks {
                         override suspend fun prepareStep(messages: List<UIMessage>) = StepRequest(
@@ -390,6 +408,8 @@ class AssistantApiService(context: Context) : AutoCloseable {
         val TOKENS_BD_BASE_URL = requireNotNull(AssistantProvider.TOKENS_BD.info.defaultBaseUrl)
         const val DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
         private const val MAX_AGENT_STEPS = 8
+        private const val MAX_PARALLEL_TOOL_CALLS = 4
+        private const val TOOL_TIMEOUT_MILLIS = 60_000L
     }
 }
 
@@ -401,6 +421,14 @@ internal fun filterToolDefinitionsForPermissions(
 } else {
     toolDefinitions.filterNot { it.name in ToolRegistry.settingsPermissionRequiredNames }
 }
+
+internal fun String.withToolCapabilityNotice(supportsTools: Boolean): String =
+    if (supportsTools) {
+        this
+    } else {
+        "$this\n\nThe selected model cannot call tools. Do not claim to have performed " +
+                "device or data actions; explain that the user should choose a tool-capable model."
+    }
 
 /**
  * Cleans an OpenRouter key as the user pasted it: outer quotes, stray spacing
@@ -501,13 +529,17 @@ internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (th
 }
 
 internal fun createAssistantModel(modelId: String): Model {
-    val modelAbilities = ModelRegistry.MODEL_ABILITIES.getData(modelId)
+    val modelAbilities = ModelRegistry.getKnownAbilities(modelId)
     return Model(
         modelId = modelId,
         displayName = modelId,
         abilities = buildList {
-            add(ModelAbility.TOOL)
-            if (ModelAbility.REASONING in modelAbilities) add(ModelAbility.REASONING)
+            if (modelAbilities == null || ModelAbility.TOOL in modelAbilities) {
+                add(ModelAbility.TOOL)
+            }
+            if (ModelAbility.REASONING in modelAbilities.orEmpty()) {
+                add(ModelAbility.REASONING)
+            }
         },
     )
 }
@@ -548,5 +580,6 @@ internal fun ToolDefinition.toAgentTool(
                 }
             }
         },
+        parallelizable = parallelizable,
     )
 }

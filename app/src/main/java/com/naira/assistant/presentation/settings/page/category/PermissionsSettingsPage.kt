@@ -37,8 +37,8 @@ internal object PermissionsSettingsPage : CategoryNameUi() {
                     id = "sensitive-tool-access",
                     title = "Sensitive assistant actions",
                     subtitle = if (state.sensitiveToolAccessEnabled)
-                        "Screen access, edits and deletions are allowed"
-                    else "Screen access, edits and deletions are blocked",
+                        "Some sensitive device, screen, communication and data actions are allowed"
+                    else "Some sensitive device, screen, communication and data actions are blocked",
                     icon = Icons.Outlined.Security,
                     onClick = { state.saveSensitiveToolAccess(!state.sensitiveToolAccessEnabled) },
                     trailing = {

@@ -1,7 +1,13 @@
 package me.rerere.ai.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.buildJsonObject
@@ -24,6 +30,11 @@ import kotlin.time.TimeSource
 private const val EMPTY_TOOL_OUTPUT = "(no output)"
 
 private class StreamChunkHandlingException(override val cause: Throwable) : RuntimeException(cause)
+
+private data class ToolExecutionCompletion(
+    val tool: UIMessagePart.Tool,
+    val output: List<UIMessagePart>,
+)
 
 internal class AgentLoop(
     private val request: AgentRequest,
@@ -172,17 +183,80 @@ internal class AgentLoop(
         return generated
     }
 
-    // 按调用顺序逐个执行，每执行完一个就更新一次，中途取消时已经执行的结果不会丢
+    // Parallelism is opt-in per tool; sequential tools form barriers between independent batches.
     private suspend fun executeTools() {
         val tools = checkNotNull(message).getTools().filter { !it.isExecuted }
-        for (tool in tools) {
-            // 只给真正运行的工具计时；开始时先写一次，界面才能在执行中实时显示耗时
-            val runs = tool.approvalState == ToolApprovalState.Auto || tool.approvalState == ToolApprovalState.Approved
-            if (runs) updateTool(tool.toolCallId) { it.copy(startedAt = Clock.System.now(), finishedAt = null) }
-            val output = execute(tool)
-            updateTool(tool.toolCallId) {
-                it.copy(output = output, finishedAt = if (runs) Clock.System.now() else it.finishedAt)
+        var index = 0
+        while (index < tools.size) {
+            if (!isParallelizable(tools[index])) {
+                executeAndUpdate(tools[index])
+                index++
+                continue
             }
+
+            val parallelBatch = buildList {
+                while (index < tools.size && isParallelizable(tools[index])) {
+                    add(tools[index])
+                    index++
+                }
+            }
+            parallelBatch.chunked(request.maxParallelToolCalls).forEach { batch ->
+                executeParallelBatch(batch)
+            }
+        }
+    }
+
+    private fun isParallelizable(tool: UIMessagePart.Tool): Boolean =
+        findTool(tool.toolName)?.parallelizable == true
+
+    private suspend fun executeAndUpdate(tool: UIMessagePart.Tool) {
+        val runs = tool.approvalState == ToolApprovalState.Auto ||
+            tool.approvalState == ToolApprovalState.Approved
+        if (runs) {
+            updateTool(tool.toolCallId) {
+                it.copy(startedAt = Clock.System.now(), finishedAt = null)
+            }
+        }
+        val output = execute(tool)
+        updateTool(tool.toolCallId) {
+            it.copy(output = output, finishedAt = if (runs) Clock.System.now() else it.finishedAt)
+        }
+    }
+
+    private suspend fun executeParallelBatch(batch: List<UIMessagePart.Tool>) {
+        batch.forEach { tool ->
+            if (tool.approvalState == ToolApprovalState.Auto ||
+                tool.approvalState == ToolApprovalState.Approved
+            ) {
+                updateTool(tool.toolCallId) {
+                    it.copy(startedAt = Clock.System.now(), finishedAt = null)
+                }
+            }
+        }
+
+        val completions = Channel<ToolExecutionCompletion>(Channel.RENDEZVOUS)
+        val scope = CoroutineScope(currentCoroutineContext())
+        val jobs = batch.map { tool ->
+            scope.launch {
+                completions.send(ToolExecutionCompletion(tool, execute(tool)))
+            }
+        }
+        try {
+            repeat(batch.size) {
+                val completion = completions.receive()
+                val runs = completion.tool.approvalState == ToolApprovalState.Auto ||
+                    completion.tool.approvalState == ToolApprovalState.Approved
+                updateTool(completion.tool.toolCallId) {
+                    it.copy(
+                        output = completion.output,
+                        finishedAt = if (runs) Clock.System.now() else it.finishedAt,
+                    )
+                }
+            }
+            jobs.joinAll()
+        } finally {
+            jobs.forEach { it.cancel() }
+            completions.cancel()
         }
     }
 
@@ -209,15 +283,23 @@ internal class AgentLoop(
         }
 
     private suspend fun runTool(tool: UIMessagePart.Tool): List<UIMessagePart> = try {
-        val definition = findTool(tool.toolName) ?: error("Tool ${tool.toolName} not found")
+        val definition = findTool(tool.toolName)
+            ?: return errorOutput("Tool ${tool.toolName} not found.")
         val args = runCatching { json.parseToJsonElement(tool.input.ifBlank { "{}" }) }
-            .getOrElse { error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}") }
-        definition.execute(args).ifEmpty { listOf(UIMessagePart.Text(EMPTY_TOOL_OUTPUT)) }
+            .getOrElse {
+                return errorOutput("Invalid tool arguments JSON for ${tool.toolName}.")
+            }
+        val output = withTimeoutOrNull(request.toolTimeoutMillis) {
+            definition.execute(args)
+        } ?: return errorOutput(
+            "Tool '${tool.toolName}' timed out after ${request.toolTimeoutMillis} ms and was cancelled."
+        )
+        output.ifEmpty { listOf(UIMessagePart.Text(EMPTY_TOOL_OUTPUT)) }
     } catch (e: CancellationException) {
         // 取消必须向上传播，否则停止生成会被误报为工具执行错误
         throw e
-    } catch (e: Throwable) {
-        errorOutput("[${e.javaClass.name}] ${e.message}\n${e.stackTraceToString()}")
+    } catch (e: Exception) {
+        errorOutput("Tool execution failed (${e.javaClass.simpleName.ifBlank { "Exception" }}).")
     }
 
     private fun findTool(name: String) = request.tools.find { it.name == name }

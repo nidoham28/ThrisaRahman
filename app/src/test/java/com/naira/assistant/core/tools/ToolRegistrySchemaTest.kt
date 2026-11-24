@@ -1,5 +1,6 @@
 package com.naira.assistant.core.tools
 
+import com.naira.assistant.ai.AgentOrchestrator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -27,6 +28,28 @@ class ToolRegistrySchemaTest {
                 assertTrue(
                     "${tool.name} requires undeclared argument '$name'.",
                     properties.containsKey(name),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `all exposed tools use the universal description sections`() {
+        val sectionHeadings = listOf(
+            "**Purpose:**",
+            "**Mandatory trigger:**",
+            "**No guessing:**",
+            "**Do not use (negative rule):**",
+            "**Prerequisites:**",
+        )
+        val tools = ToolRegistry.definitions + AgentOrchestrator.toolDefinition()
+
+        assertTrue(tools.isNotEmpty())
+        tools.forEach { tool ->
+            sectionHeadings.forEach { heading ->
+                assertTrue(
+                    "${tool.name} is missing '$heading'.",
+                    tool.description.contains(heading),
                 )
             }
         }

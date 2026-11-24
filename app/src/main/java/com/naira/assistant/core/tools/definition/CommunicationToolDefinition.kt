@@ -10,12 +10,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun composeEmailTool() = ToolDefinition(
     name = "compose_email",
-    description = """
-        Prepare an email draft only; the user reviews and sends it. Preserve requested tone,
-        language, and facts. Recipients may be saved contact names or email addresses. Use
-        find_email_contact first when a name could be ambiguous, then use the returned address.
-        Do not repeat recipient addresses. Never invent a recipient or claim it was sent.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Prepares an email draft for the user to review and send.",
+        trigger = "The user asks to write or prepare an email.",
+        notFor = "This tool does not send email; never claim it was sent. Use `share_text` to share plain text and `compose_text_message` for an SMS draft.",
+        prerequisite = "Email `body` is required. Resolve an ambiguous recipient name with `find_email_contact`; preserve requested tone, language, and facts, and avoid repeating recipient addresses.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 
@@ -54,11 +54,12 @@ fun composeEmailTool() = ToolDefinition(
 
 fun findEmailContactTool() = ToolDefinition(
     name = "find_email_contact",
-    description = """
-        Search the user's saved email contacts by owner name or email address. Return the saved
-        contact name and email address. Use this before composing an email to a person identified
-        by name; if multiple contacts match, ask the user which one. Never invent a contact.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Searches saved email contacts by name/address and returns matching contact details.",
+        trigger = "The user asks for a saved contact's email or wants an email drafted to someone identified by name.",
+        notFor = "Do not use for general phone contacts or SMS numbers; never guess an email address.",
+        prerequisite = "A `query` is required; ask the user to choose if multiple contacts match.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -75,10 +76,12 @@ fun findEmailContactTool() = ToolDefinition(
 
 fun composeTextMessageTool() = ToolDefinition(
     name = "compose_text_message",
-    description = """
-        Prepare an SMS/text draft only; the user reviews and sends it. Preserve intent, tone,
-        and language. Never invent a phone number or claim it was sent.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Prepares an SMS/text draft for the user to review and send.",
+        trigger = "The user asks to write or prepare a text message/SMS.",
+        notFor = "This tool does not send messages; use `compose_email` for email or `share_text` to share text. Never guess a phone number.",
+        prerequisite = "Message `body` is required; omit an unknown `phone_number` so the user can choose the recipient.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 
@@ -108,10 +111,12 @@ fun composeTextMessageTool() = ToolDefinition(
 
 fun shareTextTool() = ToolDefinition(
     name = "share_text",
-    description = """
-        Open Android's Sharesheet only when the user asks to share, so they choose the app and recipient.
-        Preserve the supplied text; opening the sheet does not mean it was sent.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Opens Android's Sharesheet so the user can choose an app and recipient for supplied text.",
+        trigger = "The user asks to share specific text.",
+        notFor = "Use `compose_email`/`compose_text_message` to draft email/SMS; opening the Sharesheet does not mean the text was sent.",
+        prerequisite = "Share `text` is required; preserve the supplied text.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 

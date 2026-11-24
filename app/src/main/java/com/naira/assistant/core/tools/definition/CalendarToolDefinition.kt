@@ -55,11 +55,12 @@ private fun calendarBooleanProperty(
 
 fun createCalendarEventTool() = ToolDefinition(
     name = "create_calendar_event",
-    description = """
-        Create a calendar event using Unix epoch milliseconds. Use the timestamp and timezone
-        in context for relative dates; call get_current_time only if a fresher time or another
-        timezone is needed. End defaults to one hour after start.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Creates a timed or all-day calendar event with start/end times in Unix epoch milliseconds.",
+        trigger = "The user asks to add a meeting, appointment, or other event to the calendar.",
+        notFor = "Use `create_todo` for tasks, `create_reminder` for date-specific alerts, or `create_alarm` for clock-time alarms.",
+        prerequisite = "A `title` and `start_time_ms` are required; clarify ambiguous times. Use the contextual timestamp/timezone, or `get_current_time` if stale or another timezone is needed. End defaults to one hour later, or one day for all-day events.",
+    ),
     parameters = calendarParameters(
         required = listOf("title", "start_time_ms"),
         properties = buildJsonObject {
@@ -74,7 +75,7 @@ fun createCalendarEventTool() = ToolDefinition(
             put(
                 "start_time_ms",
                 calendarIntegerProperty(
-                    "Event start time as Unix epoch milliseconds.",
+                    "Event start time as Unix epoch milliseconds. For all-day events, the date in the device's local timezone is used.",
                     minimum = 1
                 )
             )
@@ -82,7 +83,7 @@ fun createCalendarEventTool() = ToolDefinition(
             put(
                 "end_time_ms",
                 calendarIntegerProperty(
-                    "Optional end time in Unix epoch milliseconds; must follow start. Defaults to one hour later.",
+                    "Optional end time in Unix epoch milliseconds; must follow start. For all-day events its device-local date is used. Defaults to one hour later for timed events and one day later for all-day events.",
                     minimum = 1
                 )
             )
@@ -106,23 +107,24 @@ fun createCalendarEventTool() = ToolDefinition(
             put(
                 "all_day",
                 calendarBooleanProperty(
-                    "All-day event. Default: false.",
+                    "Create an all-day event, normalizing its dates to UTC midnight as required by Android Calendar. Default: false.",
                     default = false,
                 )
             )
         }
-    )
+    ),
 )
 
 // LIST EVENTS
 
 fun listCalendarEventsTool() = ToolDefinition(
     name = "list_calendar_events",
-    description = """
-        List events in a time range (default: today through 30 days ahead, 20 results).
-        Use returned IDs for details, updates, or deletion. Use the context timestamp unless
-        it is stale or another timezone is needed.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Lists calendar events and IDs within a specified or default time range.",
+        trigger = "The user asks about their schedule, events in a period, or to find calendar events.",
+        notFor = "Use `get_calendar_event` for details by known ID, `list_reminders` for reminders, or `list_todos` for tasks.",
+        prerequisite = "Optionally provide a range or keyword; defaults to today through 30 days ahead and 20 results. Use the contextual timestamp, or `get_current_time` if stale.",
+    ),
     parameters = calendarParameters(
         properties = buildJsonObject {
             put(
@@ -136,7 +138,7 @@ fun listCalendarEventsTool() = ToolDefinition(
             put(
                 "end_to_ms",
                 calendarIntegerProperty(
-                    "Optional inclusive range end as Unix epoch milliseconds. Defaults to 30 days after the current time.",
+                    "Optional exclusive range end as Unix epoch milliseconds. Defaults to 30 days after the current time.",
                     minimum = 0
                 )
             )
@@ -160,14 +162,20 @@ fun listCalendarEventsTool() = ToolDefinition(
                 }
             )
         }
-    )
+    ),
+    parallelizable = true,
 )
 
 // GET EVENT
 
 fun getCalendarEventTool() = ToolDefinition(
     name = "get_calendar_event",
-    description = "Get one event by ID. If unknown, find it with list_calendar_events first.",
+    description = universalToolDescription(
+        purpose = "Returns details for one calendar event by ID.",
+        trigger = "The user asks for details about a specific calendar event.",
+        notFor = "Use `list_calendar_events` to find or list events.",
+        prerequisite = "An exact `event_id` is required; identify an unknown ID with `list_calendar_events` first.",
+    ),
     parameters = calendarParameters(
         required = listOf("event_id"),
         properties = buildJsonObject {
@@ -179,18 +187,20 @@ fun getCalendarEventTool() = ToolDefinition(
                 )
             )
         }
-    )
+    ),
+    parallelizable = true,
 )
 
 // UPDATE EVENT
 
 fun updateCalendarEventTool() = ToolDefinition(
     name = "update_calendar_event",
-    description = """
-        Update only supplied fields of an existing event; preserve omitted fields.
-        Find unknown IDs with list_calendar_events. Use context time unless stale or another
-        timezone is needed.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Updates only supplied fields of an existing event and preserves omitted fields.",
+        trigger = "The user asks to edit an existing event's time, title, or other details.",
+        notFor = "Use `create_calendar_event` to create an event and `delete_calendar_event` to remove one.",
+        prerequisite = "An exact `event_id` is required; find an unknown ID with `list_calendar_events`. For new times, use contextual time or `get_current_time` if stale/another timezone is required.",
+    ),
     parameters = calendarParameters(
         required = listOf("event_id"),
         properties = buildJsonObject {
@@ -256,10 +266,12 @@ fun updateCalendarEventTool() = ToolDefinition(
 
 fun deleteCalendarEventTool() = ToolDefinition(
     name = "delete_calendar_event",
-    description = """
-        Delete an event only on explicit request. Find an unknown event ID with
-        list_calendar_events first.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Permanently deletes an identified calendar event.",
+        trigger = "The user explicitly asks to delete or cancel a calendar event.",
+        notFor = "Use `update_calendar_event` to change event details, `delete_reminder` to remove a reminder, or `delete_todo` to remove a task.",
+        prerequisite = "An exact `event_id` is required; identify an unknown event with `list_calendar_events` first.",
+    ),
     parameters = calendarParameters(
         required = listOf("event_id"),
         properties = buildJsonObject {

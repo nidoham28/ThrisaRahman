@@ -73,14 +73,23 @@ object MemoryToolExecutor {
             )
         }
 
-        val category = stringArg(call, "category") ?: "general"
+        val category = if (call.args.containsKey("category")) {
+            stringArg(call, "category")
+                ?: return@safely error("Invalid 'category'.")
+        } else {
+            "general"
+        }
 
         if (category !in categories) {
             return@safely error("Invalid memory category: $category")
         }
 
-        val importance = intArg(call, "importance")
-            ?: DEFAULT_IMPORTANCE
+        val importance = if (call.args.containsKey("importance")) {
+            intArg(call, "importance")
+                ?: return@safely error("Invalid 'importance'.")
+        } else {
+            DEFAULT_IMPORTANCE
+        }
 
         if (importance !in 1..5) {
             return@safely error("'importance' must be between 1 and 5.")
@@ -199,7 +208,12 @@ object MemoryToolExecutor {
             return@safely error("Memory ID must be positive.")
         }
 
-        val reason = stringArg(call, "reason")
+        val reason = if (call.args.containsKey("reason")) {
+            stringArg(call, "reason")
+                ?: return@safely error("Invalid 'reason'.")
+        } else {
+            null
+        }
 
         if (reason != null && reason.length > 300) {
             return@safely error("'reason' cannot exceed 300 characters.")
@@ -360,7 +374,12 @@ object MemoryToolExecutor {
             null
         }
 
-        val limit = intArg(call, "limit") ?: DEFAULT_SEARCH_LIMIT
+        val limit = if (call.args.containsKey("limit")) {
+            intArg(call, "limit")
+                ?: return@safely error("Invalid 'limit'.")
+        } else {
+            DEFAULT_SEARCH_LIMIT
+        }
 
         if (limit !in 1..50) {
             return@safely error("'limit' must be between 1 and 50.")
@@ -415,7 +434,12 @@ object MemoryToolExecutor {
             )
         }
 
-        val limit = intArg(call, "limit") ?: DEFAULT_LIST_LIMIT
+        val limit = if (call.args.containsKey("limit")) {
+            intArg(call, "limit")
+                ?: return@safely error("Invalid 'limit'.")
+        } else {
+            DEFAULT_LIST_LIMIT
+        }
 
         if (limit !in 1..100) {
             return@safely error("'limit' must be between 1 and 100.")

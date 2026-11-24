@@ -73,11 +73,12 @@ private fun objectTool(
 
 fun createReminderTool() = ToolDefinition(
     name = "create_reminder",
-    description = """
-        Create a requested reminder with a clear title and future Unix-millisecond trigger. Use
-        context time/local timezone unless stale or another timezone is needed. Default recurrence
-        to none and priority to normal; interval applies only to custom recurrence.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Creates a reminder with a title and future trigger time in Unix milliseconds; supports recurrence and priority.",
+        trigger = "The user asks to set a reminder for a date/time or recurring schedule.",
+        notFor = "Use `create_alarm` for a clock-time alarm and `create_calendar_event` for a calendar event.",
+        prerequisite = "A `title` and future `trigger_at_ms` are required; clarify ambiguous times. Use contextual timestamp/local timezone, or `get_current_time` if stale.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put(
@@ -135,11 +136,12 @@ fun createReminderTool() = ToolDefinition(
 
 fun updateReminderTool() = ToolDefinition(
     name = "update_reminder",
-    description = """
-        Update only supplied fields of an existing reminder; preserve the rest. Find unknown IDs
-        with list_reminders/search_reminders. Empty description or tags clears that field; do not
-        create a new reminder instead.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Updates specified fields of an existing reminder and preserves omitted fields.",
+        trigger = "The user asks to change a reminder's title, time, recurrence, priority, or tags.",
+        notFor = "Use `create_reminder` to add one, `snooze_reminder` to postpone it, and `mark_reminder_done` to complete it.",
+        prerequisite = "An exact reminder `id` is required; find an unknown ID with `list_reminders` or `search_reminders`. Empty `description`/`tags` clears that field.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put("id", integerProperty("ID of the existing reminder.", minimum = 1))
@@ -167,10 +169,12 @@ fun updateReminderTool() = ToolDefinition(
 
 fun deleteReminderTool() = ToolDefinition(
     name = "delete_reminder",
-    description = """
-        Permanently delete only on explicit request. Find the exact ID with list_reminders or
-        search_reminders first if unknown; do not use to snooze, complete, or cancel.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Permanently deletes one reminder.",
+        trigger = "The user explicitly asks to delete a reminder.",
+        notFor = "Use `snooze_reminder` to postpone, `mark_reminder_done` to complete, or `update_reminder` to change its details.",
+        prerequisite = "An exact `id` is required; identify an unknown reminder with `list_reminders`/`search_reminders`.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put("id", integerProperty("ID of the reminder to delete.", minimum = 1))
@@ -185,10 +189,12 @@ fun deleteReminderTool() = ToolDefinition(
 
 fun listRemindersTool() = ToolDefinition(
     name = "list_reminders",
-    description = """
-        List reminders with optional status, priority, and result limit. Use search_reminders for
-        topic/keyword lookup.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Lists reminders with optional status, priority, and result-limit filters.",
+        trigger = "The user asks for an overview or a list filtered by reminder status/priority.",
+        notFor = "Use `search_reminders` for topic/keyword lookup; use `update_reminder`, `snooze_reminder`, `mark_reminder_done`, or `delete_reminder` for changes.",
+        prerequisite = "Filters are optional; the default status is `active`.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put(
@@ -212,6 +218,7 @@ fun listRemindersTool() = ToolDefinition(
             )
         },
     ),
+    parallelizable = true,
 )
 
 // -----------------------------------------------------------------------------
@@ -220,10 +227,12 @@ fun listRemindersTool() = ToolDefinition(
 
 fun searchRemindersTool() = ToolDefinition(
     name = "search_reminders",
-    description = """
-        Search reminder titles, descriptions, and tags. Inspect returned IDs; clarify rather than
-        choose arbitrarily when several reminders match.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Searches reminder titles, descriptions, and tags for matching terms.",
+        trigger = "The user asks to find a specific reminder or reminders about a topic.",
+        notFor = "Use `list_reminders` to browse/filter all reminders; do not arbitrarily choose among multiple matches.",
+        prerequisite = "A meaningful `query` is required; ask the user to identify the right item if several reminders match.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put(
@@ -244,6 +253,7 @@ fun searchRemindersTool() = ToolDefinition(
         },
         required = listOf("query"),
     ),
+    parallelizable = true,
 )
 
 // -----------------------------------------------------------------------------
@@ -252,10 +262,12 @@ fun searchRemindersTool() = ToolDefinition(
 
 fun snoozeReminderTool() = ToolDefinition(
     name = "snooze_reminder",
-    description = """
-        Postpone a reminder without deleting/completing it or changing recurrence. Supply its ID
-        and future Unix-millisecond time; use context time unless stale or another timezone is needed.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Postpones a reminder without deleting/completing it or changing its recurrence.",
+        trigger = "The user asks to snooze or be reminded later about a specific reminder.",
+        notFor = "Use `update_reminder` to change its schedule, `mark_reminder_done` to complete it, or `delete_reminder` to remove it.",
+        prerequisite = "An exact reminder `id` and future `snooze_until_ms` are required; use contextual timestamp/timezone for relative times.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put("id", integerProperty("ID of the reminder to snooze.", minimum = 1))
@@ -274,10 +286,12 @@ fun snoozeReminderTool() = ToolDefinition(
 
 fun markReminderDoneTool() = ToolDefinition(
     name = "mark_reminder_done",
-    description = """
-        Mark a reminder complete only after user confirmation. Recurring reminders advance to
-        their next occurrence; keep the reminder and its history.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Marks a reminder complete; recurring reminders advance to their next occurrence.",
+        trigger = "The user confirms a specific reminder is complete or asks to mark it done.",
+        notFor = "Use `snooze_reminder` to postpone and `delete_reminder` to remove a reminder.",
+        prerequisite = "An exact reminder `id` and the user's completion instruction/confirmation are required; find an unknown ID first.",
+    ),
     parameters = objectTool(
         properties = buildJsonObject {
             put("id", integerProperty("ID of the reminder.", minimum = 1))

@@ -6,11 +6,12 @@ import kotlinx.serialization.json.*
 
 fun timeTool() = ToolDefinition(
     name = "get_current_time",
-    description = """
-        Get a fresh date/time in a timezone. Use the timestamp already in context for ordinary
-        date calculations; call this only when the user asks for the current time, the timestamp
-        may be stale, or another timezone is needed. Default timezone: Asia/Dhaka.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Returns the current date and time for an IANA timezone; defaults to `Asia/Dhaka`.",
+        trigger = "The user asks for the current time/date, a specific timezone is needed, or the available timestamp may be stale.",
+        notFor = "Do not call again when the contextual timestamp is sufficient; create date-based items with `create_reminder`, `create_calendar_event`, or `create_todo`.",
+        prerequisite = "Provide a valid IANA timezone when requested; otherwise `Asia/Dhaka` is used.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -23,15 +24,18 @@ fun timeTool() = ToolDefinition(
                 put("default", "Asia/Dhaka")
             }
         }
-    }
+    },
+    parallelizable = true,
 )
 
 fun deviceInfoTool() = ToolDefinition(
     name = "get_device_info",
-    description = """
-        Get device/Android or battery details when requested. Select only the needed category;
-        report returned values and disclose unavailable fields. Never infer battery health.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Returns device/Android or battery information reported by the device.",
+        trigger = "The user asks for device, Android-version, or battery details.",
+        notFor = "Use `control_flashlight`, `control_bluetooth`, or `control_wifi` to change those settings; never infer unavailable battery-health data.",
+        prerequisite = "Choose `device`, `battery`, or `all` with `category`; the default is `all`.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -49,5 +53,6 @@ fun deviceInfoTool() = ToolDefinition(
                 put("default", "all")
             }
         }
-    }
+    },
+    parallelizable = true,
 )

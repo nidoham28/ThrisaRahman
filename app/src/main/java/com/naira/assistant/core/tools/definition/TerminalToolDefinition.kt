@@ -10,11 +10,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun findTerminalTool() = ToolDefinition(
     name = "terminal_find_tool",
-    description = """
-        Locate one existing Android-shell executable only when no dedicated tool fits. This does
-        not execute commands or change files. Pass a single executable name, never arguments or
-        shell syntax.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Locates one existing Android-shell executable; it does not run commands or modify files.",
+        trigger = "The user asks to locate a specific executable and no dedicated tool fits.",
+        notFor = "Do not use to execute commands, edit files, or run a general shell; use `terminal_calculate` for supported arithmetic.",
+        prerequisite = "Provide one executable name only, without arguments or shell syntax.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 

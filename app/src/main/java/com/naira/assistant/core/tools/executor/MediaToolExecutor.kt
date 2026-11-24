@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import com.naira.assistant.presentation.main.WakeWordForegroundService
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
@@ -102,6 +103,8 @@ object MediaToolExecutor {
                         put("duration_seconds", duration)
                         put("message", message)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     error(
                         "Could not start the phone alert: " +
@@ -124,6 +127,8 @@ object MediaToolExecutor {
                         put("action", action)
                         put("message", message)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     error(
                         "Could not stop the phone alert: " +

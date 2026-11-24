@@ -1,7 +1,6 @@
 
 package com.naira.assistant.core.tools.executor
 
-import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.IllegalTimeZoneException
@@ -11,6 +10,7 @@ import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
@@ -27,9 +27,18 @@ object TimeToolExecutor {
      */
     fun executeGetCurrentTime(call: FunctionCall): JsonObject {
 
-        val requested = jsonStringArg(call, "timezone")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val requested = if (call.args.containsKey("timezone")) {
+            val value = call.args["timezone"] as? JsonPrimitive
+            if (value == null || !value.isString || value.content.isBlank()) {
+                return buildJsonObject {
+                    put("success", false)
+                    put("error", "'timezone' must be a non-empty IANA timezone string.")
+                }
+            }
+            value.content.trim()
+        } else {
+            null
+        }
 
         val zone = try {
             TimeZone.of(requested ?: DEFAULT_TIMEZONE)

@@ -8,6 +8,7 @@ import android.provider.AlarmClock
 import com.naira.assistant.core.database.alarm.AlarmItem
 import com.naira.assistant.core.database.alarm.AlarmRepository
 import com.naira.assistant.domain.FunctionCall
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -58,8 +59,18 @@ object AlarmToolExecutor {
                 )
         } else emptyList()
 
-        val vibrate = extractBooleanArg(call, "vibrate") ?: true
-        val skipUi = extractBooleanArg(call, "skip_ui") ?: true
+        val vibrate = if (call.args.containsKey("vibrate")) {
+            extractBooleanArg(call, "vibrate")
+                ?: return error("'vibrate' must be a boolean.")
+        } else {
+            true
+        }
+        val skipUi = if (call.args.containsKey("skip_ui")) {
+            extractBooleanArg(call, "skip_ui")
+                ?: return error("'skip_ui' must be a boolean.")
+        } else {
+            true
+        }
 
         // Save locally first.
         val alarm = try {
@@ -71,6 +82,8 @@ object AlarmToolExecutor {
                 enabled = true,
                 vibrate = vibrate,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to save alarm: ${e.message ?: "Database error."}")
         }
@@ -124,20 +137,35 @@ object AlarmToolExecutor {
         call: FunctionCall,
         repo: AlarmRepository,
     ): JsonObject {
-        val enabledOnly = extractBooleanArg(call, "enabled_only") ?: false
-        val limit = (extractIntArg(call, "limit") ?: 20).coerceIn(1, 100)
+        val enabledOnly = if (call.args.containsKey("enabled_only")) {
+            extractBooleanArg(call, "enabled_only")
+                ?: return error("'enabled_only' must be a boolean.")
+        } else {
+            false
+        }
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit")
+                ?: return error("'limit' must be an integer.")
+        } else {
+            20
+        }
+        if (limit !in 1..100) return error("'limit' must be between 1 and 100.")
 
         val alarms = try {
             repo.getAll(
                 enabledOnly = enabledOnly,
                 limit = limit,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to retrieve alarms: ${e.message ?: "Database error."}")
         }
 
         val total = try {
             repo.count()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to count alarms: ${e.message ?: "Database error."}")
         }
@@ -171,6 +199,8 @@ object AlarmToolExecutor {
 
         val alarm = try {
             repo.getById(id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
         } ?: return error("Alarm with ID #$id was not found.")
@@ -250,6 +280,8 @@ object AlarmToolExecutor {
         // might need another request.
         val previous = try {
             repo.getById(id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
         } ?: return error("Alarm with ID #$id was not found.")
@@ -264,6 +296,8 @@ object AlarmToolExecutor {
                 enabled = enabled,
                 vibrate = vibrate,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to update alarm: ${e.message ?: "Database error."}")
         } ?: return error("Alarm with ID #$id was not found.")
@@ -333,6 +367,8 @@ object AlarmToolExecutor {
 
         val deleted = try {
             repo.delete(id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return error("Failed to delete alarm: ${e.message ?: "Database error."}")
         }
@@ -375,7 +411,12 @@ object AlarmToolExecutor {
                 ?: return error("'label' must be a string.")
         } else ""
 
-        val skipUi = extractBooleanArg(call, "skip_ui") ?: true
+        val skipUi = if (call.args.containsKey("skip_ui")) {
+            extractBooleanArg(call, "skip_ui")
+                ?: return error("'skip_ui' must be a boolean.")
+        } else {
+            true
+        }
 
         val triggered = try {
             val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {

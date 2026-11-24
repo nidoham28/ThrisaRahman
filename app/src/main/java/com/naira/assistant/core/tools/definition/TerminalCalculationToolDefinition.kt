@@ -10,11 +10,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun terminalCalculationTool() = ToolDefinition(
     name = "terminal_calculate",
-    description = """
-        Use for exact/nontrivial integer arithmetic when direct calculation is unreliable.
-        Supports +, -, *, /, %, and parentheses; division truncates toward zero. No decimals,
-        variables, functions, commands, or general shell execution.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Calculates integer arithmetic with `+`, `-`, `*`, `/`, `%`, and parentheses; division truncates toward zero.",
+        trigger = "The user needs exact or nontrivial integer arithmetic.",
+        notFor = "Avoid for trivial arithmetic; it does not support decimals, variables, functions, commands, or general shell execution.",
+        prerequisite = "Provide a valid arithmetic `expression` of at most 128 characters.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 

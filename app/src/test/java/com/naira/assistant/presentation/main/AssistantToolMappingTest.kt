@@ -64,6 +64,22 @@ class AssistantToolMappingTest {
     }
 
     @Test
+    fun `tool output with success false is flagged as an error`() {
+        val call = listOf(
+            AgentPart.Tool(
+                toolCallId = "call-failure",
+                toolName = "create_reminder",
+                input = """{"title":"Take medicine"}""",
+                output = listOf(
+                    AgentPart.Text("""{"success":false,"error":"Invalid timestamp"}""")
+                ),
+            ),
+        ).toUiToolCalls().single()
+
+        assertTrue(call.isError)
+    }
+
+    @Test
     fun `unparseable output falls back to raw text without error flag`() {
         val calls = listOf(
             AgentPart.Tool(
@@ -139,5 +155,14 @@ class AssistantToolMappingTest {
 
         assertTrue(call.isError)
         assertTrue(call.result.contains("Specialist timed out."))
+    }
+
+    @Test
+    fun `disabled sensitive tools are disclosed to the assistant`() {
+        val prompt = "Base instructions".withSensitiveToolAccessNotice(enabled = false)
+
+        assertTrue(prompt.startsWith("Base instructions"))
+        assertTrue(prompt.contains("Do not claim to have performed"))
+        assertTrue(prompt.contains("Settings > Permissions"))
     }
 }

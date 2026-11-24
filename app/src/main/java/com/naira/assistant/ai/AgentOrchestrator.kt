@@ -1,6 +1,7 @@
 package com.naira.assistant.ai
 
 import com.naira.assistant.core.tools.ToolDefinition
+import com.naira.assistant.core.tools.definition.universalToolDescription
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -86,9 +87,12 @@ object AgentOrchestrator {
 
     fun toolDefinition(): ToolDefinition = ToolDefinition(
         name = DELEGATE_TOOL_NAME,
-        description = "Delegate up to three difficult analysis tasks only when the added model calls " +
-            "are worthwhile. Use parallel mode for independent tasks and sequential mode for dependencies. " +
-            "Specialists receive only the task and recent text context; they cannot use tools or delegate.",
+        description = universalToolDescription(
+            purpose = "Delegates bounded analysis tasks to specialists and combines their results.",
+            trigger = "A complex request benefits from independent planner/analyst/reviewer input enough to justify extra model calls.",
+            notFor = "Do not use for simple questions or routine tool execution; specialists cannot use tools or delegate.",
+            prerequisite = "Provide 1-3 clear tasks with supported roles; choose `parallel` for independent tasks and `sequential` for dependent tasks. Specialists receive only each task and recent text context.",
+        ),
         parameters = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {

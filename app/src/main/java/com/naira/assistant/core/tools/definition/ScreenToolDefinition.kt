@@ -17,11 +17,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun captureScreenTool() = ToolDefinition(
     name = "capture_screen",
-    description = """
-        Capture the current screen only when visual layout or coordinates are needed. Refresh
-        after actions when the next step depends on the result; use coordinates only from the latest
-        capture. Requires the user-enabled accessibility service; inspect only task-relevant content.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Captures the current screen for visual layout or coordinate information.",
+        trigger = "The user asks about visible UI/layout or a task requires screen coordinates.",
+        notFor = "Use `read_screen_text` to find visible text/elements and `perform_screen_action` to interact with the screen.",
+        prerequisite = "The user must enable the Accessibility Service; use coordinates only from the latest capture and inspect task-relevant content only.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {}
@@ -31,11 +32,12 @@ fun captureScreenTool() = ToolDefinition(
 
 fun readScreenTextTool() = ToolDefinition(
     name = "read_screen_text",
-    description = """
-        Read visible text and accessibility labels without a screenshot. Prefer for text/element
-        lookup; use capture_screen for visual layout or coordinates. Requires user-enabled
-        accessibility access.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Reads visible text and accessibility labels on the current screen.",
+        trigger = "The user asks about on-screen text, a button, or an element's label/state.",
+        notFor = "Use `capture_screen` for visual layout/coordinates and `perform_screen_action` to interact with an element.",
+        prerequisite = "The user must enable the Accessibility Service; read only information relevant to the request.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {}
@@ -45,13 +47,12 @@ fun readScreenTextTool() = ToolDefinition(
 
 fun performScreenActionTool() = ToolDefinition(
     name = "perform_screen_action",
-    description = """
-        Interact with the current screen only after inspecting it. Prefer accessibility targets;
-        use coordinates from a recent screenshot. Supply fields for the chosen action and verify
-        afterward only when needed. Typing does not submit or send; sending requires an explicit
-        request and verified recipient/content. Consequential actions require authorization.
-        Accessibility access must be enabled manually by the user.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Performs a specified UI action on the current screen using accessibility targets, gestures, or text entry.",
+        trigger = "The user explicitly asks for a specific action on the current screen.",
+        notFor = "Never guess coordinates/actions without inspecting the screen. Typing does not submit/send; consequential actions require authorization.",
+        prerequisite = "The user must enable the Accessibility Service. Inspect with `read_screen_text` or `capture_screen` first; use a recent capture for coordinates and provide the action's required fields.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
 

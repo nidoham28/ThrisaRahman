@@ -39,6 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -124,18 +125,31 @@ internal fun List<AgentPart.Tool>.toUiToolCalls(): List<UiToolCall> = map { tool
                 ?.jsonPrimitive
                 ?.booleanOrNull == true
         } == true
+    val executionFailure =
+        (parsed?.get("success") as? JsonPrimitive)?.booleanOrNull == false
     UiToolCall(
         id = tool.toolCallId,
         name = tool.toolName,
         input = tool.input.toPrettyJsonOrNull() ?: tool.input,
         isRunning = !tool.isExecuted,
-        isError = parsed?.containsKey("error") == true || specialistFailure,
+        isError = parsed?.containsKey("error") == true ||
+                executionFailure ||
+                specialistFailure,
         result = when {
             rawResult.isBlank() -> ""
             else -> rawResult.toPrettyJsonOrNull() ?: rawResult
         },
     )
 }
+
+internal fun String.withSensitiveToolAccessNotice(enabled: Boolean): String =
+    if (enabled) {
+        this
+    } else {
+        "$this\n\nSome sensitive device, screen, communication, and data actions are disabled " +
+                "by the user's privacy setting. Do not claim to have performed those actions. " +
+                "Tell the user they can enable 'Sensitive assistant actions' in Settings > Permissions."
+    }
 
 internal fun resolveAssistantModelId(
     provider: AssistantProvider,
@@ -571,7 +585,9 @@ class AssistantViewModel(
         assistantApi.streamChat(
             apiKey = context.apiKey,
             messages = requestHistory,
-            systemPrompt = buildInstructions(),
+            systemPrompt = buildInstructions().withSensitiveToolAccessNotice(
+                enabled = sensitiveActionsEnabled,
+            ),
             toolDefinitions = CommandExecution.definitions,
             executeTool = executeTool,
             streaming = context.streaming,

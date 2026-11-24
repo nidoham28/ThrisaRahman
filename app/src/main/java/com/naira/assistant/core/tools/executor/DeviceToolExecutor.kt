@@ -28,10 +28,17 @@ object DeviceToolExecutor {
         call: FunctionCall,
         context: Context
     ): JsonObject {
-        val category = jsonStringArg(call, "category")
-            ?.trim()
-            ?.lowercase(Locale.ROOT)
-            ?: "all"
+        val category = if (call.args.containsKey("category")) {
+            jsonStringArg(call, "category")
+                ?.trim()
+                ?.lowercase(Locale.ROOT)
+                ?: return buildJsonObject {
+                    put("success", false)
+                    put("error", "'category' must be a non-empty string.")
+                }
+        } else {
+            "all"
+        }
 
         if (category !in validCategories) {
             return buildJsonObject {
@@ -150,8 +157,7 @@ object DeviceToolExecutor {
 
         put(
             "is_charging",
-            status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == BatteryManager.BATTERY_STATUS_FULL
+            status == BatteryManager.BATTERY_STATUS_CHARGING
         )
     }
 

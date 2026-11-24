@@ -41,28 +41,32 @@ private fun hardwareControlTool(
 fun flashlightControlTool() = hardwareControlTool(
     name = "control_flashlight",
     feature = "the flashlight",
-    description = """
-        Control or check the camera torch only, not screen brightness or photo capture.
-        Report only the confirmed state or the actual unsupported/permission error.
-    """
+    description = universalToolDescription(
+        purpose = "Turns the camera torch on/off or checks its current state.",
+        trigger = "The user explicitly asks to turn the flashlight on/off or check its status.",
+        notFor = "Do not use for screen brightness or photo capture; this tool only controls the camera torch.",
+        prerequisite = "`action` must be `turn_on`, `turn_off`, or `check_status`; report permission or hardware errors.",
+    )
 )
 
 fun bluetoothControlTool() = hardwareControlTool(
     name = "control_bluetooth",
     feature = "Bluetooth",
-    description = """
-        Control or check Bluetooth. Android 12+ restricts access; Android 13+ apps generally
-        cannot toggle it directly. If system settings are opened, tell the user to confirm there
-        and report state only after verification.
-    """
+    description = universalToolDescription(
+        purpose = "Controls Bluetooth or checks its current state.",
+        trigger = "The user explicitly asks to turn Bluetooth on/off or check its status.",
+        notFor = "Do not use for Wi-Fi; use `control_wifi` instead.",
+        prerequisite = "Set `action` to `turn_on`, `turn_off`, or `check_status`; if Android opens Settings, ask the user to confirm there and do not claim an unverified result.",
+    )
 )
 
 fun wifiControlTool() = hardwareControlTool(
     name = "control_wifi",
     feature = "Wi-Fi",
-    description = """
-        Control or check Wi-Fi. Android 10+ apps generally cannot toggle it directly; use system
-        settings when required and tell the user to finish there. Report only verified state or
-        the actual permission/unsupported error.
-    """
+    description = universalToolDescription(
+        purpose = "Controls Wi-Fi or checks its current state.",
+        trigger = "The user explicitly asks to turn Wi-Fi on/off or check its status.",
+        notFor = "Do not use for Bluetooth or mobile data; use `control_bluetooth` for Bluetooth.",
+        prerequisite = "Set `action` to `turn_on`, `turn_off`, or `check_status`; if Android opens Settings, ask the user to finish there and do not claim an unverified result.",
+    )
 )

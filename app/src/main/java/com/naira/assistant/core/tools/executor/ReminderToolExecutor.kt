@@ -21,6 +21,7 @@ object ReminderToolExecutor {
     private val validPriorities = setOf(
         "low", "normal", "high", "urgent"
     )
+    private val validRecurrences = RecurrenceType.entries.mapTo(mutableSetOf()) { it.id }
 
     // ----------------------------------------------------------------
     // Create
@@ -42,11 +43,23 @@ object ReminderToolExecutor {
             return error("The reminder time must be in the future.")
         }
 
-        val recurrence = RecurrenceType.fromId(
-            jsonStringArg(call, "recurrence")
-        )
+        val recurrenceValue = if (call.args.containsKey("recurrence")) {
+            rawStringArg(call, "recurrence")
+                ?: return error("'recurrence' must be a non-empty string.")
+        } else {
+            null
+        }
+        if (recurrenceValue != null && recurrenceValue !in validRecurrences) {
+            return error("Invalid recurrence. Allowed values: ${validRecurrences.joinToString()}.")
+        }
+        val recurrence = RecurrenceType.fromId(recurrenceValue)
 
-        val recurrenceInterval = extractIntArg(call, "recurrence_interval") ?: 0
+        val recurrenceInterval = if (call.args.containsKey("recurrence_interval")) {
+            extractIntArg(call, "recurrence_interval")
+                ?: return error("'recurrence_interval' must be an integer.")
+        } else {
+            0
+        }
 
         if (recurrence == RecurrenceType.CUSTOM && recurrenceInterval <= 0) {
             return error("A positive 'recurrence_interval' is required for custom recurrence.")
@@ -56,20 +69,38 @@ object ReminderToolExecutor {
             return error("'recurrence_interval' cannot be negative.")
         }
 
-        val priorityValue = jsonStringArg(call, "priority") ?: "normal"
+        val priorityValue = if (call.args.containsKey("priority")) {
+            jsonStringArg(call, "priority")
+                ?: return error("'priority' must be a non-empty string.")
+        } else {
+            "normal"
+        }
 
         if (priorityValue !in validPriorities) {
             return error("Invalid priority. Allowed values: ${validPriorities.joinToString()}.")
         }
 
+        val description = if (call.args.containsKey("description")) {
+            rawStringArg(call, "description")
+                ?: return error("'description' must be a string.")
+        } else {
+            ""
+        }
+        val tags = if (call.args.containsKey("tags")) {
+            parseToolTags(call.args.getValue("tags"))
+                ?: return error("'tags' must be a string or an array of strings.")
+        } else {
+            emptyList()
+        }
+
         val inserted = repo.insert(
             title = title,
-            description = jsonStringArg(call, "description")?.trim().orEmpty(),
+            description = description.trim(),
             triggerAtMs = triggerAtMs,
             recurrence = recurrence,
             recurrenceInterval = recurrenceInterval,
             priority = ReminderPriority.fromId(priorityValue),
-            tags = extractTagsArg(call, "tags"),
+            tags = tags,
         )
 
         return success(
@@ -100,12 +131,22 @@ object ReminderToolExecutor {
         }
 
         val recurrence = if (call.args.containsKey("recurrence")) {
-            RecurrenceType.fromId(jsonStringArg(call, "recurrence"))
+            val value = rawStringArg(call, "recurrence")
+                ?: return error("'recurrence' must be a non-empty string.")
+            if (value !in validRecurrences) {
+                return error("Invalid recurrence. Allowed values: ${validRecurrences.joinToString()}.")
+            }
+            RecurrenceType.fromId(value)
         } else {
             null
         }
 
-        val recurrenceInterval = extractIntArg(call, "recurrence_interval")
+        val recurrenceInterval = if (call.args.containsKey("recurrence_interval")) {
+            extractIntArg(call, "recurrence_interval")
+                ?: return error("'recurrence_interval' must be an integer.")
+        } else {
+            null
+        }
 
         if (recurrenceInterval != null && recurrenceInterval <= 0) {
             return error("'recurrence_interval' must be positive.")
@@ -128,19 +169,36 @@ object ReminderToolExecutor {
             null
         }
 
+        val title = if (call.args.containsKey("title")) {
+            jsonStringArg(call, "title")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'title' must be a non-empty string.")
+        } else {
+            null
+        }
+        val description = if (call.args.containsKey("description")) {
+            rawStringArg(call, "description")
+                ?: return error("'description' must be a string.")
+        } else {
+            null
+        }
+        val tags = if (call.args.containsKey("tags")) {
+            parseToolTags(call.args.getValue("tags"))
+                ?: return error("'tags' must be a string or an array of strings.")
+        } else {
+            null
+        }
+
         val updated = repo.update(
             id = id,
-            title = jsonStringArg(call, "title")?.trim()?.takeIf(String::isNotBlank),
-            description = jsonStringArg(call, "description"),
+            title = title,
+            description = description,
             triggerAtMs = triggerAtMs,
             recurrence = recurrence,
             recurrenceInterval = recurrenceInterval,
             priority = priority,
-            tags = if (call.args.containsKey("tags")) {
-                extractTagsArg(call, "tags")
-            } else {
-                null
-            },
+            tags = tags,
         ) ?: return error("Reminder #$id was not found.")
 
         return success(
@@ -182,16 +240,35 @@ object ReminderToolExecutor {
         call: FunctionCall,
         repo: ReminderRepository,
     ): JsonObject {
-        val status = jsonStringArg(call, "status") ?: "active"
-        val priority = jsonStringArg(call, "priority")
-        val limit = extractIntArg(call, "limit") ?: 20
+        val status = if (call.args.containsKey("status")) {
+            jsonStringArg(call, "status")
+                ?: return error("'status' must be a non-empty string.")
+        } else {
+            "active"
+        }
+        val priority = if (call.args.containsKey("priority")) {
+            jsonStringArg(call, "priority")
+                ?: return error("'priority' must be a non-empty string.")
+        } else {
+            null
+        }
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit") ?: return error("'limit' must be an integer.")
+        } else {
+            20
+        }
 
         if (status != "all" && status !in validStatuses) {
             return error("Invalid status. Allowed values: all, ${validStatuses.joinToString()}.")
         }
 
-        if (priority != null && priority !in validPriorities) {
-            return error("Invalid priority. Allowed values: ${validPriorities.joinToString()}.")
+        if (priority != null &&
+            priority != "all" &&
+            priority !in validPriorities
+        ) {
+            return error(
+                "Invalid priority. Allowed values: ${validPriorities.joinToString()}, all."
+            )
         }
 
         if (limit !in 1..100) {
@@ -200,7 +277,7 @@ object ReminderToolExecutor {
 
         val results = repo.getAll(
             status = status.takeUnless { it == "all" },
-            priority = priority,
+            priority = priority?.takeUnless { it == "all" },
             limit = limit,
         )
 
@@ -227,11 +304,22 @@ object ReminderToolExecutor {
             ?.takeIf(String::isNotBlank)
             ?: return error("'query' is required and cannot be blank.")
 
-        val status = jsonStringArg(call, "status")
-        val limit = extractIntArg(call, "limit") ?: 10
+        val status = if (call.args.containsKey("status")) {
+            jsonStringArg(call, "status")
+                ?: return error("'status' must be a non-empty string.")
+        } else {
+            null
+        }
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit") ?: return error("'limit' must be an integer.")
+        } else {
+            10
+        }
 
-        if (status != null && status !in validStatuses) {
-            return error("Invalid status. Allowed values: ${validStatuses.joinToString()}.")
+        if (status != null && status != "all" && status !in validStatuses) {
+            return error(
+                "Invalid status. Allowed values: ${validStatuses.joinToString()}, all."
+            )
         }
 
         if (limit !in 1..50) {
@@ -240,7 +328,7 @@ object ReminderToolExecutor {
 
         val results = repo.search(
             query = query,
-            status = status,
+            status = status?.takeUnless { it == "all" },
             limit = limit,
         )
 
@@ -352,31 +440,9 @@ object ReminderToolExecutor {
             ?: primitive.content.trim().toIntOrNull()
     }
 
-    private fun extractTagsArg(
-        call: FunctionCall,
-        key: String,
-    ): List<String> {
-        val element = call.args[key] ?: return emptyList()
-
-        val values = when (element) {
-            is JsonArray -> element.mapNotNull { item ->
-                (item as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-            }
-
-            is JsonPrimitive -> {
-                if (!element.isString) return emptyList()
-                element.content.split(",")
-            }
-
-            else -> return emptyList()
-        }
-
-        return values
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
+    private fun rawStringArg(call: FunctionCall, key: String): String? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+        return value.content.takeIf { value.isString }
     }
 
     private fun List<ReminderItem>.toJsonArray(): JsonArray =

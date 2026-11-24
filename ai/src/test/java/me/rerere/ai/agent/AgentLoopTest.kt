@@ -1,6 +1,7 @@
 package me.rerere.ai.agent
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
@@ -9,6 +10,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -43,6 +46,8 @@ class AgentLoopTest {
         stream: Boolean = true,
         maxSteps: Int = 256,
         retry: RetryPolicy = RetryPolicy.NONE,
+        maxParallelToolCalls: Int = 1,
+        toolTimeoutMillis: Long = 60_000,
     ) = AgentRequest(
         provider = provider,
         providerSetting = ProviderSetting.OpenAI(),
@@ -51,6 +56,8 @@ class AgentLoopTest {
         stream = stream,
         maxSteps = maxSteps,
         retry = retry,
+        maxParallelToolCalls = maxParallelToolCalls,
+        toolTimeoutMillis = toolTimeoutMillis,
     )
 
     private suspend fun runToEnd(
@@ -117,6 +124,99 @@ class AgentLoopTest {
         assertEquals(listOf("search"), second.params.tools.map { it.name })
         // 第二步新生成的 part 从工具调用之后开始
         assertEquals(listOf(0, 1), hooks.newPartsFrom)
+    }
+
+    @Test
+    fun `explicitly parallelizable tool calls run concurrently up to the configured limit`() = runTest {
+        val twoStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val stateMutex = Mutex()
+        var active = 0
+        var maximumActive = 0
+        val parallelTool = tool("lookup", parallelizable = true) {
+            stateMutex.withLock {
+                active++
+                maximumActive = maxOf(maximumActive, active)
+                if (active == 2) twoStarted.complete(Unit)
+            }
+            try {
+                release.await()
+                ok()
+            } finally {
+                stateMutex.withLock { active-- }
+            }
+        }
+        provider.stream {
+            toolCall("call-1", "lookup")
+            toolCall("call-2", "lookup")
+            toolCall("call-3", "lookup")
+            finish()
+        }
+        provider.stream {
+            text("done")
+            finish()
+        }
+
+        val run = async {
+            runToEnd(
+                request(
+                    tools = listOf(parallelTool),
+                    maxParallelToolCalls = 2,
+                )
+            ).finished()
+        }
+
+        twoStarted.await()
+        assertEquals(2, maximumActive)
+        release.complete(Unit)
+        val finished = run.await()
+
+        assertEquals(AgentFinishReason.Completed, finished.reason)
+        assertEquals(2, maximumActive)
+        assertTrue(finished.message.getTools().all { it.isExecuted })
+    }
+
+    @Test
+    fun `tool timeout is reported to the model without retrying the tool`() = runTest {
+        var executions = 0
+        val slow = tool("slow") {
+            executions++
+            awaitCancellation()
+        }
+        provider.stream {
+            toolCall("call-1", "slow")
+            finish()
+        }
+        provider.stream {
+            text("The lookup timed out.")
+            finish()
+        }
+
+        val finished = runToEnd(
+            request(
+                tools = listOf(slow),
+                toolTimeoutMillis = 10,
+            )
+        ).finished()
+
+        assertTrue(finished.message.tool("call-1").outputText().contains("timed out after 10 ms"))
+        assertEquals(1, executions)
+        assertEquals(2, provider.requests.size)
+        assertTrue(provider.requests[1].messages.last().tool("call-1").outputText().contains("timed out"))
+    }
+
+    @Test
+    fun `agent execution limits must be positive`() = runTest {
+        val parallelError = runCatching {
+            runToEnd(request(maxParallelToolCalls = 0))
+        }.exceptionOrNull()
+        val timeoutError = runCatching {
+            runToEnd(request(toolTimeoutMillis = 0))
+        }.exceptionOrNull()
+
+        assertTrue(parallelError is IllegalArgumentException)
+        assertTrue(timeoutError is IllegalArgumentException)
+        assertTrue(provider.requests.isEmpty())
     }
 
     @Test
@@ -232,10 +332,11 @@ class AgentLoopTest {
 
     @Test
     fun `stopping during tool execution keeps results of tools that already ran`() = runTest {
+        val firstResultCommitted = CompletableDeferred<Unit>()
         val secondStarted = CompletableDeferred<Unit>()
         val tools = listOf(
-            tool("first") { listOf(UIMessagePart.Text("first done")) },
-            tool("second") {
+            tool("first", parallelizable = true) { listOf(UIMessagePart.Text("first done")) },
+            tool("second", parallelizable = true) {
                 secondStarted.complete(Unit)
                 awaitCancellation()
             },
@@ -247,8 +348,18 @@ class AgentLoopTest {
         }
 
         val events = mutableListOf<AgentEvent>()
-        val job = launch { runAgent(request(tools = tools), hooks).toList(events) }
+        val job = launch {
+            runAgent(request(tools = tools, maxParallelToolCalls = 2), hooks).collect { event ->
+                events += event
+                if (event is AgentEvent.MessageUpdated &&
+                    event.message.getTools().any { it.toolCallId == "call-1" && it.isExecuted }
+                ) {
+                    firstResultCommitted.complete(Unit)
+                }
+            }
+        }
         secondStarted.await()
+        firstResultCommitted.await()
         job.cancelAndJoin()
 
         val last = (events.last() as AgentEvent.MessageUpdated).message
@@ -277,7 +388,8 @@ class AgentLoopTest {
 
         val output = finished.message.tool("call-1").outputText()
         assertTrue(output.contains("IllegalStateException"))
-        assertTrue(output.contains("disk full"))
+        assertFalse(output.contains("disk full"))
+        assertFalse(output.contains("at me.rerere"))
         assertEquals(AgentFinishReason.Completed, finished.reason)
     }
 
@@ -702,8 +814,15 @@ private suspend fun FlowCollector<StreamChunk>.finish() {
 private fun tool(
     name: String,
     needsApproval: Boolean = false,
+    parallelizable: Boolean = false,
     execute: suspend (JsonElement) -> List<UIMessagePart> = { ok() },
-) = Tool(name = name, description = name, needsApproval = { needsApproval }, execute = execute)
+) = Tool(
+    name = name,
+    description = name,
+    needsApproval = { needsApproval },
+    execute = execute,
+    parallelizable = parallelizable,
+)
 
 private fun ok() = listOf(UIMessagePart.Text("ok"))
 

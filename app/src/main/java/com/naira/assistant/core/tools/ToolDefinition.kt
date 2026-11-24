@@ -12,4 +12,5 @@ data class ToolDefinition(
     val name: String,
     val description: String,
     val parameters: JsonObject,
+    val parallelizable: Boolean = false,
 )

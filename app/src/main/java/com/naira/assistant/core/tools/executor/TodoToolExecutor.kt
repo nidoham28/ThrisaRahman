@@ -30,13 +30,23 @@ object TodoToolExecutor {
             ?.takeIf(String::isNotBlank)
             ?: return error("'title' is required and cannot be blank.")
 
-        val dueAtMs = extractLongArg(call, "due_at_ms") ?: 0L
+        val dueAtMs = if (call.args.containsKey("due_at_ms")) {
+            extractLongArg(call, "due_at_ms")
+                ?: return error("'due_at_ms' must be an integer.")
+        } else {
+            0L
+        }
 
         if (dueAtMs < 0L) {
             return error("'due_at_ms' cannot be negative.")
         }
 
-        val priorityValue = jsonStringArg(call, "priority") ?: "normal"
+        val priorityValue = if (call.args.containsKey("priority")) {
+            jsonStringArg(call, "priority")
+                ?: return error("'priority' must be a non-empty string.")
+        } else {
+            "normal"
+        }
 
         if (priorityValue !in validPriorities) {
             return error(
@@ -44,17 +54,32 @@ object TodoToolExecutor {
             )
         }
 
-        val listName = jsonStringArg(call, "list_name")
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?: "inbox"
+        val listName = if (call.args.containsKey("list_name")) {
+            jsonStringArg(call, "list_name")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'list_name' must be a non-empty string.")
+        } else {
+            "inbox"
+        }
+        val notes = if (call.args.containsKey("notes")) {
+            rawStringArg(call, "notes") ?: return error("'notes' must be a string.")
+        } else {
+            ""
+        }
+        val tags = if (call.args.containsKey("tags")) {
+            parseToolTags(call.args.getValue("tags"))
+                ?: return error("'tags' must be a string or an array of strings.")
+        } else {
+            emptyList()
+        }
 
         val inserted = repo.insert(
             title = title,
-            notes = jsonStringArg(call, "notes") ?: "",
+            notes = notes,
             dueAtMs = dueAtMs,
             priority = TodoPriority.fromId(priorityValue),
-            tags = extractTagsArg(call, "tags"),
+            tags = tags,
             listName = listName,
         )
 
@@ -82,6 +107,11 @@ object TodoToolExecutor {
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
                 ?: return error("'title' cannot be blank.")
+        } else {
+            null
+        }
+        val notes = if (call.args.containsKey("notes")) {
+            rawStringArg(call, "notes") ?: return error("'notes' must be a string.")
         } else {
             null
         }
@@ -125,18 +155,21 @@ object TodoToolExecutor {
             null
         }
 
+        val tags = if (call.args.containsKey("tags")) {
+            parseToolTags(call.args.getValue("tags"))
+                ?: return error("'tags' must be a string or an array of strings.")
+        } else {
+            null
+        }
+
         val updated = repo.update(
             id = id,
             title = title,
-            notes = jsonStringArg(call, "notes"),
+            notes = notes,
             done = done,
             dueAtMs = dueAtMs,
             priority = priority,
-            tags = if (call.args.containsKey("tags")) {
-                extractTagsArg(call, "tags")
-            } else {
-                null
-            },
+            tags = tags,
             listName = listName,
         ) ?: return error("Task #$id was not found.")
 
@@ -192,7 +225,12 @@ object TodoToolExecutor {
             false
         }
 
-        val priority = jsonStringArg(call, "priority")
+        val priority = if (call.args.containsKey("priority")) {
+            jsonStringArg(call, "priority")
+                ?: return error("'priority' must be a non-empty string.")
+        } else {
+            null
+        }
 
         if (priority != null &&
             priority != "all" &&
@@ -203,11 +241,20 @@ object TodoToolExecutor {
             )
         }
 
-        val listName = jsonStringArg(call, "list_name")
-            ?.trim()
-            ?.takeUnless { it.isBlank() || it == "all" }
+        val requestedListName = if (call.args.containsKey("list_name")) {
+            jsonStringArg(call, "list_name")
+                ?.trim()
+                ?: return error("'list_name' must be a non-empty string or 'all'.")
+        } else {
+            null
+        }
+        val listName = requestedListName?.takeUnless { it == "all" }
 
-        val limit = extractIntArg(call, "limit") ?: 20
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit") ?: return error("'limit' must be an integer.")
+        } else {
+            20
+        }
 
         if (limit !in 1..100) {
             return error("'limit' must be between 1 and 100.")
@@ -245,11 +292,19 @@ object TodoToolExecutor {
             ?.takeIf(String::isNotBlank)
             ?: return error("'query' is required and cannot be blank.")
 
-        val listName = jsonStringArg(call, "list_name")
-            ?.trim()
-            ?.takeUnless(String::isBlank)
+        val listName = if (call.args.containsKey("list_name")) {
+            jsonStringArg(call, "list_name")
+                ?.trim()
+                ?: return error("'list_name' must be a string.")
+        } else {
+            null
+        }?.takeUnless(String::isBlank)
 
-        val limit = extractIntArg(call, "limit") ?: 10
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit") ?: return error("'limit' must be an integer.")
+        } else {
+            10
+        }
 
         if (limit !in 1..50) {
             return error("'limit' must be between 1 and 50.")
@@ -364,31 +419,9 @@ object TodoToolExecutor {
         return primitive.booleanOrNull
     }
 
-    private fun extractTagsArg(
-        call: FunctionCall,
-        key: String,
-    ): List<String> {
-        val element = call.args[key] ?: return emptyList()
-
-        val values = when (element) {
-            is JsonArray -> element.mapNotNull { item ->
-                (item as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-            }
-
-            is JsonPrimitive -> {
-                if (!element.isString) return emptyList()
-                element.content.split(",")
-            }
-
-            else -> return emptyList()
-        }
-
-        return values
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .distinct()
+    private fun rawStringArg(call: FunctionCall, key: String): String? {
+        val value = call.args[key] as? JsonPrimitive ?: return null
+        return value.content.takeIf { value.isString }
     }
 
     private fun List<TodoItem>.toJsonArray(): JsonArray =

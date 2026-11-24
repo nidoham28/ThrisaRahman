@@ -77,6 +77,8 @@ import com.naira.assistant.domain.FunctionCall
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.EmailContactStorage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -114,8 +116,28 @@ class ToolCallDispatcher(
                 response = ScreenToolExecutor.executePerformScreenAction(call, appContext),
                 image = ScreenToolExecutor.consumeLastCapture(),
             )
-            else -> AssistantToolResult(executeRegisteredTool(call))
+            else -> AssistantToolResult(
+                if (call.name in ioBoundToolNames) {
+                    withContext(Dispatchers.IO) { executeRegisteredTool(call) }
+                } else {
+                    executeRegisteredTool(call)
+                }
+            )
         }
+    }
+
+    private companion object {
+        val ioBoundToolNames = setOf(
+            "list_installed_apps",
+            "check_app_installed",
+            "open_app",
+            "control_flashlight",
+            "create_calendar_event",
+            "list_calendar_events",
+            "get_calendar_event",
+            "update_calendar_event",
+            "delete_calendar_event",
+        )
     }
 
     private fun error(message: String) = buildJsonObject {

@@ -19,11 +19,12 @@ import kotlinx.serialization.json.putJsonObject
 
 fun phoneAlertControlTool() = ToolDefinition(
     name = "phone_alert_control",
-    description = """
-        Start or stop this phone's temporary audible alert only on explicit request. It uses
-        configured alarm-volume/Do Not Disturb behavior and stops within 60 seconds; do not use
-        it to change other audio settings.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Starts or stops this phone's temporary audible alert, which runs for at most 60 seconds.",
+        trigger = "The user explicitly asks to start or stop the phone alert.",
+        notFor = "Use `media_playback_control` for playback and `media_volume_control` for media volume.",
+        prerequisite = "`action` must be `start` or `stop`; sound/duration are optional for start. Behavior depends on alarm-volume and Do Not Disturb settings.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -74,10 +75,12 @@ fun phoneAlertControlTool() = ToolDefinition(
 
 fun mediaPlaybackControlTool() = ToolDefinition(
     name = "media_playback_control",
-    description = """
-        Control the active media session, not a selected app; it may be unavailable.
-        Seek duration is approximate. Use get_media_status only when actual state needs checking.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Controls play/pause/stop, track changes, or approximate seeking in the active media session.",
+        trigger = "The user asks to control currently active media playback.",
+        notFor = "Use `open_app` to launch a specific app, `media_volume_control` for volume, or `get_media_status` to inspect state.",
+        prerequisite = "`action` is required; provide `seconds` for seek actions. Report when no active media session is available.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -123,10 +126,12 @@ fun mediaPlaybackControlTool() = ToolDefinition(
 
 fun mediaVolumeControlTool() = ToolDefinition(
     name = "media_volume_control",
-    description = """
-        Read or change media (STREAM_MUSIC) volume only, not ringtone, notification, or alarm
-        volume. Report the resulting level, not just the requested operation.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Reads or changes media (`STREAM_MUSIC`) volume and returns the resulting level.",
+        trigger = "The user asks to get, raise, lower, mute/unmute, or set media volume.",
+        notFor = "Does not control ringtone, notification, or alarm volume; use `phone_alert_control` for the phone alert.",
+        prerequisite = "`action` is required; `set_level` needs `level_percent` (0-100), and raise/lower may specify `steps`.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -177,10 +182,12 @@ fun mediaVolumeControlTool() = ToolDefinition(
 
 fun getMediaStatusTool() = ToolDefinition(
     name = "get_media_status",
-    description = """
-        Read current playback/audio status without changing settings. It cannot identify media
-        details unless the device returns them; distinguish unavailable or unknown values.
-    """.trimIndent(),
+    description = universalToolDescription(
+        purpose = "Reads current playback/audio status without changing settings.",
+        trigger = "The user asks whether media is playing or requests current audio status.",
+        notFor = "Use `media_playback_control` to change playback and `media_volume_control` to change volume.",
+        prerequisite = "No arguments are required; do not infer media details the device does not return.",
+    ),
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {}

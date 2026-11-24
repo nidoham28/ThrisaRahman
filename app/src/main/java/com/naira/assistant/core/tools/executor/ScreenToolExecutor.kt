@@ -12,7 +12,9 @@ import com.naira.assistant.core.tools.executor.AppToolExecutor.executeOpenApp
 import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -120,19 +122,24 @@ object ScreenToolExecutor {
             }
         }
 
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
+        val (width, height, imageUri) = withContext(Dispatchers.IO) {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+
+            BitmapFactory.decodeByteArray(
+                screenshot,
+                0,
+                screenshot.size,
+                options
+            )
+
+            Triple(
+                options.outWidth,
+                options.outHeight,
+                saveForDisplay(context, screenshot),
+            )
         }
-
-        BitmapFactory.decodeByteArray(
-            screenshot,
-            0,
-            screenshot.size,
-            options
-        )
-
-        val width = options.outWidth
-        val height = options.outHeight
 
         lastCapture.set(
             ScreenCapture(
@@ -141,8 +148,6 @@ object ScreenToolExecutor {
                 height = height,
             )
         )
-
-        val imageUri = saveForDisplay(context, screenshot)
 
         return buildJsonObject {
             put("success", true)
@@ -244,9 +249,14 @@ object ScreenToolExecutor {
                 }
 
                 "click_element" -> {
-                    val target = jsonStringArg(call, "target")
-                        ?.trim()
-                        ?.takeIf { it.isNotEmpty() }
+                    val target = if (call.args.containsKey("target")) {
+                        jsonStringArg(call, "target")
+                            ?.trim()
+                            ?.takeIf(String::isNotEmpty)
+                            ?: return error("'target' must be a non-empty string.")
+                    } else {
+                        null
+                    }
                         ?: return error(
                             "Provide the visible text or accessibility ID of the element to click."
                         )
@@ -472,9 +482,14 @@ object ScreenToolExecutor {
             return error("The text to enter cannot be empty.")
         }
 
-        val target = jsonStringArg(call, "target")
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+        val target = if (call.args.containsKey("target")) {
+            jsonStringArg(call, "target")
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?: return error("'target' must be a non-empty string.")
+        } else {
+            null
+        }
 
         val entered = service.typeText(text, target)
 
@@ -755,9 +770,16 @@ object ScreenToolExecutor {
         val end = normalizedPoint(x2, y2, service)
             ?: return error("The Computer Use swipe end coordinates are invalid.")
 
-        val duration = (
-                extractNumberArg(call, "duration_ms") ?: 400.0
-                ).toLong().coerceIn(50L, 5000L)
+        val durationValue = if (call.args.containsKey("duration_ms")) {
+            extractNumberArg(call, "duration_ms")
+                ?: return error("'duration_ms' must be an integer.")
+        } else {
+            400.0
+        }
+        if (durationValue % 1.0 != 0.0 || durationValue !in 50.0..5000.0) {
+            return error("'duration_ms' must be an integer between 50 and 5000.")
+        }
+        val duration = durationValue.toLong()
 
         return service.swipe(
             start.first,
@@ -789,9 +811,14 @@ object ScreenToolExecutor {
             )
         }
 
-        val target = jsonStringArg(call, "target")
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+        val target = if (call.args.containsKey("target")) {
+            jsonStringArg(call, "target")
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?: return error("'target' must be a non-empty string.")
+        } else {
+            null
+        }
 
         return if (
             service.scrollElement(
@@ -908,9 +935,16 @@ object ScreenToolExecutor {
             )
         }
 
-        val duration = (
-                extractNumberArg(call, "duration_ms") ?: 300.0
-                ).toLong().coerceIn(50L, 5000L)
+        val durationValue = if (call.args.containsKey("duration_ms")) {
+            extractNumberArg(call, "duration_ms")
+                ?: return error("'duration_ms' must be an integer.")
+        } else {
+            300.0
+        }
+        if (durationValue % 1.0 != 0.0 || durationValue !in 50.0..5000.0) {
+            return error("'duration_ms' must be an integer between 50 and 5000.")
+        }
+        val duration = durationValue.toLong()
 
         val start = screenshotPointToScreen(x1, y1, service)
             ?: return error("The swipe starting coordinates are invalid.")

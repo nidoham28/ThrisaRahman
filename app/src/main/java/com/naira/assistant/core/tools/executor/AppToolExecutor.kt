@@ -36,15 +36,28 @@ object AppToolExecutor {
         call: FunctionCall,
         context: Context
     ): JsonObject {
-        val query = jsonStringArg(call, "query")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val query = if (call.args.containsKey("query")) {
+            jsonStringArg(call, "query")
+                ?: return error("'query' must be a string.")
+        } else {
+            null
+        }?.trim()?.takeIf(String::isNotBlank)
 
-        val includeSystem =
-            extractBooleanArg(call, "include_system_apps") ?: false
+        val includeSystem = if (call.args.containsKey("include_system_apps")) {
+            extractBooleanArg(call, "include_system_apps")
+                ?: return error("'include_system_apps' must be a boolean.")
+        } else {
+            false
+        }
 
-        val limit = (extractIntArg(call, "limit") ?: DEFAULT_LIMIT)
-            .coerceIn(1, MAX_LIMIT)
+        val limit = if (call.args.containsKey("limit")) {
+            extractIntArg(call, "limit") ?: return error("'limit' must be an integer.")
+        } else {
+            DEFAULT_LIMIT
+        }
+        if (limit !in 1..MAX_LIMIT) {
+            return error("'limit' must be between 1 and $MAX_LIMIT.")
+        }
 
         return try {
             val apps = getInstalledApps(
@@ -102,13 +115,23 @@ object AppToolExecutor {
         call: FunctionCall,
         context: Context
     ): JsonObject {
-        val appName = jsonStringArg(call, "app_name")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val appName = if (call.args.containsKey("app_name")) {
+            jsonStringArg(call, "app_name")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'app_name' must be a non-empty string.")
+        } else {
+            null
+        }
 
-        val packageName = jsonStringArg(call, "package_name")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val packageName = if (call.args.containsKey("package_name")) {
+            jsonStringArg(call, "package_name")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'package_name' must be a non-empty string.")
+        } else {
+            null
+        }
 
         if (appName == null && packageName == null) {
             return error(
@@ -170,23 +193,40 @@ object AppToolExecutor {
                 includeSystem = true
             )
 
-            val matched = findBestAppMatch(apps, appName.orEmpty())
-
-            if (matched != null) {
-                buildJsonObject {
+            when (val match = resolveAppMatch(apps, appName.orEmpty())) {
+                is AppMatchResult.Found -> buildJsonObject {
                     put("success", true)
                     put("installed", true)
-                    put("app_name", matched.name)
-                    put("package_name", matched.packageName)
-                    put("is_system", matched.isSystem)
-                    put("can_launch", matched.canLaunch)
+                    put("app_name", match.app.name)
+                    put("package_name", match.app.packageName)
+                    put("is_system", match.app.isSystem)
+                    put("can_launch", match.app.canLaunch)
                     put(
                         "message",
-                        "App '${matched.name}' (${matched.packageName}) is installed on this device."
+                        "App '${match.app.name}' (${match.app.packageName}) is installed on this device."
                     )
                 }
-            } else {
-                buildJsonObject {
+
+                is AppMatchResult.Ambiguous -> buildJsonObject {
+                    put("success", true)
+                    put("installed", true)
+                    put("ambiguous", true)
+                    put("app_name", appName.orEmpty())
+                    put("matches", buildJsonArray {
+                        match.apps.forEach { app ->
+                            add(buildJsonObject {
+                                put("name", app.name)
+                                put("package_name", app.packageName)
+                            })
+                        }
+                    })
+                    put(
+                        "message",
+                        "Multiple installed applications match '${appName.orEmpty()}'. Use an exact package_name."
+                    )
+                }
+
+                AppMatchResult.NotFound -> buildJsonObject {
                     put("success", true)
                     put("installed", false)
                     put("app_name", appName.orEmpty())
@@ -215,13 +255,23 @@ object AppToolExecutor {
         call: FunctionCall,
         context: Context
     ): JsonObject {
-        val appName = jsonStringArg(call, "app_name")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val appName = if (call.args.containsKey("app_name")) {
+            jsonStringArg(call, "app_name")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'app_name' must be a non-empty string.")
+        } else {
+            null
+        }
 
-        val packageName = jsonStringArg(call, "package_name")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val packageName = if (call.args.containsKey("package_name")) {
+            jsonStringArg(call, "package_name")
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return error("'package_name' must be a non-empty string.")
+        } else {
+            null
+        }
 
         if (appName == null && packageName == null) {
             return error(
@@ -278,12 +328,20 @@ object AppToolExecutor {
                 includeSystem = false
             )
 
-            val matched = findBestAppMatch(
+            val matched = when (val match = resolveAppMatch(
                 apps = apps,
                 target = appName.orEmpty()
-            ) ?: return error(
-                "Could not find a launchable application matching '${appName.orEmpty()}'."
-            )
+            )) {
+                is AppMatchResult.Found -> match.app
+                is AppMatchResult.Ambiguous -> return error(
+                    "Multiple launchable applications match '${appName.orEmpty()}': " +
+                            match.apps.joinToString { "${it.name} (${it.packageName})" } +
+                            ". Pass an exact package_name to choose one."
+                )
+                AppMatchResult.NotFound -> return error(
+                    "Could not find a launchable application matching '${appName.orEmpty()}'."
+                )
+            }
 
             val launchIntent = pm.getLaunchIntentForPackage(matched.packageName)
                 ?: return error(
@@ -388,47 +446,34 @@ object AppToolExecutor {
     // APP MATCHING
     // ---------------------------------------------------------
 
-    fun findBestAppMatch(
+    internal fun resolveAppMatch(
         apps: List<InstalledAppInfo>,
         target: String
-    ): InstalledAppInfo? {
+    ): AppMatchResult {
         val clean = target.trim().lowercase()
 
-        if (clean.isBlank()) return null
+        if (clean.isBlank()) return AppMatchResult.NotFound
+        val uniqueApps = apps.distinctBy(InstalledAppInfo::packageName)
 
-        // Exact display-name match.
-        apps.firstOrNull {
-            it.name.equals(clean, ignoreCase = true)
-        }?.let { return it }
+        fun resolve(matches: List<InstalledAppInfo>): AppMatchResult? {
+            val candidates = matches.distinctBy(InstalledAppInfo::packageName)
+            return when (candidates.size) {
+                0 -> null
+                1 -> AppMatchResult.Found(candidates.single())
+                else -> AppMatchResult.Ambiguous(candidates)
+            }
+        }
 
-        // Exact package-name match.
-        apps.firstOrNull {
-            it.packageName.equals(clean, ignoreCase = true)
-        }?.let { return it }
+        resolve(uniqueApps.filter { it.name.equals(clean, ignoreCase = true) })?.let { return it }
+        resolve(uniqueApps.filter { it.packageName.equals(clean, ignoreCase = true) })?.let { return it }
+        resolve(uniqueApps.filter { it.name.startsWith(clean, ignoreCase = true) })?.let { return it }
+        resolve(uniqueApps.filter { app ->
+            app.name.split(Regex("\\s+")).any { word -> word.equals(clean, ignoreCase = true) }
+        })?.let { return it }
+        resolve(uniqueApps.filter { it.name.contains(clean, ignoreCase = true) })?.let { return it }
+        resolve(uniqueApps.filter { it.packageName.contains(clean, ignoreCase = true) })?.let { return it }
 
-        // Prefer names beginning with the requested term.
-        apps.firstOrNull {
-            it.name.startsWith(clean, ignoreCase = true)
-        }?.let { return it }
-
-        // Match complete words.
-        apps.firstOrNull { app ->
-            app.name.lowercase()
-                .split(Regex("\\s+"))
-                .any { word -> word == clean }
-        }?.let { return it }
-
-        // Partial display-name match.
-        apps.firstOrNull {
-            it.name.contains(clean, ignoreCase = true)
-        }?.let { return it }
-
-        // Partial package-name match.
-        apps.firstOrNull {
-            it.packageName.contains(clean, ignoreCase = true)
-        }?.let { return it }
-
-        return null
+        return AppMatchResult.NotFound
     }
 
     // ---------------------------------------------------------
@@ -486,4 +531,10 @@ object AppToolExecutor {
                     .toBooleanStrictOrNull()
         }.getOrNull()
     }
+}
+
+internal sealed interface AppMatchResult {
+    data class Found(val app: InstalledAppInfo) : AppMatchResult
+    data class Ambiguous(val apps: List<InstalledAppInfo>) : AppMatchResult
+    data object NotFound : AppMatchResult
 }
