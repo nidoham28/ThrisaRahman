@@ -52,4 +52,16 @@ class ToolRegistrySchemaTest {
             assertTrue("$toolName limit default is out of range.", default in minimum..maximum)
         }
     }
+
+    @Test
+    fun `email lookup tool accepts a required query`() {
+        val tool = ToolRegistry.definitions.single { it.name == "find_email_contact" }
+        val properties = tool.parameters.getValue("properties").jsonObject
+        val query = properties.getValue("query").jsonObject
+
+        assertTrue(query.getValue("type").jsonPrimitive.content == "string")
+        assertTrue(tool.parameters.getValue("required").jsonArray.any {
+            it.jsonPrimitive.content == "query"
+        })
+    }
 }

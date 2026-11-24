@@ -15,6 +15,7 @@ import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.BackgroundWakeWordSettingsStorage
 import com.naira.assistant.domain.settings.AssistantThinkingMode
+import com.naira.assistant.domain.settings.EmailContactStorage
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.InterfaceSettingsStorage
 import com.naira.assistant.domain.settings.NetworkSettingsStorage
@@ -36,6 +37,7 @@ internal class SettingsState(
 ) {
     private val userSettingsStorage = UserSettingsStorage()
     private val speechStorage = SpeechSettingsStorage(context)
+    private val emailContactStorage = EmailContactStorage(context)
     private val backgroundWakeWordSettingsStorage = BackgroundWakeWordSettingsStorage(context)
     var theme by mutableStateOf(userSettingsStorage.getTheme())
     var fontSize by mutableStateOf(userSettingsStorage.getFontSize())
@@ -64,6 +66,8 @@ internal class SettingsState(
     var openRouterBaseUrl by mutableStateOf(storage.getOpenRouterBaseUrl(currentUserId()))
     var customProviderModelId by mutableStateOf(storage.getCustomProviderModelId())
     var customProviderBaseUrl by mutableStateOf(storage.getCustomProviderBaseUrl())
+    var emailContacts by mutableStateOf(emailContactStorage.getContacts(currentUserId()))
+        private set
     var customTtsModel by mutableStateOf(speechStorage.getCustomTtsModel())
     var customTtsBaseUrl by mutableStateOf(speechStorage.getCustomTtsBaseUrl())
     private val accountStorage = AccountSettingsStorage(context)
@@ -182,6 +186,23 @@ internal class SettingsState(
         val cleaned = value.trim()
         storage.saveCustomProviderBaseUrl(cleaned)
         customProviderBaseUrl = cleaned
+    }
+
+    fun saveEmailContact(name: String, email: String, replacingEmail: String? = null) {
+        emailContacts = emailContactStorage.saveContact(
+            name = name,
+            email = email,
+            userId = currentUserId(),
+            replacingEmail = replacingEmail,
+        )
+    }
+
+    fun removeEmailContact(email: String) {
+        emailContacts = emailContactStorage.removeContact(email, currentUserId())
+    }
+
+    fun refreshEmailContacts() {
+        emailContacts = emailContactStorage.getContacts(currentUserId())
     }
 
     fun saveCustomTtsApiKey(value: String) {

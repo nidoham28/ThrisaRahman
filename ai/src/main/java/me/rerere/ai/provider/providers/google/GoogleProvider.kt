@@ -98,7 +98,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
 
     // Vertex AI 只有服务账号走 Interactions，且区域须为 global/us/eu，否则仍走 generateContent
     private fun ProviderSetting.Google.usesInteractionsApi() = useInteractionsApi &&
-        (!vertexAI || (useServiceAccount && location in VERTEX_INTERACTIONS_LOCATIONS))
+            (!vertexAI || (useServiceAccount && location in VERTEX_INTERACTIONS_LOCATIONS))
 
     private fun buildUrl(providerSetting: ProviderSetting.Google, path: String): HttpUrl {
         return if (!providerSetting.vertexAI) {
@@ -165,9 +165,12 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                         return@mapNotNull null
                     }
 
+                    val modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/")
                     Model(
-                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
-                        displayName = modelObject["displayName"]!!.jsonPrimitive.content,
+                        modelId = modelId,
+                        // 部分兼容接口不返回 displayName，回退到 modelId
+                        displayName = modelObject["displayName"]?.jsonPrimitiveOrNull?.contentOrNull
+                            ?.takeIf { it.isNotBlank() } ?: modelId,
                         type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
                     )
                 }
@@ -387,7 +390,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                         params.model.modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
                     val useThinkingLevel =
                         ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId) ||
-                            ModelRegistry.GEMINI_4.match(modelId = params.model.modelId)
+                                ModelRegistry.GEMINI_4.match(modelId = params.model.modelId)
 
                     when (params.reasoningLevel) {
                         ReasoningLevel.AUTO -> {} // 自动模式，不设置参数
@@ -839,68 +842,68 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
     }
 
     private fun UIMessagePart.Tool.toFunctionResponsePart() = buildJsonObject {
-            put("functionResponse", buildJsonObject {
-                put("name", toolName)
-                put("id", toolCallId)
+        put("functionResponse", buildJsonObject {
+            put("name", toolName)
+            put("id", toolCallId)
 
-                // 1. 拆分出纯文本部分
-                val textParts = output.filterIsInstance<UIMessagePart.Text>()
-                
-                // 2. 提取所有的多模态(图片/视频/音频)，并直接转为 Google 要求的格式
-                // 过滤出最终包含 inlineData 的数据块
-                val mediaGoogleParts = output
-                    .filter { it !is UIMessagePart.Text }
-                    .mapNotNull { it.toGooglePart() }
-                    .filter { it.containsKey("inlineData") } 
+            // 1. 拆分出纯文本部分
+            val textParts = output.filterIsInstance<UIMessagePart.Text>()
 
-                // 3. 构建给模型看的结构化 response 节点
-                put("response", buildJsonObject {
-                    // 处理文本结果
-                    if (textParts.isNotEmpty()) {
-                        put(
-                            "result", 
-                            textParts.joinToString("\n") { it.text }
-                        )
-                    } else if (mediaGoogleParts.isEmpty()) {
-                        // 如果工具啥都没返回，给个兜底成功状态
-                        put("result", " ")
-                    }
+            // 2. 提取所有的多模态(图片/视频/音频)，并直接转为 Google 要求的格式
+            // 过滤出最终包含 inlineData 的数据块
+            val mediaGoogleParts = output
+                .filter { it !is UIMessagePart.Text }
+                .mapNotNull { it.toGooglePart() }
+                .filter { it.containsKey("inlineData") }
 
-                    // 处理媒体数据（图片、音频、视频），打上 $ref 标签
-                    mediaGoogleParts.forEachIndexed { index, _ ->
-                        val refName = "media_ref_$index"
-                        put(refName, buildJsonObject {
-                            put("\$ref", refName)
-                        })
-                    }
-                })
+            // 3. 构建给模型看的结构化 response 节点
+            put("response", buildJsonObject {
+                // 处理文本结果
+                if (textParts.isNotEmpty()) {
+                    put(
+                        "result",
+                        textParts.joinToString("\n") { it.text }
+                    )
+                } else if (mediaGoogleParts.isEmpty()) {
+                    // 如果工具啥都没返回，给个兜底成功状态
+                    put("result", " ")
+                }
 
-                // 4. 将真实的 Base64 多媒体数据挂载到 parts 中，并建立指针绑定
-                if (mediaGoogleParts.isNotEmpty()) {
-                    putJsonArray("parts") {
-                        mediaGoogleParts.forEachIndexed { index, googlePart ->
-                            val refName = "media_ref_$index"
-                            val inlineData = googlePart["inlineData"]!!.jsonObject
-
-                            add(buildJsonObject {
-                                // 重新组装 inlineData，并在内部注入 displayName
-                                put("inlineData", buildJsonObject {
-                                    // 复制原有的 mimeType 和 data
-                                    inlineData.forEach { (k, v) -> put(k, v) }
-                                    // 添加能够让 $ref 认出它的唯一名称
-                                    put("displayName", refName)
-                                })
-                                
-                                // 保留可能存在的其他字段
-                                googlePart.forEach { (k, v) ->
-                                    if (k != "inlineData") put(k, v)
-                                }
-                            })
-                        }
-                    }
+                // 处理媒体数据（图片、音频、视频），打上 $ref 标签
+                mediaGoogleParts.forEachIndexed { index, _ ->
+                    val refName = "media_ref_$index"
+                    put(refName, buildJsonObject {
+                        put("\$ref", refName)
+                    })
                 }
             })
-        }
+
+            // 4. 将真实的 Base64 多媒体数据挂载到 parts 中，并建立指针绑定
+            if (mediaGoogleParts.isNotEmpty()) {
+                putJsonArray("parts") {
+                    mediaGoogleParts.forEachIndexed { index, googlePart ->
+                        val refName = "media_ref_$index"
+                        val inlineData = googlePart["inlineData"]!!.jsonObject
+
+                        add(buildJsonObject {
+                            // 重新组装 inlineData，并在内部注入 displayName
+                            put("inlineData", buildJsonObject {
+                                // 复制原有的 mimeType 和 data
+                                inlineData.forEach { (k, v) -> put(k, v) }
+                                // 添加能够让 $ref 认出它的唯一名称
+                                put("displayName", refName)
+                            })
+
+                            // 保留可能存在的其他字段
+                            googlePart.forEach { (k, v) ->
+                                if (k != "inlineData") put(k, v)
+                            }
+                        })
+                    }
+                }
+            }
+        })
+    }
 
     private fun UIMessagePart.ServerTool.toGoogleServerToolParts(): List<JsonObject> {
         val metadata = metadataAs<ServerToolMetadata>()

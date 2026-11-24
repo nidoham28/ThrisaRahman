@@ -12,7 +12,9 @@ fun composeEmailTool() = ToolDefinition(
     name = "compose_email",
     description = """
         Prepare an email draft only; the user reviews and sends it. Preserve requested tone,
-        language, and facts. Never invent a recipient or claim it was sent.
+        language, and facts. Recipients may be saved contact names or email addresses. Use
+        find_email_contact first when a name could be ambiguous, then use the returned address.
+        Do not repeat recipient addresses. Never invent a recipient or claim it was sent.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -22,7 +24,8 @@ fun composeEmailTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "Optional recipient(s); omit or use empty string for manual selection. Never invent."
+                    "Optional comma-separated contact name(s) or email address(es). Omit for manual selection. " +
+                        "Use find_email_contact for ambiguous names."
                 )
             }
 
@@ -47,6 +50,27 @@ fun composeEmailTool() = ToolDefinition(
             add(JsonPrimitive("body"))
         }
     }
+)
+
+fun findEmailContactTool() = ToolDefinition(
+    name = "find_email_contact",
+    description = """
+        Search the user's saved email contacts by owner name or email address. Return the saved
+        contact name and email address. Use this before composing an email to a person identified
+        by name; if multiple contacts match, ask the user which one. Never invent a contact.
+    """.trimIndent(),
+    parameters = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("query") {
+                put("type", "string")
+                put("description", "A contact owner's name or email address to search for.")
+            }
+        }
+        putJsonArray("required") {
+            add(JsonPrimitive("query"))
+        }
+    },
 )
 
 fun composeTextMessageTool() = ToolDefinition(

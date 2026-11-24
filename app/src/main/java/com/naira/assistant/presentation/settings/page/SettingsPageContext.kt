@@ -4,6 +4,7 @@ import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
+import com.naira.assistant.domain.settings.EmailContact
 import com.naira.assistant.domain.settings.Gender
 import com.naira.assistant.domain.settings.RelationType
 import com.naira.assistant.presentation.settings.model.EditField
@@ -13,6 +14,7 @@ import com.naira.assistant.presentation.settings.screen.SettingsState
 
 internal data class SettingsPageContext(
     val state: SettingsState,
+    val emailAddress: String,
     val permissionStatus: PermissionStatus,
     val permissionActions: PermissionActions,
     val isPrivacyOptionsRequired: Boolean,
@@ -24,6 +26,7 @@ internal data class SettingsPageContext(
     val onEditCustomTtsApiKey: () -> Unit,
     val onDataManagementAction: (String) -> Unit,
     val onEditField: (EditField) -> Unit,
+    val onEditEmailContact: (EmailContact?) -> Unit,
     val onSaveGender: (Gender) -> Unit,
     val onSaveAssistantName: (String) -> Unit,
     val onSaveRelationship: (RelationType) -> Unit,

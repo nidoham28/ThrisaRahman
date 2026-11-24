@@ -18,6 +18,7 @@ import com.naira.assistant.core.tools.definition.createReminderTool
 import com.naira.assistant.core.tools.definition.createTodoTool
 import com.naira.assistant.core.tools.definition.composeEmailTool
 import com.naira.assistant.core.tools.definition.composeTextMessageTool
+import com.naira.assistant.core.tools.definition.findEmailContactTool
 import com.naira.assistant.core.tools.definition.deleteAlarmTool
 import com.naira.assistant.core.tools.definition.deleteCalendarEventTool
 import com.naira.assistant.core.tools.definition.deleteNoteTool
@@ -141,6 +142,7 @@ object ToolRegistry {
         "compose_email",
         "compose_text_message",
         "share_text",
+        "find_email_contact",
 
         /**
          * Cricket declarations
@@ -257,6 +259,7 @@ object ToolRegistry {
         composeEmailTool(),
         composeTextMessageTool(),
         shareTextTool(),
+        findEmailContactTool(),
 
         /**
          * Cricket declarations

@@ -60,8 +60,10 @@ import com.naira.assistant.core.sync.FirebasePaths
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.EmailContact
 import com.naira.assistant.presentation.settings.component.ApiKeyDialog
 import com.naira.assistant.presentation.settings.component.EditFieldDialog
+import com.naira.assistant.presentation.settings.component.EmailContactDialog
 import com.naira.assistant.presentation.settings.component.NodeCard
 import com.naira.assistant.presentation.settings.component.RootList
 import com.naira.assistant.presentation.settings.component.SettingsCloudSyncErrorCard
@@ -126,6 +128,8 @@ fun SettingsScreen(
     val editingField = editingFieldName?.let { name ->
         EditField.entries.firstOrNull { it.name == name }
     }
+    var showEmailContactDialog by rememberSaveable { mutableStateOf(false) }
+    var emailContactBeingEdited by remember { mutableStateOf<EmailContact?>(null) }
 
     var awaitingAccessibilityGrant by remember { mutableStateOf(false) }
     var showAccessibilityHelp by remember { mutableStateOf(false) }
@@ -136,6 +140,11 @@ fun SettingsScreen(
     var enableWakeWordAfterPermission by remember { mutableStateOf(false) }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
     val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
+    val emailAddress = remember(refreshPermissionsTrigger) { authService.currentUser()?.email.orEmpty() }
+
+    LaunchedEffect(userId) {
+        state.refreshEmailContacts()
+    }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -180,6 +189,11 @@ fun SettingsScreen(
                 is CloudSettingsSyncResult.Failed -> cloudSyncError = result.message
             }
         }
+    }
+
+    fun editEmailContact(contact: EmailContact?) {
+        emailContactBeingEdited = contact
+        showEmailContactDialog = true
     }
 
     fun saveProviderCredential(provider: AssistantProvider, key: String) {
@@ -476,6 +490,7 @@ fun SettingsScreen(
 
     val pageContext = SettingsPageContext(
         state = state,
+        emailAddress = emailAddress,
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         isPrivacyOptionsRequired = isPrivacyOptionsRequired,
@@ -487,6 +502,7 @@ fun SettingsScreen(
         onEditCustomTtsApiKey = { editingCustomTtsApiKey = true },
         onDataManagementAction = { dataManagementAction = it },
         onEditField = { editingFieldName = it.name },
+        onEditEmailContact = ::editEmailContact,
         onSaveGender = { value ->
             state.saveGender(value)
             cloudSettingsRepository.recordChange(CloudSettingsPatch(gender = value))
@@ -711,6 +727,32 @@ fun SettingsScreen(
                 editingFieldName = null
             },
             onDismiss = { editingFieldName = null },
+        )
+    }
+
+    if (showEmailContactDialog) {
+        EmailContactDialog(
+            initialContact = emailContactBeingEdited,
+            onSave = { name, email, replacingEmail ->
+                try {
+                    state.saveEmailContact(name, email, replacingEmail)
+                    null
+                } catch (error: IllegalStateException) {
+                    error.message ?: "Saved email contacts could not be updated."
+                }
+            },
+            onDelete = { email ->
+                try {
+                    state.removeEmailContact(email)
+                    null
+                } catch (error: IllegalStateException) {
+                    error.message ?: "Saved email contacts could not be updated."
+                }
+            },
+            onDismiss = {
+                showEmailContactDialog = false
+                emailContactBeingEdited = null
+            },
         )
     }
 

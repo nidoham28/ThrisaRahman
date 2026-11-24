@@ -27,6 +27,7 @@ import com.naira.assistant.core.tools.executor.CalendarToolExecutor.executeGetCa
 import com.naira.assistant.core.tools.executor.CalendarToolExecutor.executeListCalendarEvents
 import com.naira.assistant.core.tools.executor.CalendarToolExecutor.executeUpdateCalendarEvent
 import com.naira.assistant.core.tools.executor.CommunicationToolExecutor.executeComposeEmail
+import com.naira.assistant.core.tools.executor.CommunicationToolExecutor.executeFindEmailContact
 import com.naira.assistant.core.tools.executor.CommunicationToolExecutor.executeComposeTextMessage
 import com.naira.assistant.core.tools.executor.CommunicationToolExecutor.executeShareText
 import com.naira.assistant.core.tools.executor.CricketToolExecutor
@@ -74,6 +75,7 @@ import com.naira.assistant.core.tools.executor.TodoToolExecutor.executeUpdateTod
 import com.naira.assistant.core.tools.executor.executeWeatherReport
 import com.naira.assistant.domain.FunctionCall
 import com.naira.assistant.domain.settings.ApiKeyStorage
+import com.naira.assistant.domain.settings.EmailContactStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonObject
@@ -157,6 +159,7 @@ object CommandExecution {
 
         val appContext = context.applicationContext
         val weatherApiKeyStorage = ApiKeyStorage(appContext)
+        val emailContactStorage = EmailContactStorage(appContext)
         val authService = FirebaseAuthService()
 
         val noteRepo = SqliteNoteDatabase.getInstance(appContext)
@@ -229,8 +232,19 @@ object CommandExecution {
 
                     // ── Communication ─────────────────────────────
 
+                    "find_email_contact" ->
+                        executeFindEmailContact(
+                            call,
+                            emailContactStorage,
+                            authService.currentUser()?.uid,
+                        )
+
                     "compose_email" ->
-                        executeComposeEmail(call, appContext)
+                        executeComposeEmail(
+                            call,
+                            appContext,
+                            emailContactStorage.getContacts(authService.currentUser()?.uid),
+                        )
 
                     "compose_text_message" ->
                         executeComposeTextMessage(call, appContext)

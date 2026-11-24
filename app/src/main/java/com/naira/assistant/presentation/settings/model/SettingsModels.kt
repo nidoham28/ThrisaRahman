@@ -106,6 +106,7 @@ internal data class SettingsSection(
 internal val rootSettingsSections = listOf(
     SettingsSection("General Settings", listOf("preferences", "profile", "assistant", "extensions")),
     SettingsSection("Provider & Services", listOf("providers", "integrations", "voice")),
+    SettingsSection("Messaging Services", listOf("messaging-email", "messaging-whatsapp")),
     SettingsSection("Additional Settings", listOf("advanced-settings", "privacy", "data", "about")),
 )
 

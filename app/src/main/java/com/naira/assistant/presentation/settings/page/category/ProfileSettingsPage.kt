@@ -3,6 +3,7 @@
 package com.naira.assistant.presentation.settings.page.category
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
 import com.naira.assistant.presentation.settings.component.GenderDropdown
@@ -23,6 +24,13 @@ internal object ProfileSettingsPage : CategoryNameUi() {
                     subtitle = state.username.ifBlank { "Set your username" },
                     icon = Icons.Outlined.Person,
                     onClick = { onEditField(EditField.USERNAME) },
+                ),
+                SettingsNode.Item(
+                    id = "email", title = "Email",
+                    subtitle = state.emailContacts.firstOrNull()?.let { "${it.name} · ${it.email}" }
+                        ?: "Add your email",
+                    icon = Icons.Outlined.Email,
+                    onClick = { onEditEmailContact(state.emailContacts.firstOrNull()) },
                 ),
                 SettingsNode.Item(
                     id = "phone", title = "Phone number",
