@@ -152,6 +152,7 @@ internal fun resolveAssistantModelId(
         ?.trim()
         ?.takeIf(String::isNotEmpty)
         ?: provider.defaultModelId
+    AssistantProvider.TOKENS_BD -> provider.defaultModelId
     AssistantProvider.CUSTOM -> configuredCustomModelId
         ?.trim()
         ?.takeIf(String::isNotEmpty)
@@ -330,6 +331,7 @@ class AssistantViewModel(
         activeProviderBaseUrl = when (activeProvider) {
             AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterBaseUrl(userId)
             AssistantProvider.GROQ -> apiKeyStorage.getGroqBaseUrl(userId)
+            AssistantProvider.TOKENS_BD -> AssistantApiService.TOKENS_BD_BASE_URL
             AssistantProvider.CUSTOM -> apiKeyStorage.getCustomProviderBaseUrl()
             AssistantProvider.GEMINI -> null
         }

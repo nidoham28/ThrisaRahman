@@ -51,6 +51,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                         AssistantProvider.GEMINI -> state.geminiModelId
                                         AssistantProvider.OPENROUTER -> state.openRouterModelId
                                         AssistantProvider.GROQ -> state.groqModelId
+                                        AssistantProvider.TOKENS_BD -> provider.defaultModelId
                                         AssistantProvider.CUSTOM -> provider.defaultModelId
                                     },
                                     icon = Icons.Outlined.AutoAwesome,
@@ -58,6 +59,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                         AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
                                         AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
                                         AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
+                                        AssistantProvider.TOKENS_BD -> null
                                         AssistantProvider.CUSTOM -> null
                                     },
                                 )

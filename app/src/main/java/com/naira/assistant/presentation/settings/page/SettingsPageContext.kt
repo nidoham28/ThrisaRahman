@@ -15,6 +15,8 @@ internal data class SettingsPageContext(
     val state: SettingsState,
     val permissionStatus: PermissionStatus,
     val permissionActions: PermissionActions,
+    val isPrivacyOptionsRequired: Boolean,
+    val onShowPrivacyOptions: () -> Unit,
     val onSaveActiveProvider: (AssistantProvider) -> Unit,
     val onEditKey: (AssistantProvider) -> Unit,
     val onEditCricketApiKey: () -> Unit,

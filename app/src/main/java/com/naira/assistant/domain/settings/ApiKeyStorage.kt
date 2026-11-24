@@ -14,6 +14,7 @@ enum class AssistantProvider(
     GEMINI("Gemini", "AIza...", "gemini-3.5-flash-lite"),
     OPENROUTER("OpenRouter", "sk-or-...", "openrouter/auto"),
     GROQ("Groq", "gsk_...", "openai/gpt-oss-120b"),
+    TOKENS_BD("Tokens BD", "tok_live_...", "deepseek-ai/deepseek-v4.1-flash-1017"),
     CUSTOM("Custom Provider", "Enter your API key", "custom-model");
 
     companion object {

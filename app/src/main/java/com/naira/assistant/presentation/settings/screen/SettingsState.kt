@@ -49,6 +49,9 @@ internal class SettingsState(
     private var groqKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.GROQ.name, it) }.orEmpty()
     )
+    private var tokensBdKey by mutableStateOf(
+        currentUserId()?.let { storage.getApiKey(AssistantProvider.TOKENS_BD.name, it) }.orEmpty()
+    )
     private var customProviderKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.CUSTOM.name, it) }.orEmpty()
     )
@@ -125,6 +128,7 @@ internal class SettingsState(
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
         AssistantProvider.GROQ -> groqKey
+        AssistantProvider.TOKENS_BD -> tokensBdKey
         AssistantProvider.CUSTOM -> customProviderKey
     }
 
@@ -134,6 +138,7 @@ internal class SettingsState(
             AssistantProvider.GEMINI -> geminiKey = cleaned
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
             AssistantProvider.GROQ -> groqKey = cleaned
+            AssistantProvider.TOKENS_BD -> tokensBdKey = cleaned
             AssistantProvider.CUSTOM -> customProviderKey = cleaned
         }
         currentUserId()?.let { storage.saveApiKey(provider.name, it, cleaned) }

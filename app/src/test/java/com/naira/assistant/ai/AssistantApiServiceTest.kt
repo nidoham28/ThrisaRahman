@@ -133,6 +133,18 @@ class AssistantApiServiceTest {
     }
 
     @Test
+    fun `uses Tokens BD OpenAI-compatible chat settings`() {
+        val setting = createAssistantProviderSetting(
+            provider = AssistantProvider.TOKENS_BD,
+            apiKey = " tok_live-test ",
+        ) as ProviderSetting.OpenAI
+
+        assertEquals("tok_live-test", setting.apiKey)
+        assertEquals("https://tokens.bd/v1", setting.baseUrl)
+        assertFalse(setting.useResponseApi)
+    }
+
+    @Test
     fun `keeps Gemini interactions API settings`() {
         val setting = createAssistantProviderSetting(
             provider = AssistantProvider.GEMINI,

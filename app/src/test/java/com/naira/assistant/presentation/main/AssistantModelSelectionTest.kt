@@ -40,4 +40,12 @@ class AssistantModelSelectionTest {
             resolveAssistantModelId(AssistantProvider.GROQ, null),
         )
     }
+
+    @Test
+    fun `uses the Tokens BD default model`() {
+        assertEquals(
+            "deepseek-ai/deepseek-v4.1-flash-1017",
+            resolveAssistantModelId(AssistantProvider.TOKENS_BD, null),
+        )
+    }
 }

@@ -32,4 +32,12 @@ class ApiKeyStorageTest {
             resolveSelectedProvider("groq", "openrouter"),
         )
     }
+
+    @Test
+    fun `restores Tokens BD provider from saved selection`() {
+        assertEquals(
+            AssistantProvider.TOKENS_BD,
+            resolveSelectedProvider("tokens_bd", "gemini"),
+        )
+    }
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import com.naira.assistant.core.navigation.ThrisaNavScaffold
 import com.naira.assistant.core.theme.ThrisaTheme
 import com.naira.assistant.domain.settings.UserSettingsStorage
+import com.naira.assistant.ads.AdMobManager
 
 class MainActivity : ComponentActivity() {
 
@@ -52,5 +53,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        AdMobManager.requestConsentAndInitialize(this)
     }
 }

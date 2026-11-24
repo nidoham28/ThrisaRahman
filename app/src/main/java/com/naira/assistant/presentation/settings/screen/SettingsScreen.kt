@@ -42,6 +42,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.FirebaseDatabase
@@ -52,6 +53,7 @@ import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
+import com.naira.assistant.ads.AdMobManager
 import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.sync.FirebasePaths
@@ -91,6 +93,7 @@ fun SettingsScreen(
     onLogout: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val isPrivacyOptionsRequired by AdMobManager.privacyOptionsRequired.collectAsStateWithLifecycle()
     val storage = remember { ApiKeyStorage(context.applicationContext) }
     val authService = remember { FirebaseAuthService() }
     val state = remember(storage) {
@@ -475,6 +478,8 @@ fun SettingsScreen(
         state = state,
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
+        isPrivacyOptionsRequired = isPrivacyOptionsRequired,
+        onShowPrivacyOptions = { AdMobManager.showPrivacyOptions(context) },
         onSaveActiveProvider = ::chooseActiveProvider,
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
