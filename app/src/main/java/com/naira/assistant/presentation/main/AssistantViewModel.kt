@@ -20,6 +20,7 @@ import com.naira.assistant.core.tools.CommandExecution
 import com.naira.assistant.core.tools.ToolCallDispatcher
 import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantProviderBaseUrlPolicy
 import com.naira.assistant.domain.settings.SensitiveContentSettingsStorage
 import com.naira.assistant.domain.settings.AccountSettingsStorage
 import com.naira.assistant.domain.settings.AssistantCharacter
@@ -142,24 +143,18 @@ internal fun resolveAssistantModelId(
     configuredCustomModelId: String? = null,
     configuredGeminiModelId: String? = null,
     configuredGroqModelId: String? = null,
-): String = when (provider) {
-    AssistantProvider.GEMINI -> configuredGeminiModelId
+): String {
+    val configuredModelId = when (provider) {
+        AssistantProvider.GEMINI -> configuredGeminiModelId
+        AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
+        AssistantProvider.GROQ -> configuredGroqModelId
+        AssistantProvider.TOKENS_BD -> null
+        AssistantProvider.CUSTOM -> configuredCustomModelId
+    }
+    return configuredModelId
         ?.trim()
         ?.takeIf(String::isNotEmpty)
-        ?: AssistantApiService.DEFAULT_MODEL_ID
-    AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
-        ?: AssistantApiService.DEFAULT_MODEL_OPENROUTER
-    AssistantProvider.GROQ -> configuredGroqModelId
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
-        ?: provider.defaultModelId
-    AssistantProvider.TOKENS_BD -> provider.defaultModelId
-    AssistantProvider.CUSTOM -> configuredCustomModelId
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
-        ?: provider.defaultModelId
+        ?: provider.info.fallbackModelId
 }
 
 /** OpenRouter response bodies that mean "the request carried no usable API key". */
@@ -257,7 +252,7 @@ class AssistantViewModel(
     private var chatGeneration = 0L
     private var activeApiKey: String? = null
     private var activeProvider = AssistantProvider.GEMINI
-    private var activeModelId = AssistantApiService.DEFAULT_MODEL_ID
+    private var activeModelId = AssistantProvider.GEMINI.info.fallbackModelId
     private var activeProviderBaseUrl: String? = null
 
     init { refreshSettings() }
@@ -345,12 +340,18 @@ class AssistantViewModel(
             } else {
                 null
             }
-        activeProviderBaseUrl = when (activeProvider) {
-            AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterBaseUrl(userId)
-            AssistantProvider.GROQ -> apiKeyStorage.getGroqBaseUrl(userId)
-            AssistantProvider.TOKENS_BD -> AssistantApiService.TOKENS_BD_BASE_URL
-            AssistantProvider.CUSTOM -> apiKeyStorage.getCustomProviderBaseUrl()
-            AssistantProvider.GEMINI -> null
+        activeProviderBaseUrl = when (activeProvider.info.baseUrlPolicy) {
+            AssistantProviderBaseUrlPolicy.NONE,
+            AssistantProviderBaseUrlPolicy.FIXED -> activeProvider.info.defaultBaseUrl
+            AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE -> when (activeProvider) {
+                AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterBaseUrl(userId)
+                AssistantProvider.GROQ -> apiKeyStorage.getGroqBaseUrl(userId)
+                else -> error("Base URL storage is not configured for ${activeProvider.displayName}.")
+            }
+            AssistantProviderBaseUrlPolicy.REQUIRED -> when (activeProvider) {
+                AssistantProvider.CUSTOM -> apiKeyStorage.getCustomProviderBaseUrl()
+                else -> error("Base URL storage is not configured for ${activeProvider.displayName}.")
+            }
         }
         activeModelId = resolveAssistantModelId(
             activeProvider,

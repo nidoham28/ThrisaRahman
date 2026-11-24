@@ -30,12 +30,12 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                 .map { provider ->
                     SettingsNode.Category(
                         id = "provider-${provider.name.lowercase()}",
-                        title = provider.displayName,
+                        title = provider.info.displayName,
                         subtitle = "Configure assistant API settings.",
                         icon = Icons.Outlined.VpnKey,
                         trailing = {
                             TrailingSwitch(
-                                label = "Select ${provider.displayName}",
+                                label = "Select ${provider.info.displayName}",
                                 checked = state.selectedProvider == provider,
                                 onCheckedChange = { checked ->
                                     if (checked) onSaveActiveProvider(provider)
@@ -47,20 +47,27 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                 SettingsNode.Item(
                                     id = "model-${provider.name.lowercase()}",
                                     title = "Model Name",
-                                    subtitle = when (provider) {
-                                        AssistantProvider.GEMINI -> state.geminiModelId
-                                        AssistantProvider.OPENROUTER -> state.openRouterModelId
-                                        AssistantProvider.GROQ -> state.groqModelId
-                                        AssistantProvider.TOKENS_BD -> provider.defaultModelId
-                                        AssistantProvider.CUSTOM -> provider.defaultModelId
+                                    subtitle = when {
+                                        !provider.info.supportsCustomModel -> provider.info.defaultModelId
+                                        else -> when (provider) {
+                                            AssistantProvider.GEMINI -> state.geminiModelId
+                                            AssistantProvider.OPENROUTER -> state.openRouterModelId
+                                            AssistantProvider.GROQ -> state.groqModelId
+                                            AssistantProvider.TOKENS_BD -> provider.info.defaultModelId
+                                            AssistantProvider.CUSTOM -> provider.info.defaultModelId
+                                        }
                                     },
                                     icon = Icons.Outlined.AutoAwesome,
-                                    onClick = when (provider) {
-                                        AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
-                                        AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
-                                        AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
-                                        AssistantProvider.TOKENS_BD -> null
-                                        AssistantProvider.CUSTOM -> null
+                                    onClick = if (provider.info.supportsCustomModel) {
+                                        when (provider) {
+                                            AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
+                                            AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
+                                            AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
+                                            AssistantProvider.TOKENS_BD -> null
+                                            AssistantProvider.CUSTOM -> null
+                                        }
+                                    } else {
+                                        null
                                     },
                                 )
                             )
@@ -113,12 +120,12 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                         })
                 } + SettingsNode.Category(
                 id = "Custom Provider",
-                title = AssistantProvider.CUSTOM.displayName,
+                title = AssistantProvider.CUSTOM.info.displayName,
                 subtitle = "Configure custom AI providers.",
                 icon = Icons.Outlined.VpnKey,
                 trailing = {
                     TrailingSwitch(
-                        label = "Select ${AssistantProvider.CUSTOM.displayName}",
+                        label = "Select ${AssistantProvider.CUSTOM.info.displayName}",
                         checked = state.selectedProvider == AssistantProvider.CUSTOM,
                         onCheckedChange = { checked ->
                             if (checked) onSaveActiveProvider(AssistantProvider.CUSTOM)

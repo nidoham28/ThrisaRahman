@@ -7,15 +7,70 @@ import java.util.Locale
 
 
 enum class AssistantProvider(
-    val displayName: String,
-    val placeholder: String,
-    val defaultModelId: String,
+    val info: AssistantProviderInfo,
 ) {
-    GEMINI("Gemini", "AIza...", "gemini-3.5-flash-lite"),
-    OPENROUTER("OpenRouter", "sk-or-...", "openrouter/auto"),
-    GROQ("Groq", "gsk_...", "openai/gpt-oss-120b"),
-    TOKENS_BD("Tokens BD", "tok_live_...", "deepseek-ai/deepseek-v4.1-flash-1017"),
-    CUSTOM("Custom Provider", "Enter your API key", "custom-model");
+    GEMINI(
+        AssistantProviderInfo(
+            displayName = "Gemini",
+            apiKeyPlaceholder = "AIza...",
+            defaultModelId = "gemini-3.5-flash-lite",
+            apiType = AssistantProviderApiType.GEMINI,
+            supportsCustomModel = true,
+        ),
+    ),
+    OPENROUTER(
+        AssistantProviderInfo(
+            displayName = "OpenRouter",
+            apiKeyPlaceholder = "sk-or-...",
+            defaultModelId = "openrouter/auto",
+            apiType = AssistantProviderApiType.OPENAI_COMPATIBLE,
+            defaultBaseUrl = "https://openrouter.ai/api/v1",
+            baseUrlPolicy = AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE,
+            fallbackModelId = "openrouter/free",
+            supportsCustomModel = true,
+            normalizeApiKey = true,
+        ),
+    ),
+    GROQ(
+        AssistantProviderInfo(
+            displayName = "Groq",
+            apiKeyPlaceholder = "gsk_...",
+            defaultModelId = "openai/gpt-oss-120b",
+            apiType = AssistantProviderApiType.OPENAI_COMPATIBLE,
+            defaultBaseUrl = "https://api.groq.com/openai/v1",
+            baseUrlPolicy = AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE,
+            supportsCustomModel = true,
+        ),
+    ),
+    TOKENS_BD(
+        AssistantProviderInfo(
+            displayName = "Tokens BD",
+            apiKeyPlaceholder = "tok_live_...",
+            defaultModelId = "deepseek-ai/deepseek-v4.1-flash-1017",
+            apiType = AssistantProviderApiType.OPENAI_COMPATIBLE,
+            defaultBaseUrl = "https://tokens.bd/v1",
+            baseUrlPolicy = AssistantProviderBaseUrlPolicy.FIXED,
+        ),
+    ),
+    CUSTOM(
+        AssistantProviderInfo(
+            displayName = "Custom Provider",
+            apiKeyPlaceholder = "Enter your API key",
+            defaultModelId = "custom-model",
+            apiType = AssistantProviderApiType.OPENAI_COMPATIBLE,
+            baseUrlPolicy = AssistantProviderBaseUrlPolicy.REQUIRED,
+            supportsCustomModel = true,
+        ),
+    );
+
+    val displayName: String
+        get() = info.displayName
+
+    val placeholder: String
+        get() = info.apiKeyPlaceholder
+
+    val defaultModelId: String
+        get() = info.defaultModelId
 
     companion object {
         fun fromStorageValue(value: String?): AssistantProvider =

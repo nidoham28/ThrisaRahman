@@ -3,6 +3,8 @@ package com.naira.assistant.ai
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.core.tools.ToolRegistry
 import com.naira.assistant.domain.settings.AssistantThinkingMode
+import com.naira.assistant.domain.settings.AssistantProviderApiType
+import com.naira.assistant.domain.settings.AssistantProviderBaseUrlPolicy
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -153,6 +155,68 @@ class AssistantApiServiceTest {
 
         assertEquals("gemini-key", setting.apiKey)
         assertEquals(true, setting.useInteractionsApi)
+    }
+
+    @Test
+    fun `stores assistant provider metadata in each provider definition`() {
+        assertEquals(AssistantProviderApiType.GEMINI, AssistantProvider.GEMINI.info.apiType)
+        assertEquals("gemini-3.5-flash-lite", AssistantProvider.GEMINI.info.defaultModelId)
+        assertEquals(AssistantProviderBaseUrlPolicy.NONE, AssistantProvider.GEMINI.info.baseUrlPolicy)
+
+        assertEquals(
+            "https://openrouter.ai/api/v1",
+            AssistantProvider.OPENROUTER.info.defaultBaseUrl,
+        )
+        assertEquals("openrouter/free", AssistantProvider.OPENROUTER.info.fallbackModelId)
+        assertEquals(
+            AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE,
+            AssistantProvider.OPENROUTER.info.baseUrlPolicy,
+        )
+
+        assertEquals(
+            "https://tokens.bd/v1",
+            AssistantProvider.TOKENS_BD.info.defaultBaseUrl,
+        )
+        assertEquals(
+            AssistantProviderBaseUrlPolicy.FIXED,
+            AssistantProvider.TOKENS_BD.info.baseUrlPolicy,
+        )
+        assertEquals(AssistantProviderBaseUrlPolicy.REQUIRED, AssistantProvider.CUSTOM.info.baseUrlPolicy)
+    }
+
+    @Test
+    fun `uses provider metadata for configured and fixed API base URLs`() {
+        val custom = createAssistantProviderSetting(
+            provider = AssistantProvider.CUSTOM,
+            apiKey = " custom-key ",
+            providerBaseUrl = " https://custom.example/v1 ",
+        ) as ProviderSetting.OpenAI
+        assertEquals("custom-key", custom.apiKey)
+        assertEquals("https://custom.example/v1", custom.baseUrl)
+
+        val tokensBd = createAssistantProviderSetting(
+            provider = AssistantProvider.TOKENS_BD,
+            apiKey = "tokens-key",
+            providerBaseUrl = "https://ignored.example/v1",
+        ) as ProviderSetting.OpenAI
+        assertEquals(AssistantProvider.TOKENS_BD.info.defaultBaseUrl, tokensBd.baseUrl)
+    }
+
+    @Test
+    fun `requires HTTPS for custom API base URLs`() {
+        assertEquals(
+            "https://tts.example/v1",
+            validateHttpsBaseUrl(" https://tts.example/v1 ", "Custom TTS"),
+        )
+
+        listOf("http://tts.example/v1", "tts.example/v1", "https:///v1").forEach { baseUrl ->
+            val error = runCatching {
+                validateHttpsBaseUrl(baseUrl, "Custom TTS")
+            }.exceptionOrNull()
+
+            assertTrue(error is IllegalArgumentException)
+            assertTrue(error?.message.orEmpty().contains("HTTPS"))
+        }
     }
 
     @Test

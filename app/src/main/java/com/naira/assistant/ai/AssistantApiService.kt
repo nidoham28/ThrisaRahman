@@ -39,6 +39,8 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import com.naira.assistant.core.tools.ToolDefinition
 import com.naira.assistant.core.tools.ToolRegistry
+import com.naira.assistant.domain.settings.AssistantProviderApiType
+import com.naira.assistant.domain.settings.AssistantProviderBaseUrlPolicy
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
 import com.naira.assistant.domain.settings.AssistantVoice
@@ -314,6 +316,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
         require(model.isNotBlank()) { "Custom TTS model must not be blank" }
         require(voice.isNotBlank()) { "Custom TTS voice must not be blank" }
         require(text.isNotBlank()) { "Speech text must not be blank" }
+        val validatedBaseUrl = validateHttpsBaseUrl(baseUrl, "Custom TTS")
         return flow {
             val requestBody = JSONObject()
                 .put("model", model.trim())
@@ -323,7 +326,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
                 .toString()
                 .toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
-                .url("${baseUrl.trim().trimEnd('/')}/audio/speech")
+                .url("${validatedBaseUrl.trimEnd('/')}/audio/speech")
                 .header("Authorization", "Bearer ${apiKey.trim()}")
                 .header("Content-Type", "application/json")
                 .post(requestBody)
@@ -381,11 +384,11 @@ class AssistantApiService(context: Context) : AutoCloseable {
     }
 
     companion object {
-        val DEFAULT_MODEL_ID = AssistantProvider.GEMINI.defaultModelId
-        const val DEFAULT_MODEL_OPENROUTER = "openrouter/free"
-        const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-        const val GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-        const val TOKENS_BD_BASE_URL = "https://tokens.bd/v1"
+        val DEFAULT_MODEL_ID = AssistantProvider.GEMINI.info.fallbackModelId
+        val DEFAULT_MODEL_OPENROUTER = AssistantProvider.OPENROUTER.info.fallbackModelId
+        val OPENROUTER_BASE_URL = requireNotNull(AssistantProvider.OPENROUTER.info.defaultBaseUrl)
+        val GROQ_BASE_URL = requireNotNull(AssistantProvider.GROQ.info.defaultBaseUrl)
+        val TOKENS_BD_BASE_URL = requireNotNull(AssistantProvider.TOKENS_BD.info.defaultBaseUrl)
         const val DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
         private const val MAX_AGENT_STEPS = 8
     }
@@ -442,46 +445,50 @@ internal fun createAssistantProviderSetting(
     provider: AssistantProvider,
     apiKey: String,
     providerBaseUrl: String? = null,
-): ProviderSetting = when (provider) {
-    AssistantProvider.GEMINI -> ProviderSetting.Google(
-        apiKey = apiKey.trim(),
-        useInteractionsApi = true,
-    )
-    AssistantProvider.OPENROUTER -> ProviderSetting.OpenAI(
-        apiKey = sanitizeOpenRouterApiKey(apiKey),
-        baseUrl = providerBaseUrl.toHttpsBaseUrlOrDefault(
-            AssistantApiService.OPENROUTER_BASE_URL,
-            "OpenRouter",
-        ),
-        useResponseApi = false,
-    )
-    AssistantProvider.GROQ -> ProviderSetting.OpenAI(
-        apiKey = apiKey.trim(),
-        baseUrl = providerBaseUrl.toHttpsBaseUrlOrDefault(
-            AssistantApiService.GROQ_BASE_URL,
-            "Groq",
-        ),
-        useResponseApi = false,
-    )
-    AssistantProvider.TOKENS_BD -> ProviderSetting.OpenAI(
-        apiKey = apiKey.trim(),
-        baseUrl = AssistantApiService.TOKENS_BD_BASE_URL,
-        useResponseApi = false,
-    )
-    AssistantProvider.CUSTOM -> {
-        val baseUrl = providerBaseUrl?.trim()?.takeIf(String::isNotEmpty)
-            ?: error("Add an API base URL for your custom provider in Settings → AI Providers.")
-        val validatedBaseUrl = baseUrl.toHttpsBaseUrlOrDefault(baseUrl, "Custom provider")
-        ProviderSetting.OpenAI(
+): ProviderSetting {
+    val info = provider.info
+    return when (info.apiType) {
+        AssistantProviderApiType.GEMINI -> ProviderSetting.Google(
             apiKey = apiKey.trim(),
-            baseUrl = validatedBaseUrl,
-            useResponseApi = false,
+            useInteractionsApi = true,
         )
+        AssistantProviderApiType.OPENAI_COMPATIBLE -> {
+            val baseUrl = when (info.baseUrlPolicy) {
+                AssistantProviderBaseUrlPolicy.NONE ->
+                    error("${info.displayName} does not have an API base URL configured.")
+                AssistantProviderBaseUrlPolicy.FIXED ->
+                    requireNotNull(info.defaultBaseUrl)
+                AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE ->
+                    providerBaseUrl.toHttpsBaseUrlOrDefault(
+                        default = requireNotNull(info.defaultBaseUrl),
+                        providerName = info.displayName,
+                    )
+                AssistantProviderBaseUrlPolicy.REQUIRED -> {
+                    val configuredBaseUrl = providerBaseUrl?.trim()?.takeIf(String::isNotEmpty)
+                        ?: error("Add an API base URL for your custom provider in Settings → AI Providers.")
+                    validateHttpsBaseUrl(configuredBaseUrl, "Custom provider")
+                }
+            }
+            ProviderSetting.OpenAI(
+                apiKey = if (info.normalizeApiKey) {
+                    sanitizeOpenRouterApiKey(apiKey)
+                } else {
+                    apiKey.trim()
+                },
+                baseUrl = baseUrl,
+                useResponseApi = false,
+            )
+        }
     }
 }
 
 private fun String?.toHttpsBaseUrlOrDefault(default: String, providerName: String): String {
     val baseUrl = this?.trim()?.takeIf(String::isNotEmpty) ?: return default
+    return validateHttpsBaseUrl(baseUrl, providerName)
+}
+
+internal fun validateHttpsBaseUrl(rawBaseUrl: String, providerName: String): String {
+    val baseUrl = rawBaseUrl.trim()
     val uri = runCatching { URI(baseUrl) }.getOrNull()
     require(uri?.scheme.equals("https", ignoreCase = true) && !uri?.host.isNullOrBlank()) {
         "$providerName API base URL must be a valid HTTPS URL."
