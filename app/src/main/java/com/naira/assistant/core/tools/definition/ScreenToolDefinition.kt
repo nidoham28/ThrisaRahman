@@ -18,20 +18,9 @@ import kotlinx.serialization.json.putJsonObject
 fun captureScreenTool() = ToolDefinition(
     name = "capture_screen",
     description = """
-        Capture the device's current screen and return a screenshot for visual
-        inspection. Use this when visual layout, icons, coordinates, or other
-        visual details are needed.
-
-        Capture a fresh screenshot after opening an app or performing an action
-        when the next step depends on the resulting screen. Use coordinates
-        from the most recent screenshot only.
-
-        Requires the user to enable Naira's screen-access accessibility service
-        in Android Settings. If access is disabled or unavailable, explain that
-        the user must enable it manually.
-
-        The screenshot may contain private information. Inspect only information
-        relevant to the user's requested task.
+        Capture the current screen only when visual layout or coordinates are needed. Refresh
+        after actions when the next step depends on the result; use coordinates only from the latest
+        capture. Requires the user-enabled accessibility service; inspect only task-relevant content.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -43,18 +32,9 @@ fun captureScreenTool() = ToolDefinition(
 fun readScreenTextTool() = ToolDefinition(
     name = "read_screen_text",
     description = """
-        Read text and accessibility information from the device's current screen
-        without capturing a screenshot.
-
-        Returns visible text, labels, button descriptions, input-field information,
-        and accessibility IDs when available.
-
-        Prefer this tool when you only need to identify or read text. Use
-        capture_screen when visual layout or exact screen coordinates are needed.
-
-        Requires Naira's screen-access accessibility service to be enabled
-        in Android Settings. Do not claim screen contents were read if access
-        is unavailable.
+        Read visible text and accessibility labels without a screenshot. Prefer for text/element
+        lookup; use capture_screen for visual layout or coordinates. Requires user-enabled
+        accessibility access.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -66,38 +46,11 @@ fun readScreenTextTool() = ToolDefinition(
 fun performScreenActionTool() = ToolDefinition(
     name = "perform_screen_action",
     description = """
-        Perform an interaction on the device's current screen using its
-        accessibility service.
-
-        Supported actions:
-        - tap, double_tap, long_press: touch absolute screen coordinates.
-        - click_element: click a visible element by its text or accessibility ID.
-        - swipe: drag from (x, y) to (x2, y2).
-        - scroll_element: scroll a specified accessibility container.
-        - scroll_up, scroll_down: scroll the content near the screen center.
-        - back, home, recents, notifications: perform system navigation actions.
-        - type_text: enter text into the currently focused or identified input field.
-
-        IMPORTANT:
-        1. Inspect the current screen using read_screen_text or capture_screen
-           before interacting with it.
-        2. Prefer click_element and scroll_element when reliable accessibility
-           information is available.
-        3. Use coordinates only from a recent screenshot of the current screen.
-        4. Supply all parameters required by the selected action.
-        5. After an action, inspect the screen again when verification is needed.
-        6. Never report success unless the action executor confirms that the
-           requested operation was performed.
-        7. Typing text does not send a message, submit a form, or confirm a purchase.
-           Sending or submitting requires a separate explicit action.
-        8. Before sending a message, verify the recipient and message content.
-           Only send when the user has requested that it be sent.
-        9. Do not perform purchases, financial transactions, destructive actions,
-           or other consequential operations without the required user authorization.
-
-        Requires the user to enable Naira's screen-access accessibility service
-        manually in Android Settings. Android does not allow the app to grant
-        this special access automatically.
+        Interact with the current screen only after inspecting it. Prefer accessibility targets;
+        use coordinates from a recent screenshot. Supply fields for the chosen action and verify
+        afterward only when needed. Typing does not submit or send; sending requires an explicit
+        request and verified recipient/content. Consequential actions require authorization.
+        Accessibility access must be enabled manually by the user.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -176,8 +129,10 @@ fun performScreenActionTool() = ToolDefinition(
                 put(
                     "description",
                     "Gesture duration in milliseconds. Used for swipe and " +
-                            "long_press when supported. Defaults to 300 ms for swipe."
+                            "long_press when supported (50-5000 ms; defaults depend on action)."
                 )
+                put("minimum", 50)
+                put("maximum", 5000)
             }
 
             putJsonObject("text") {

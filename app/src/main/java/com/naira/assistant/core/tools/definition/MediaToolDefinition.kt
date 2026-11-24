@@ -20,24 +20,9 @@ import kotlinx.serialization.json.putJsonObject
 fun phoneAlertControlTool() = ToolDefinition(
     name = "phone_alert_control",
     description = """
-        Control a temporary audible alert on this phone.
-
-        Use when the user explicitly asks to find their phone,
-        make this phone ring or beep, or stop an active phone alert.
-
-        Actions:
-        - start: Play a repeating alert.
-        - stop: Stop the currently playing alert.
-
-        The alert automatically stops after its configured duration,
-        with a maximum duration of 60 seconds.
-
-        The alert follows the implementation's configured alarm-volume
-        and Do Not Disturb behavior. Never claim the alert started or
-        stopped unless the executor confirms the result.
-
-        Do not use this tool to change the ringtone, alarm volume,
-        media volume, or notification settings.
+        Start or stop this phone's temporary audible alert only on explicit request. It uses
+        configured alarm-volume/Do Not Disturb behavior and stops within 60 seconds; do not use
+        it to change other audio settings.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -57,6 +42,7 @@ fun phoneAlertControlTool() = ToolDefinition(
                     "description",
                     "Sound pattern for start. Defaults to beep."
                 )
+                put("default", "beep")
                 putJsonArray("enum") {
                     add(JsonPrimitive("beep"))
                     add(JsonPrimitive("ring"))
@@ -70,6 +56,9 @@ fun phoneAlertControlTool() = ToolDefinition(
                     "description",
                     "Alert duration from 5 to 60 seconds. Defaults to 30. Ignored for stop."
                 )
+                put("minimum", 5)
+                put("maximum", 60)
+                put("default", 30)
             }
         }
 
@@ -86,29 +75,8 @@ fun phoneAlertControlTool() = ToolDefinition(
 fun mediaPlaybackControlTool() = ToolDefinition(
     name = "media_playback_control",
     description = """
-        Control playback through the currently active Android media session.
-
-        Use for music, podcasts, audiobooks, and other media playback.
-
-        Supported actions:
-        - play: Start or resume playback.
-        - pause: Pause playback.
-        - toggle_play_pause: Toggle between playing and paused.
-        - stop: Stop playback.
-        - next_track: Skip to the next track.
-        - previous_track: Return to the previous track.
-        - fast_forward: Seek forward within the current media.
-        - rewind: Seek backward within the current media.
-
-        Use seconds only for fast_forward and rewind.
-        The requested seek duration is approximate and depends
-        on the active media app's supported seek behavior.
-
-        This tool controls the active media session, not a specific
-        application. It may fail if no compatible media session exists.
-
-        Do not claim an action succeeded unless execution confirms it.
-        Use get_media_status when the actual playback state needs verification.
+        Control the active media session, not a selected app; it may be unavailable.
+        Seek duration is approximate. Use get_media_status only when actual state needs checking.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -135,8 +103,11 @@ fun mediaPlaybackControlTool() = ToolDefinition(
                 put("type", "integer")
                 put(
                     "description",
-                    "Approximate seek duration in seconds for fast_forward or rewind. Defaults to 10. Ignored for other actions."
+                    "Seek seconds for fast_forward/rewind only (5-120; default 10)."
                 )
+                put("minimum", 5)
+                put("maximum", 120)
+                put("default", 10)
             }
         }
 
@@ -153,29 +124,8 @@ fun mediaPlaybackControlTool() = ToolDefinition(
 fun mediaVolumeControlTool() = ToolDefinition(
     name = "media_volume_control",
     description = """
-        Read or change the Android media volume (STREAM_MUSIC).
-
-        Use when the user asks to:
-        - Increase or decrease media volume.
-        - Set media volume to a percentage.
-        - Mute or unmute media audio.
-        - Check the current media volume.
-
-        Supported actions:
-        - raise: Increase volume.
-        - lower: Decrease volume.
-        - set_level: Set an absolute percentage from 0 to 100.
-        - mute: Set media volume to zero.
-        - unmute: Restore media audio to a non-zero level.
-        - get: Read the current media volume without changing it.
-
-        Use level_percent only for set_level.
-        Use steps only for raise and lower. Both default to 1.
-
-        This controls media volume only. It does not change
-        ringtone, notification, or alarm volume.
-
-        Report the actual resulting volume, not merely the requested value.
+        Read or change media (STREAM_MUSIC) volume only, not ringtone, notification, or alarm
+        volume. Report the resulting level, not just the requested operation.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -199,14 +149,19 @@ fun mediaVolumeControlTool() = ToolDefinition(
                     "description",
                     "Target media volume percentage from 0 to 100. Required for set_level."
                 )
+                put("minimum", 0)
+                put("maximum", 100)
             }
 
             putJsonObject("steps") {
                 put("type", "integer")
                 put(
                     "description",
-                    "Number of volume steps for raise or lower. Defaults to 1."
+                    "Steps for raise/lower only (1-15; default 1)."
                 )
+                put("minimum", 1)
+                put("maximum", 15)
+                put("default", 1)
             }
         }
 
@@ -223,23 +178,8 @@ fun mediaVolumeControlTool() = ToolDefinition(
 fun getMediaStatusTool() = ToolDefinition(
     name = "get_media_status",
     description = """
-        Retrieve the current media and audio status of this Android device.
-
-        Use when the user asks:
-        - Whether media is currently playing.
-        - What the current media volume is.
-        - What the current ringer mode is.
-        - Whether a playback or volume operation took effect.
-
-        Return only information available from the device.
-        Distinguish active playback from paused, stopped,
-        and unknown states when supported by the executor.
-
-        This tool does not identify the current song, artist,
-        media application, or audio source unless the executor
-        explicitly provides that information.
-
-        This tool only reads status. It does not change device settings.
+        Read current playback/audio status without changing settings. It cannot identify media
+        details unless the device returns them; distinguish unavailable or unknown values.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")

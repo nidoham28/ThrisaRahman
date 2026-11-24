@@ -10,13 +10,14 @@ import kotlinx.serialization.json.putJsonObject
 
 fun getWeatherReportTool() = ToolDefinition(
     name = "get_weather_report",
-    description = "Find current weather, the next 12 hours, and a 3-day forecast for a named city or place. Requires a free WeatherAPI key configured in Settings.",
+    description = "For requested weather, get current conditions, 12-hour details, and a 3-day forecast for a named place. Requires a WeatherAPI key in Settings.",
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("location") {
                 put("type", "string")
-                put("description", "City or place name, optionally including the country, such as Dhaka, Bangladesh.")
+                put("description", "City/place name; include country to disambiguate.")
+                put("minLength", 1)
             }
         }
         putJsonArray("required") { add(JsonPrimitive("location")) }

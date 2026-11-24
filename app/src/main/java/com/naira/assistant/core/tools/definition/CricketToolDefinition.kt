@@ -11,11 +11,7 @@ import kotlinx.serialization.json.putJsonObject
 
 fun liveCricketScoresTool() = ToolDefinition(
     name = "get_live_cricket_scores",
-    description = """
-        Get currently live cricket matches and their latest available scores.
-        Include match status, teams, innings, runs, wickets, overs, and result
-        details when available. Do not invent missing score information.
-    """.trimIndent(),
+    description = "Get current live matches and available scores. Report only returned data; do not invent missing details.",
     parameters = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {}
@@ -25,12 +21,7 @@ fun liveCricketScoresTool() = ToolDefinition(
 
 fun cricketMatchesTool() = ToolDefinition(
     name = "get_cricket_matches",
-    description = """
-        Get recent, ongoing, and upcoming cricket matches.
-        Returns match details and match IDs when available.
-        Use the offset argument to retrieve another page when more results
-        are available. Start with offset 0.
-    """.trimIndent(),
+    description = "Get recent, live, or upcoming matches. Start at offset 0; increase it only when another page is needed.",
     parameters = buildJsonObject {
         put("type", "object")
 
@@ -48,13 +39,7 @@ fun cricketMatchesTool() = ToolDefinition(
 
 fun cricketScorecardTool() = ToolDefinition(
     name = "get_cricket_scorecard",
-    description = """
-        Get the detailed scorecard and match information for a cricket match.
-        Requires a valid match ID returned by get_live_cricket_scores
-        or get_cricket_matches. Include batting, bowling, innings totals,
-        fall of wickets, extras, and player statistics when available.
-        Do not guess or fabricate scorecard information.
-    """.trimIndent(),
+    description = "Get a match scorecard using an exact ID returned by a cricket match tool. Do not guess IDs or missing stats.",
     parameters = buildJsonObject {
         put("type", "object")
 

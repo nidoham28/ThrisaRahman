@@ -11,18 +11,9 @@ import kotlinx.serialization.json.putJsonObject
 fun findTerminalTool() = ToolDefinition(
     name = "terminal_find_tool",
     description = """
-        Check whether a single command-line executable is available in the app's
-        Android shell and return its absolute path if found.
-
-        Use this only when no dedicated assistant tool supports the requested
-        capability and checking for an existing local utility is necessary.
-
-        This tool only locates an executable. It does NOT execute commands,
-        run scripts, install packages, or modify files.
-
-        Provide only the executable name, such as grep, find, sqlite3, or curl.
-        Never provide shell commands, arguments, paths, pipes, operators,
-        command substitutions, or multiple executable names.
+        Locate one existing Android-shell executable only when no dedicated tool fits. This does
+        not execute commands or change files. Pass a single executable name, never arguments or
+        shell syntax.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -32,8 +23,11 @@ fun findTerminalTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "A single executable name only, such as grep, find, sqlite3, or curl. No arguments or shell syntax."
+                    "One executable name only; no arguments or shell syntax."
                 )
+                put("minLength", 1)
+                put("maxLength", 128)
+                put("pattern", "^[A-Za-z0-9_][A-Za-z0-9._+\\-]{0,127}$")
             }
         }
 

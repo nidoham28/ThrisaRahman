@@ -11,26 +11,9 @@ import kotlinx.serialization.json.putJsonObject
 fun terminalCalculationTool() = ToolDefinition(
     name = "terminal_calculate",
     description = """
-        Evaluate a basic integer arithmetic expression using the app's Android shell.
-
-        Use this tool for integer calculations when no dedicated calculator tool
-        is available.
-
-        Supported operators:
-        - Addition: +
-        - Subtraction: -
-        - Multiplication: *
-        - Division: /
-        - Modulo: %
-        - Parentheses: ()
-
-        Division truncates toward zero.
-
-        Only integer arithmetic is supported. Decimal numbers, variables,
-        function calls, shell commands, and other shell syntax are not allowed.
-
-        This tool evaluates arithmetic only. Never use it to execute general
-        shell commands or scripts.
+        Use for exact/nontrivial integer arithmetic when direct calculation is unreliable.
+        Supports +, -, *, /, %, and parentheses; division truncates toward zero. No decimals,
+        variables, functions, commands, or general shell execution.
     """.trimIndent(),
     parameters = buildJsonObject {
         put("type", "object")
@@ -40,8 +23,10 @@ fun terminalCalculationTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "A valid integer arithmetic expression, such as (125 + 75) * 4 / 2. Supports +, -, *, /, %, and parentheses."
+                    "Integer arithmetic expression, maximum 128 characters."
                 )
+                put("minLength", 1)
+                put("maxLength", 128)
             }
         }
 

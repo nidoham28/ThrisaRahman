@@ -25,7 +25,8 @@ private fun noteParameters(
 private fun stringProperty(
     description: String,
     maxLength: Int? = null,
-    enum: List<String>? = null
+    enum: List<String>? = null,
+    default: String? = null,
 ) = buildJsonObject {
     put("type", "string")
     put("description", description)
@@ -35,22 +36,29 @@ private fun stringProperty(
             values.forEach { add(it) }
         }
     }
+    default?.let { put("default", it) }
 }
 
 private fun integerProperty(
     description: String,
     minimum: Int? = null,
-    maximum: Int? = null
+    maximum: Int? = null,
+    default: Int? = null,
 ) = buildJsonObject {
     put("type", "integer")
     put("description", description)
     minimum?.let { put("minimum", it) }
     maximum?.let { put("maximum", it) }
+    default?.let { put("default", it) }
 }
 
-private fun booleanProperty(description: String) = buildJsonObject {
+private fun booleanProperty(
+    description: String,
+    default: Boolean? = null,
+) = buildJsonObject {
     put("type", "boolean")
     put("description", description)
+    default?.let { put("default", it) }
 }
 
 // CREATE NOTE
@@ -58,27 +66,26 @@ private fun booleanProperty(description: String) = buildJsonObject {
 fun createNoteTool() = ToolDefinition(
     name = "create_note",
     description = """
-        Create a note when the user asks to save, write down, remember, or keep information.
-        Include a clear title and the supplied content. Return the created note's details.
+        Save information as a note when requested. Use a concise title and include supplied content.
     """.trimIndent(),
     parameters = noteParameters(
         properties = buildJsonObject {
             putJsonObject("title") {
                 put("type", "string")
-                put("description", "Short, descriptive title for the note.")
+                put("description", "Short note title.")
                 put("minLength", 1)
                 put("maxLength", 200)
             }
 
             putJsonObject("content") {
                 put("type", "string")
-                put("description", "The note's full text content.")
+                put("description", "Optional note content.")
             }
 
             put(
                 "tags",
                 stringProperty(
-                    description = "Optional comma-separated tags for categorization.",
+                    description = "Optional comma-separated tags.",
                     maxLength = 500
                 )
             )
@@ -86,7 +93,8 @@ fun createNoteTool() = ToolDefinition(
             put(
                 "pinned",
                 booleanProperty(
-                    "Whether to pin the note. Defaults to false."
+                    "Pin note. Default: false.",
+                    default = false,
                 )
             )
 
@@ -107,9 +115,8 @@ fun createNoteTool() = ToolDefinition(
 fun updateNoteTool() = ToolDefinition(
     name = "update_note",
     description = """
-        Update an existing note by ID. First use list_notes or search_notes
-        if the target note's ID is unknown. Only provide fields the user
-        wants to change; leave all other fields unchanged.
+        Update only requested fields of a note; preserve the rest. Find an unknown ID with
+        list_notes or search_notes.
     """.trimIndent(),
     parameters = noteParameters(
         properties = buildJsonObject {
@@ -163,9 +170,8 @@ fun updateNoteTool() = ToolDefinition(
 fun deleteNoteTool() = ToolDefinition(
     name = "delete_note",
     description = """
-        Permanently delete a note by ID. Find the note with list_notes
-        or search_notes first if its ID is unknown. Use only when the
-        user explicitly requests deletion.
+        Permanently delete a note only on explicit request. Find its ID with list_notes or
+        search_notes if unknown.
     """.trimIndent(),
     parameters = noteParameters(
         properties = buildJsonObject {
@@ -186,9 +192,8 @@ fun deleteNoteTool() = ToolDefinition(
 fun listNotesTool() = ToolDefinition(
     name = "list_notes",
     description = """
-        Retrieve the user's notes. Use when they ask to view, browse,
-        review, or recall saved notes. Results can be filtered by
-        pinned status and limited in number.
+        List notes when requested; optionally filter by pin status and limit results. Default pin
+        filter: all.
     """.trimIndent(),
     parameters = noteParameters(
         properties = buildJsonObject {
@@ -196,16 +201,18 @@ fun listNotesTool() = ToolDefinition(
                 "pinned",
                 stringProperty(
                     description = "Filter by pin status: true, false, or all.",
-                    enum = listOf("true", "false", "all")
+                    enum = listOf("true", "false", "all"),
+                    default = "all",
                 )
             )
 
             put(
                 "limit",
                 integerProperty(
-                    description = "Maximum number of notes to return. Defaults to 20.",
+                    description = "Maximum results. Default: 20.",
                     minimum = 1,
-                    maximum = 100
+                    maximum = 100,
+                    default = 20,
                 )
             )
         }
@@ -217,15 +224,13 @@ fun listNotesTool() = ToolDefinition(
 fun searchNotesTool() = ToolDefinition(
     name = "search_notes",
     description = """
-        Search saved notes by keywords or phrases in their titles,
-        content, or tags. Use when the user wants to find a specific
-        note or information stored in their notes.
+        Find saved notes by terms in titles, content, or tags.
     """.trimIndent(),
     parameters = noteParameters(
         properties = buildJsonObject {
             putJsonObject("query") {
                 put("type", "string")
-                put("description", "Keyword or phrase to search for.")
+                put("description", "Search terms.")
                 put("minLength", 1)
                 put("maxLength", 500)
             }
@@ -241,9 +246,10 @@ fun searchNotesTool() = ToolDefinition(
             put(
                 "limit",
                 integerProperty(
-                    description = "Maximum number of matching notes. Defaults to 10.",
+                    description = "Maximum results. Default: 10.",
                     minimum = 1,
-                    maximum = 50
+                    maximum = 50,
+                    default = 10,
                 )
             )
         },

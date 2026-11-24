@@ -86,9 +86,9 @@ object AgentOrchestrator {
 
     fun toolDefinition(): ToolDefinition = ToolDefinition(
         name = DELEGATE_TOOL_NAME,
-        description = "Delegate up to three analysis tasks to specialists. Use parallel mode " +
-            "only for independent tasks and sequential mode when later tasks depend on earlier findings. " +
-            "Specialists only receive the task and recent text context; they cannot use tools or delegate.",
+        description = "Delegate up to three difficult analysis tasks only when the added model calls " +
+            "are worthwhile. Use parallel mode for independent tasks and sequential mode for dependencies. " +
+            "Specialists receive only the task and recent text context; they cannot use tools or delegate.",
         parameters = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {

@@ -15,9 +15,13 @@ import kotlinx.serialization.json.putJsonArray
 private fun stringField(
     description: String,
     values: List<String>? = null,
+    minLength: Int? = null,
+    default: String? = null,
 ): JsonObject = buildJsonObject {
     put("type", "string")
     put("description", description)
+    minLength?.let { put("minLength", it) }
+    default?.let { put("default", it) }
 
     values?.let {
         putJsonArray("enum") {
@@ -26,11 +30,18 @@ private fun stringField(
     }
 }
 
-private fun integerField(description: String): JsonObject =
-    buildJsonObject {
-        put("type", "integer")
-        put("description", description)
-    }
+private fun integerField(
+    description: String,
+    minimum: Int? = null,
+    maximum: Int? = null,
+    default: Int? = null,
+): JsonObject = buildJsonObject {
+    put("type", "integer")
+    put("description", description)
+    minimum?.let { put("minimum", it) }
+    maximum?.let { put("maximum", it) }
+    default?.let { put("default", it) }
+}
 
 private fun booleanField(description: String): JsonObject =
     buildJsonObject {
@@ -63,16 +74,13 @@ private fun todoTool(
 fun createTodoTool() = todoTool(
     name = "create_todo",
     description = """
-        Create a new to-do task.
-        Use when the user asks to add a task or put something on their list.
-        Resolve relative due dates using get_current_time first.
-        Interpret dates in the user's local timezone.
-        Confirm the created task after success.
+        Create a task on request. Use the context timestamp/local timezone for relative due dates;
+        call get_current_time only if stale or another timezone is needed.
     """,
     properties = buildJsonObject {
         put(
             "title",
-            stringField("Task title or description."),
+            stringField("Task title.", minLength = 1),
         )
         put(
             "notes",
@@ -80,13 +88,14 @@ fun createTodoTool() = todoTool(
         )
         put(
             "due_at_ms",
-            integerField("Optional due date as Unix epoch milliseconds."),
+            integerField("Optional due date as Unix epoch milliseconds.", minimum = 0),
         )
         put(
             "priority",
             stringField(
                 "Task priority. Defaults to normal.",
                 listOf("low", "normal", "high", "urgent"),
+                default = "normal",
             ),
         )
         put(
@@ -95,7 +104,7 @@ fun createTodoTool() = todoTool(
         )
         put(
             "list_name",
-            stringField("Destination list. Defaults to inbox."),
+            stringField("Destination list. Defaults to inbox.", default = "inbox"),
         )
     },
     required = listOf("title"),
@@ -108,19 +117,17 @@ fun createTodoTool() = todoTool(
 fun updateTodoTool() = todoTool(
     name = "update_todo",
     description = """
-        Update an existing to-do task by its numeric ID.
-        Only supplied fields are changed; omitted fields remain unchanged.
-        Use list_todos or search_todos first if the task ID is unknown.
-        Use an empty notes string to clear existing notes, if supported.
+        Update only supplied fields of an existing task; preserve the rest. Find unknown IDs with
+        list_todos or search_todos.
     """,
     properties = buildJsonObject {
         put(
             "id",
-            integerField("ID of the task to update."),
+            integerField("Task ID.", minimum = 1),
         )
         put(
             "title",
-            stringField("New task title."),
+            stringField("New task title.", minLength = 1),
         )
         put(
             "notes",
@@ -132,7 +139,7 @@ fun updateTodoTool() = todoTool(
         )
         put(
             "due_at_ms",
-            integerField("New due date as Unix epoch milliseconds."),
+            integerField("New due date as Unix epoch milliseconds.", minimum = 0),
         )
         put(
             "priority",
@@ -160,14 +167,13 @@ fun updateTodoTool() = todoTool(
 fun deleteTodoTool() = todoTool(
     name = "delete_todo",
     description = """
-        Permanently delete a to-do task.
-        Use list_todos or search_todos to identify the task if its ID is unknown.
-        Delete only when the user explicitly requests deletion.
+        Permanently delete a task only on explicit request. Find its ID with list_todos or
+        search_todos if unknown.
     """,
     properties = buildJsonObject {
         put(
             "id",
-            integerField("ID of the task to delete."),
+            integerField("Task ID.", minimum = 1),
         )
     },
     required = listOf("id"),
@@ -180,8 +186,7 @@ fun deleteTodoTool() = todoTool(
 fun listTodosTool() = todoTool(
     name = "list_todos",
     description = """
-        List to-do tasks, optionally filtered by completion status,
-        priority, or list name. Defaults to pending tasks.
+        List tasks, optionally filtered by completion, priority, or list. Default: pending.
     """,
     properties = buildJsonObject {
         put(
@@ -189,6 +194,7 @@ fun listTodosTool() = todoTool(
             stringField(
                 "Completion filter. Defaults to false.",
                 listOf("false", "true", "all"),
+                default = "false",
             ),
         )
         put(
@@ -204,7 +210,7 @@ fun listTodosTool() = todoTool(
         )
         put(
             "limit",
-            integerField("Maximum results to return (1-100, default 20)."),
+            integerField("Maximum results.", minimum = 1, maximum = 100, default = 20),
         )
     },
 )
@@ -216,13 +222,12 @@ fun listTodosTool() = todoTool(
 fun searchTodosTool() = todoTool(
     name = "search_todos",
     description = """
-        Search tasks by keyword or phrase in their titles, notes, or tags.
-        Use list_todos instead when the user wants to browse tasks without a search term.
+        Search task titles, notes, and tags. Use list_todos to browse without a query.
     """,
     properties = buildJsonObject {
         put(
             "query",
-            stringField("Keyword or phrase to search for."),
+            stringField("Search terms.", minLength = 1),
         )
         put(
             "list_name",
@@ -230,7 +235,7 @@ fun searchTodosTool() = todoTool(
         )
         put(
             "limit",
-            integerField("Maximum results to return (1-50, default 10)."),
+            integerField("Maximum results.", minimum = 1, maximum = 50, default = 10),
         )
     },
     required = listOf("query"),
@@ -243,14 +248,12 @@ fun searchTodosTool() = todoTool(
 fun markTodoDoneTool() = todoTool(
     name = "mark_todo_done",
     description = """
-        Mark a to-do task as completed.
-        Use when the user says they finished or completed a task.
-        Identify the correct task first if its ID is unknown.
+        Mark a task complete when the user says it is done. Identify unknown IDs first.
     """,
     properties = buildJsonObject {
         put(
             "id",
-            integerField("ID of the task to complete."),
+            integerField("Task ID.", minimum = 1),
         )
     },
     required = listOf("id"),
@@ -263,12 +266,12 @@ fun markTodoDoneTool() = todoTool(
 fun markTodoUndoneTool() = todoTool(
     name = "mark_todo_undone",
     description = """
-        Reopen a completed to-do task by marking it as not done.
+        Reopen a completed task by ID.
     """,
     properties = buildJsonObject {
         put(
             "id",
-            integerField("ID of the task to reopen."),
+            integerField("Task ID.", minimum = 1),
         )
     },
     required = listOf("id"),
