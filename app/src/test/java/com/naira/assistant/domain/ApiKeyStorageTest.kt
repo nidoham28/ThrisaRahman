@@ -26,9 +26,9 @@ class ApiKeyStorageTest {
     }
 
     @Test
-    fun `restores Groq provider from saved selection`() {
+    fun `falls back to Gemini when a removed provider is stored`() {
         assertEquals(
-            AssistantProvider.GROQ,
+            AssistantProvider.GEMINI,
             resolveSelectedProvider("groq", "openrouter"),
         )
     }

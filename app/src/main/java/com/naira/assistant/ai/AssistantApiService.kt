@@ -387,7 +387,6 @@ class AssistantApiService(context: Context) : AutoCloseable {
         val DEFAULT_MODEL_ID = AssistantProvider.GEMINI.info.fallbackModelId
         val DEFAULT_MODEL_OPENROUTER = AssistantProvider.OPENROUTER.info.fallbackModelId
         val OPENROUTER_BASE_URL = requireNotNull(AssistantProvider.OPENROUTER.info.defaultBaseUrl)
-        val GROQ_BASE_URL = requireNotNull(AssistantProvider.GROQ.info.defaultBaseUrl)
         val TOKENS_BD_BASE_URL = requireNotNull(AssistantProvider.TOKENS_BD.info.defaultBaseUrl)
         const val DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
         private const val MAX_AGENT_STEPS = 8

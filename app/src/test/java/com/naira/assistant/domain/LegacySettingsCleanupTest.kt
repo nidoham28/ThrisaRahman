@@ -11,13 +11,15 @@ import org.junit.Test
 
 class LegacySettingsCleanupTest {
     @Test
-    fun `preserves API keys provider selection and OpenRouter model preferences`() {
+    fun `preserves API keys provider selection and custom provider preferences`() {
         listOf(
             "key_OPENROUTER_user",
             "selected_provider",
             "selected_provider_user",
             "openrouter_model",
             "openrouter_model_user",
+            "custom_provider_model",
+            "custom_provider_base_url",
         ).forEach { key ->
             assertTrue("$key should be retained", isSupportedApiPreferenceKey(key))
         }

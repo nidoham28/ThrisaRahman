@@ -123,18 +123,6 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `uses Groq OpenAI-compatible chat settings`() {
-        val setting = createAssistantProviderSetting(
-            provider = AssistantProvider.GROQ,
-            apiKey = " groq-key ",
-        ) as ProviderSetting.OpenAI
-
-        assertEquals("groq-key", setting.apiKey)
-        assertEquals("https://api.groq.com/openai/v1", setting.baseUrl)
-        assertFalse(setting.useResponseApi)
-    }
-
-    @Test
     fun `uses Tokens BD OpenAI-compatible chat settings`() {
         val setting = createAssistantProviderSetting(
             provider = AssistantProvider.TOKENS_BD,

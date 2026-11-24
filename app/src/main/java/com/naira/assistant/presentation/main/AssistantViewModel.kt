@@ -142,12 +142,10 @@ internal fun resolveAssistantModelId(
     configuredOpenRouterModelId: String?,
     configuredCustomModelId: String? = null,
     configuredGeminiModelId: String? = null,
-    configuredGroqModelId: String? = null,
 ): String {
     val configuredModelId = when (provider) {
         AssistantProvider.GEMINI -> configuredGeminiModelId
         AssistantProvider.OPENROUTER -> configuredOpenRouterModelId
-        AssistantProvider.GROQ -> configuredGroqModelId
         AssistantProvider.TOKENS_BD -> null
         AssistantProvider.CUSTOM -> configuredCustomModelId
     }
@@ -328,12 +326,6 @@ class AssistantViewModel(
             } else {
                 null
             }
-        val configuredGroqModelId =
-            if (activeProvider == AssistantProvider.GROQ) {
-                apiKeyStorage.getGroqModelId(userId)
-            } else {
-                null
-            }
         val configuredCustomModelId =
             if (activeProvider == AssistantProvider.CUSTOM) {
                 apiKeyStorage.getCustomProviderModelId()
@@ -345,7 +337,6 @@ class AssistantViewModel(
             AssistantProviderBaseUrlPolicy.FIXED -> activeProvider.info.defaultBaseUrl
             AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE -> when (activeProvider) {
                 AssistantProvider.OPENROUTER -> apiKeyStorage.getOpenRouterBaseUrl(userId)
-                AssistantProvider.GROQ -> apiKeyStorage.getGroqBaseUrl(userId)
                 else -> error("Base URL storage is not configured for ${activeProvider.displayName}.")
             }
             AssistantProviderBaseUrlPolicy.REQUIRED -> when (activeProvider) {
@@ -358,7 +349,6 @@ class AssistantViewModel(
             configuredOpenRouterModelId,
             configuredCustomModelId,
             configuredGeminiModelId,
-            configuredGroqModelId,
         )
         val savedKey = userId
             ?.let { apiKeyStorage.getApiKey(activeProvider.name, it) }

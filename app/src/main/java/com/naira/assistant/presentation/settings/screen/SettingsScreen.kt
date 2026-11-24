@@ -642,8 +642,6 @@ fun SettingsScreen(
             EditField.CUSTOM_TTS_BASE_URL -> state.customTtsBaseUrl
             EditField.OPENROUTER_MODEL -> state.openRouterModelId
             EditField.OPENROUTER_BASE_URL -> state.openRouterBaseUrl
-            EditField.GROQ_MODEL -> state.groqModelId
-            EditField.GROQ_BASE_URL -> state.groqBaseUrl
             EditField.CUSTOM_PROVIDER_MODEL -> state.customProviderModelId
             EditField.CUSTOM_PROVIDER_BASE_URL -> state.customProviderBaseUrl
         }
@@ -680,12 +678,6 @@ fun SettingsScreen(
                     EditField.OPENROUTER_BASE_URL -> {
                         state.saveOpenRouterBaseUrl(value)
                     }
-                    EditField.GROQ_MODEL -> {
-                        state.saveGroqModelId(value)
-                    }
-                    EditField.GROQ_BASE_URL -> {
-                        state.saveGroqBaseUrl(value)
-                    }
                     EditField.CUSTOM_USER_AGENT -> {
                         state.saveCustomUserAgent(value)
                     }
@@ -709,8 +701,6 @@ fun SettingsScreen(
                             EditField.CUSTOM_TTS_BASE_URL -> CloudSettingsPatch()
                             EditField.OPENROUTER_MODEL -> CloudSettingsPatch()
                             EditField.OPENROUTER_BASE_URL -> CloudSettingsPatch()
-                            EditField.GROQ_MODEL -> CloudSettingsPatch()
-                            EditField.GROQ_BASE_URL -> CloudSettingsPatch()
                             EditField.CUSTOM_PROVIDER_MODEL -> CloudSettingsPatch()
                             EditField.CUSTOM_PROVIDER_BASE_URL -> CloudSettingsPatch()
                         }

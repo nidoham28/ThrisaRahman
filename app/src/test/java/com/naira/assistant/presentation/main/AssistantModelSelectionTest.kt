@@ -34,14 +34,6 @@ class AssistantModelSelectionTest {
     }
 
     @Test
-    fun `uses the Groq default tool-capable model`() {
-        assertEquals(
-            "openai/gpt-oss-120b",
-            resolveAssistantModelId(AssistantProvider.GROQ, null),
-        )
-    }
-
-    @Test
     fun `uses the Tokens BD default model`() {
         assertEquals(
             "deepseek-ai/deepseek-v4.1-flash-1017",

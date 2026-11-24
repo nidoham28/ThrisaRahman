@@ -51,17 +51,6 @@ internal enum class EditField(
         "Optional HTTPS endpoint override. Leave blank to use OpenRouter's default API URL.",
         "https://openrouter.ai/api/v1",
     ),
-    GROQ_MODEL(
-        "Groq model ID",
-        "Enter a model ID supported by GroqCloud.",
-        AssistantProvider.GROQ.defaultModelId,
-        requiresNonBlank = true,
-    ),
-    GROQ_BASE_URL(
-        "Groq API base URL",
-        "Optional HTTPS endpoint override. Leave blank to use Groq's default API URL.",
-        "https://api.groq.com/openai/v1",
-    ),
     CUSTOM_PROVIDER_MODEL(
         "Custom provider model",
         "Enter the model ID supported by your OpenAI-compatible provider.",

@@ -31,17 +31,6 @@ enum class AssistantProvider(
             normalizeApiKey = true,
         ),
     ),
-    GROQ(
-        AssistantProviderInfo(
-            displayName = "Groq",
-            apiKeyPlaceholder = "gsk_...",
-            defaultModelId = "openai/gpt-oss-120b",
-            apiType = AssistantProviderApiType.OPENAI_COMPATIBLE,
-            defaultBaseUrl = "https://api.groq.com/openai/v1",
-            baseUrlPolicy = AssistantProviderBaseUrlPolicy.OPTIONAL_OVERRIDE,
-            supportsCustomModel = true,
-        ),
-    ),
     TOKENS_BD(
         AssistantProviderInfo(
             displayName = "Tokens BD",
@@ -194,29 +183,6 @@ class ApiKeyStorage(context: Context) {
         saveBaseUrl(openRouterBaseUrlKey(null), userId?.let { openRouterBaseUrlKey(it) }, baseUrl)
     }
 
-    fun getGroqModelId(userId: String? = null): String =
-        userId?.let { prefs.getString(groqModelKey(it), null) }
-            ?: prefs.getString(groqModelKey(null), null)
-            ?: AssistantProvider.GROQ.defaultModelId
-
-    fun saveGroqModelId(modelId: String, userId: String? = null) {
-        require(modelId.isNotBlank()) { "Groq model ID must not be blank" }
-        val cleaned = modelId.trim()
-        prefs.edit {
-            putString(groqModelKey(null), cleaned)
-            userId?.let { putString(groqModelKey(it), cleaned) }
-        }
-    }
-
-    fun getGroqBaseUrl(userId: String? = null): String =
-        userId?.let { prefs.getString(groqBaseUrlKey(it), null) }
-            ?: prefs.getString(groqBaseUrlKey(null), null)
-            ?: ""
-
-    fun saveGroqBaseUrl(baseUrl: String, userId: String? = null) {
-        saveBaseUrl(groqBaseUrlKey(null), userId?.let { groqBaseUrlKey(it) }, baseUrl)
-    }
-
     fun getCustomProviderModelId(): String =
         prefs.getString(CUSTOM_PROVIDER_MODEL_KEY, null)?.trim().orEmpty()
 
@@ -268,14 +234,8 @@ class ApiKeyStorage(context: Context) {
         fun geminiModelKey(userId: String?) =
             userId?.let { "gemini_model_${it.lowercase(Locale.ROOT)}" } ?: "gemini_model"
 
-        fun groqModelKey(userId: String?) =
-            userId?.let { "groq_model_${it.lowercase(Locale.ROOT)}" } ?: "groq_model"
-
         fun openRouterBaseUrlKey(userId: String?) =
             userId?.let { "openrouter_base_url_${it.lowercase(Locale.ROOT)}" }
                 ?: "openrouter_base_url"
-
-        fun groqBaseUrlKey(userId: String?) =
-            userId?.let { "groq_base_url_${it.lowercase(Locale.ROOT)}" } ?: "groq_base_url"
     }
 }

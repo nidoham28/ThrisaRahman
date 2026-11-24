@@ -46,9 +46,6 @@ internal class SettingsState(
     private var openRouterKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.OPENROUTER.name, it) }.orEmpty()
     )
-    private var groqKey by mutableStateOf(
-        currentUserId()?.let { storage.getApiKey(AssistantProvider.GROQ.name, it) }.orEmpty()
-    )
     private var tokensBdKey by mutableStateOf(
         currentUserId()?.let { storage.getApiKey(AssistantProvider.TOKENS_BD.name, it) }.orEmpty()
     )
@@ -65,8 +62,6 @@ internal class SettingsState(
     var openRouterModelId by mutableStateOf(storage.getOpenRouterModelId(currentUserId()))
     var geminiModelId by mutableStateOf(storage.getGeminiModelId(currentUserId()))
     var openRouterBaseUrl by mutableStateOf(storage.getOpenRouterBaseUrl(currentUserId()))
-    var groqModelId by mutableStateOf(storage.getGroqModelId(currentUserId()))
-    var groqBaseUrl by mutableStateOf(storage.getGroqBaseUrl(currentUserId()))
     var customProviderModelId by mutableStateOf(storage.getCustomProviderModelId())
     var customProviderBaseUrl by mutableStateOf(storage.getCustomProviderBaseUrl())
     var customTtsModel by mutableStateOf(speechStorage.getCustomTtsModel())
@@ -127,7 +122,6 @@ internal class SettingsState(
     fun keyFor(provider: AssistantProvider): String = when (provider) {
         AssistantProvider.GEMINI -> geminiKey
         AssistantProvider.OPENROUTER -> openRouterKey
-        AssistantProvider.GROQ -> groqKey
         AssistantProvider.TOKENS_BD -> tokensBdKey
         AssistantProvider.CUSTOM -> customProviderKey
     }
@@ -137,7 +131,6 @@ internal class SettingsState(
         when (provider) {
             AssistantProvider.GEMINI -> geminiKey = cleaned
             AssistantProvider.OPENROUTER -> openRouterKey = cleaned
-            AssistantProvider.GROQ -> groqKey = cleaned
             AssistantProvider.TOKENS_BD -> tokensBdKey = cleaned
             AssistantProvider.CUSTOM -> customProviderKey = cleaned
         }
@@ -177,18 +170,6 @@ internal class SettingsState(
         val cleaned = value.trim()
         storage.saveOpenRouterBaseUrl(cleaned, currentUserId())
         openRouterBaseUrl = cleaned
-    }
-
-    fun saveGroqModelId(value: String) {
-        val cleaned = value.trim()
-        storage.saveGroqModelId(cleaned, currentUserId())
-        groqModelId = cleaned
-    }
-
-    fun saveGroqBaseUrl(value: String) {
-        val cleaned = value.trim()
-        storage.saveGroqBaseUrl(cleaned, currentUserId())
-        groqBaseUrl = cleaned
     }
 
     fun saveCustomProviderModelId(value: String) {
@@ -306,8 +287,6 @@ internal class SettingsState(
         geminiModelId = storage.getGeminiModelId(userId)
         openRouterModelId = storage.getOpenRouterModelId(userId)
         openRouterBaseUrl = storage.getOpenRouterBaseUrl(userId)
-        groqModelId = storage.getGroqModelId(userId)
-        groqBaseUrl = storage.getGroqBaseUrl(userId)
         assistantLanguage = assistantStorage.getLanguage()
         assistantThinkingMode = assistantStorage.getThinkingMode()
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }

@@ -52,7 +52,6 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                         else -> when (provider) {
                                             AssistantProvider.GEMINI -> state.geminiModelId
                                             AssistantProvider.OPENROUTER -> state.openRouterModelId
-                                            AssistantProvider.GROQ -> state.groqModelId
                                             AssistantProvider.TOKENS_BD -> provider.info.defaultModelId
                                             AssistantProvider.CUSTOM -> provider.info.defaultModelId
                                         }
@@ -62,7 +61,6 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                         when (provider) {
                                             AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
                                             AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
-                                            AssistantProvider.GROQ -> ({ onEditField(EditField.GROQ_MODEL) })
                                             AssistantProvider.TOKENS_BD -> null
                                             AssistantProvider.CUSTOM -> null
                                         }

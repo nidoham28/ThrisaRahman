@@ -32,4 +32,6 @@ internal fun isSupportedApiPreferenceKey(key: String): Boolean =
         key == "selected_provider" ||
         key.startsWith("selected_provider_") ||
         key == "openrouter_model" ||
-        key.startsWith("openrouter_model_")
+        key.startsWith("openrouter_model_") ||
+        key == "custom_provider_model" ||
+        key == "custom_provider_base_url"
