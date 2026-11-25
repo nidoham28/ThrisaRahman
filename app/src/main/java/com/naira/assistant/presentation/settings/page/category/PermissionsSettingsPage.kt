@@ -196,17 +196,6 @@ internal object PermissionsSettingsPage : CategoryNameUi() {
                         )
                     )
                 ),
-            ) + listOfNotNull(
-                if (isPrivacyOptionsRequired) {
-                    SettingsNode.Item(
-                        id = "ad-privacy-options",
-                        title = "Privacy options",
-                        subtitle = "Review your ad privacy choices",
-                        icon = Icons.Outlined.Lock,
-                        onClick = onShowPrivacyOptions,
-                        trailing = { TrailingChevron() },
-                    )
-                } else null,
             )
         )
     }

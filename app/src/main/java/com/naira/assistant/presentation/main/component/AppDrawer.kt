@@ -35,7 +35,6 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -75,7 +74,6 @@ enum class DrawerAction(val title: String, val icon: ImageVector) {
     SCHEDULE("Schedule", Icons.Outlined.Schedule),
 
     USAGE_LIMIT("Usage limit", Icons.Outlined.DataUsage),
-    UPGRADE_PREMIUM("Upgrade to Premium", Icons.Outlined.WorkspacePremium),
     SETTINGS("Settings", Icons.Outlined.Settings),
     LOG_OUT("Log out", Icons.AutoMirrored.Outlined.Logout)
 }
@@ -96,7 +94,6 @@ private val DrawerSections = listOf(
         "ACCOUNT",
         listOf(
             DrawerAction.USAGE_LIMIT,
-            DrawerAction.UPGRADE_PREMIUM,
             DrawerAction.SETTINGS,
             DrawerAction.LOG_OUT
         )
@@ -109,7 +106,6 @@ private val DrawerBackground = Color(0xFF080E17)
 private val HeaderSurface = Color(0xFF0C1420)
 private val AvatarSurface = Color(0xFF12302F)
 private val Danger = Color(0xFFFF6B6B)
-private val Premium = Color(0xFFFFC857)
 
 private val DrawerWidth = 304.dp
 private val RowShape = RoundedCornerShape(14.dp)
@@ -157,7 +153,6 @@ fun AppDrawer(
                     DrawerRow(
                         action = action,
                         selected = action == selected,
-                        badge = if (action == DrawerAction.UPGRADE_PREMIUM) "PRO" else null,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                             onAction(action)
@@ -259,38 +254,26 @@ private fun SectionDivider() {
 private fun DrawerRow(
     action: DrawerAction,
     selected: Boolean,
-    badge: String?,
     onClick: () -> Unit
 ) {
     val isDanger = action == DrawerAction.LOG_OUT
-    val isPremium = action == DrawerAction.UPGRADE_PREMIUM
 
     val background by animateColorAsState(
-        targetValue = when {
-            selected -> Aqua.copy(alpha = 0.12f)
-            isPremium -> Premium.copy(alpha = 0.08f)
-            else -> Color.Transparent
-        },
+        targetValue = if (selected) Aqua.copy(alpha = 0.12f) else Color.Transparent,
         label = "drawerRowBackground"
     )
 
     val tint = when {
         isDanger -> Danger
-        isPremium -> Premium
         selected -> Aqua
         else -> TextSoft
     }
     val textColor = when {
         isDanger -> Danger
-        isPremium -> TextHigh
         selected -> TextHigh
         else -> TextSoft
     }
-    val fontWeight = when {
-        isPremium -> FontWeight.SemiBold
-        selected -> FontWeight.SemiBold
-        else -> FontWeight.Medium
-    }
+    val fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
 
     Row(
         Modifier
@@ -325,28 +308,6 @@ private fun DrawerRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
-        )
-        if (badge != null) {
-            Spacer(Modifier.width(8.dp))
-            Badge(badge, accent = if (isPremium) Premium else Aqua)
-        }
-    }
-}
-
-@Composable
-private fun Badge(text: String, accent: Color = Aqua) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(accent.copy(alpha = 0.16f))
-            .padding(horizontal = 7.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            color = accent,
-            fontSize = 9.sp,
-            letterSpacing = 0.8.sp,
-            fontWeight = FontWeight.Bold
         )
     }
 }

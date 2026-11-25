@@ -29,11 +29,6 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-val testAdMobAppId = "ca-app-pub-5397749351025085~1738777323"
-val testHomeBannerAdUnitId = "ca-app-pub-5397749351025085/8112613987"
-val releaseAdMobAppId = providers.gradleProperty("ADMOB_APP_ID").orNull?.trim().orEmpty()
-val releaseHomeBannerAdUnitId = providers.gradleProperty("ADMOB_HOME_BANNER_AD_UNIT_ID").orNull?.trim().orEmpty()
-
 android {
     namespace = "com.naira.assistant"
     compileSdk {
@@ -50,11 +45,6 @@ android {
         versionName = "0.0.6-tara"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        manifestPlaceholders["admobAppId"] = testAdMobAppId
-        buildConfigField("String", "ADMOB_APP_ID", "\"$testAdMobAppId\"")
-        buildConfigField("String", "ADMOB_HOME_BANNER_AD_UNIT_ID", "\"$testHomeBannerAdUnitId\"")
-        buildConfigField("boolean", "ADMOB_CONFIGURED", "true")
     }
 
     splits {
@@ -68,12 +58,6 @@ android {
 
     buildTypes {
         release {
-            val hasReleaseAdMobIds = releaseAdMobAppId.isNotBlank() && releaseHomeBannerAdUnitId.isNotBlank()
-            manifestPlaceholders["admobAppId"] = releaseAdMobAppId
-            buildConfigField("String", "ADMOB_APP_ID", "\"$releaseAdMobAppId\"")
-            buildConfigField("String", "ADMOB_HOME_BANNER_AD_UNIT_ID", "\"$releaseHomeBannerAdUnitId\"")
-            buildConfigField("boolean", "ADMOB_CONFIGURED", hasReleaseAdMobIds.toString())
-
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -148,8 +132,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.ads.mobile.sdk)
-    implementation(libs.user.messaging.platform)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
