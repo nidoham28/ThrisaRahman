@@ -78,6 +78,9 @@ import com.naira.assistant.domain.settings.ApiKeyStorage
 import com.naira.assistant.domain.settings.EmailContactStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonObject
@@ -108,14 +111,8 @@ class ToolCallDispatcher(
         }
 
         return when (call.name) {
-            "capture_screen" -> AssistantToolResult(
-                response = ScreenToolExecutor.executeCaptureScreen(call, appContext),
-                image = ScreenToolExecutor.consumeLastCapture(),
-            )
-            "perform_screen_action" -> AssistantToolResult(
-                response = ScreenToolExecutor.executePerformScreenAction(call, appContext),
-                image = ScreenToolExecutor.consumeLastCapture(),
-            )
+            "capture_screen" -> executeScreenTool(call) { ScreenToolExecutor.executeCaptureScreen(call, appContext) }
+            "perform_screen_action" -> executeScreenTool(call) { ScreenToolExecutor.executePerformScreenAction(call, appContext) }
             else -> AssistantToolResult(
                 if (call.name in ioBoundToolNames) {
                     withContext(Dispatchers.IO) { executeRegisteredTool(call) }
@@ -124,6 +121,28 @@ class ToolCallDispatcher(
                 }
             )
         }
+    }
+
+    /**
+     * Runs a screen tool inside the same failure contract as registered tools:
+     * an executor exception becomes a structured error JSON instead of escaping
+     * [execute] uncaught, and the last capture is still released to the caller.
+     */
+    private suspend fun executeScreenTool(
+        call: FunctionCall,
+        block: suspend () -> JsonObject,
+    ): AssistantToolResult {
+        val response = try {
+            block()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            toolFailure(call.name, exception)
+        }
+        return AssistantToolResult(
+            response = response,
+            image = ScreenToolExecutor.consumeLastCapture(),
+        )
     }
 
     private companion object {
@@ -444,24 +463,37 @@ object CommandExecution {
                     }
                 }
 
+            } catch (timeout: TimeoutCancellationException) {
+                // A tool-side withTimeout is an execution failure, not a caller
+                // cancellation: report it so the model gets a result. If the
+                // enclosing coroutine is genuinely being cancelled, rethrow.
+                if (!currentCoroutineContext().isActive) throw timeout
+                buildJsonObject {
+                    put("success", false)
+                    put("error", "Tool '${call.name}' timed out. Try a narrower request.")
+                }
+
             } catch (cancelled: CancellationException) {
                 // Preserve structured concurrency.
                 throw cancelled
 
             } catch (exception: Exception) {
-                buildJsonObject {
-                    put("success", false)
-                    put(
-                        "error",
-                        "Tool '${call.name}' failed: " +
-                                (
-                                        exception.message
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?: exception::class.simpleName.orEmpty()
-                                        ),
-                    )
-                }
+                toolFailure(call.name, exception)
             }
         }
     }
+}
+
+/** Converts an executor exception into the structured tool-failure JSON returned to the model. */
+private fun toolFailure(toolName: String, exception: Exception): JsonObject = buildJsonObject {
+    put("success", false)
+    put(
+        "error",
+        "Tool '$toolName' failed: " +
+                (
+                        exception.message
+                            ?.takeIf { it.isNotBlank() }
+                            ?: exception::class.simpleName.orEmpty()
+                        ),
+    )
 }

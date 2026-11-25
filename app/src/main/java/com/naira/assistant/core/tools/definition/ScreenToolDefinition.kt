@@ -18,7 +18,7 @@ import kotlinx.serialization.json.putJsonObject
 fun captureScreenTool() = ToolDefinition(
     name = "capture_screen",
     description = universalToolDescription(
-        purpose = "Captures the current screen for visual layout or coordinate information.",
+        purpose = "Captures the current screen and returns the image plus its visible text for visual layout or coordinate work.",
         trigger = "The user asks about visible UI/layout or a task requires screen coordinates.",
         notFor = "Use `read_screen_text` to find visible text/elements and `perform_screen_action` to interact with the screen.",
         prerequisite = "The user must enable the Accessibility Service; use coordinates only from the latest capture and inspect task-relevant content only.",
@@ -91,8 +91,10 @@ fun performScreenActionTool() = ToolDefinition(
                 put("minimum", 0)
                 put(
                     "description",
-                    "X coordinate in screen pixels. Required for tap, " +
-                            "double_tap, long_press, and as the swipe starting X."
+                    "X coordinate in pixels, measured in the most recent " +
+                            "capture's image; it is rescaled to the real screen. " +
+                            "Required for tap, double_tap, long_press, and as " +
+                            "the swipe starting X."
                 )
             }
 
@@ -101,8 +103,10 @@ fun performScreenActionTool() = ToolDefinition(
                 put("minimum", 0)
                 put(
                     "description",
-                    "Y coordinate in screen pixels. Required for tap, " +
-                            "double_tap, long_press, and as the swipe starting Y."
+                    "Y coordinate in pixels, measured in the most recent " +
+                            "capture's image; it is rescaled to the real screen. " +
+                            "Required for tap, double_tap, long_press, and as " +
+                            "the swipe starting Y."
                 )
             }
 
@@ -126,11 +130,10 @@ fun performScreenActionTool() = ToolDefinition(
 
             putJsonObject("duration_ms") {
                 put("type", "integer")
-                put("minimum", 1)
                 put(
                     "description",
-                    "Gesture duration in milliseconds. Used for swipe and " +
-                            "long_press when supported (50-5000 ms; defaults depend on action)."
+                    "Swipe gesture duration in milliseconds (50-5000 ms; " +
+                            "defaults depend on action). Not used by long_press."
                 )
                 put("minimum", 50)
                 put("maximum", 5000)
@@ -166,8 +169,8 @@ fun performScreenActionTool() = ToolDefinition(
                 }
                 put(
                     "description",
-                    "Scroll direction for scroll_element. " +
-                            "forward moves to later content; backward moves to earlier content."
+                    "Required for scroll_element. forward moves to later " +
+                            "content; backward moves to earlier content."
                 )
             }
         }

@@ -2,6 +2,8 @@
 package com.naira.assistant.core.tools.definition
 
 import com.naira.assistant.core.tools.ToolDefinition
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -55,10 +57,11 @@ fun checkAppInstalledTool() = ToolDefinition(
         purpose = "Checks whether a specific app is installed on the device.",
         trigger = "The user asks whether a particular app is installed.",
         notFor = "To find/list multiple apps use `list_installed_apps`; to launch one use `open_app`.",
-        prerequisite = "Provide an app name or exact package name; resolve an ambiguous name with `list_installed_apps` first.",
+        prerequisite = "At least one of `app_name` or `package_name` is required; resolve an ambiguous name with `list_installed_apps` first.",
     ),
     parameters = buildJsonObject {
         put("type", "object")
+        put("additionalProperties", false)
         putJsonObject("properties") {
             putJsonObject("app_name") {
                 put("type", "string")
@@ -77,6 +80,14 @@ fun checkAppInstalledTool() = ToolDefinition(
                 )
             }
         }
+        putJsonArray("anyOf") {
+            add(buildJsonObject {
+                putJsonArray("required") { add(JsonPrimitive("app_name")) }
+            })
+            add(buildJsonObject {
+                putJsonArray("required") { add(JsonPrimitive("package_name")) }
+            })
+        }
     },
     parallelizable = true,
 )
@@ -87,10 +98,11 @@ fun openAppTool() = ToolDefinition(
         purpose = "Launches a specified app on the device.",
         trigger = "The user explicitly asks to open or launch an app.",
         notFor = "Use `check_app_installed` to check installation and `list_installed_apps` to search/list apps; never substitute another app.",
-        prerequisite = "Provide the app name or exact package name; resolve multiple matches with `list_installed_apps` first.",
+        prerequisite = "At least one of `app_name` or `package_name` is required; resolve multiple matches with `list_installed_apps` first and treat zero matches as not installed.",
     ),
     parameters = buildJsonObject {
         put("type", "object")
+        put("additionalProperties", false)
         putJsonObject("properties") {
             putJsonObject("app_name") {
                 put("type", "string")
@@ -108,6 +120,14 @@ fun openAppTool() = ToolDefinition(
                     "Exact Android package name. Prefer this when already known."
                 )
             }
+        }
+        putJsonArray("anyOf") {
+            add(buildJsonObject {
+                putJsonArray("required") { add(JsonPrimitive("app_name")) }
+            })
+            add(buildJsonObject {
+                putJsonArray("required") { add(JsonPrimitive("package_name")) }
+            })
         }
     }
 )

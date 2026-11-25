@@ -9,6 +9,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -27,7 +28,8 @@ object TimeToolExecutor {
      */
     fun executeGetCurrentTime(call: FunctionCall): JsonObject {
 
-        val requested = if (call.args.containsKey("timezone")) {
+        // An explicit JSON null means "use the schema default", not an error.
+        val requested = if (call.args.containsKey("timezone") && call.args["timezone"] !is JsonNull) {
             val value = call.args["timezone"] as? JsonPrimitive
             if (value == null || !value.isString || value.content.isBlank()) {
                 return buildJsonObject {

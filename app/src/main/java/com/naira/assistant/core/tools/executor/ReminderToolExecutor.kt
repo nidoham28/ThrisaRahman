@@ -23,6 +23,8 @@ object ReminderToolExecutor {
     )
     private val validRecurrences = RecurrenceType.entries.mapTo(mutableSetOf()) { it.id }
 
+    private const val CLOCK_SKEW_TOLERANCE_MS = 5_000L
+
     // ----------------------------------------------------------------
     // Create
     // ----------------------------------------------------------------
@@ -39,7 +41,9 @@ object ReminderToolExecutor {
         val triggerAtMs = extractLongArg(call, "trigger_at_ms")
             ?: return error("'trigger_at_ms' must be a valid Unix timestamp in milliseconds.")
 
-        if (triggerAtMs <= System.currentTimeMillis()) {
+        // Tolerate a few seconds of device clock skew instead of failing a
+        // "remind me in a minute" request that was rounded down.
+        if (triggerAtMs <= System.currentTimeMillis() - CLOCK_SKEW_TOLERANCE_MS) {
             return error("The reminder time must be in the future.")
         }
 
@@ -193,7 +197,7 @@ object ReminderToolExecutor {
         val updated = repo.update(
             id = id,
             title = title,
-            description = description,
+            description = description?.trim(),
             triggerAtMs = triggerAtMs,
             recurrence = recurrence,
             recurrenceInterval = recurrenceInterval,

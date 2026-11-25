@@ -82,13 +82,14 @@ fun createNoteTool() = ToolDefinition(
 
             putJsonObject("content") {
                 put("type", "string")
-                put("description", "Optional note content.")
+                put("description", "Optional note content, up to 50000 characters.")
+                put("maxLength", 50000)
             }
 
             put(
                 "tags",
                 stringProperty(
-                    description = "Optional comma-separated tags.",
+                    description = "Optional comma-separated tags, at most 20 tags of 50 characters each.",
                     maxLength = 500
                 )
             )
@@ -104,7 +105,8 @@ fun createNoteTool() = ToolDefinition(
             put(
                 "color",
                 stringProperty(
-                    description = "Optional note color or theme, preferably a supported color or hex code.",
+                    description = "Optional note color name (for example blue, green, " +
+                        "orange, pink, red, yellow) or hex code like #34A853.",
                     maxLength = 50
                 )
             )

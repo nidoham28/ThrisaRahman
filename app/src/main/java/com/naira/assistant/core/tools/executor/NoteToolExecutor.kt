@@ -213,13 +213,19 @@ object NoteToolExecutor {
         call: FunctionCall,
         repo: NoteRepository
     ): JsonObject = safely {
+        // Accept both JSON booleans and the documented string values; models
+        // frequently send a bare boolean for a tri-state filter.
         val pinnedFilter: Boolean? = if (hasArg(call, "pinned")) {
-            when (stringArg(call, "pinned")?.lowercase()) {
+            val text = (call.args["pinned"] as? JsonPrimitive)
+                ?.takeIf { it.isString || it.booleanOrNull != null }
+                ?.content
+                ?.lowercase()
+            when (text) {
                 "true" -> true
                 "false" -> false
                 "all" -> null
                 else -> return@safely error(
-                    "'pinned' must be 'true', 'false', or 'all'."
+                    "'pinned' must be 'true', 'false', or 'all' (as a boolean or quoted string)."
                 )
             }
         } else {

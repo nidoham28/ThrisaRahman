@@ -34,15 +34,21 @@ internal suspend fun executeFindTerminalTool(
 ): JsonObject {
     val toolName = CommandExecution.jsonStringArg(call, "tool_name")
         ?.trim()
-        ?: error("tool_name is required")
+        ?: return terminalError("'tool_name' must be a non-empty executable name.")
 
-    require(TOOL_NAME_PATTERN.matches(toolName)) {
-        "tool_name must be a single executable name containing only letters, " +
-                "digits, dot, underscore, plus, or hyphen. Shell commands and arguments are not allowed."
+    if (!TOOL_NAME_PATTERN.matches(toolName)) {
+        return terminalError(
+            "tool_name must be a single executable name containing only letters, " +
+                "digits, dot, underscore, plus, or hyphen. Shell commands and arguments are not allowed.",
+        )
     }
 
-    val result = runTerminalScript(context) {
-        "command -v $toolName"
+    val result = try {
+        runTerminalScript(context) {
+            "command -v $toolName"
+        }
+    } catch (exception: TerminalScriptException) {
+        return terminalError(exception.message ?: "The terminal command failed.")
     }
 
     val path = result.output
@@ -57,6 +63,7 @@ internal suspend fun executeFindTerminalTool(
             path.startsWith("/")
 
     return buildJsonObject {
+        put("success", true)
         put("tool_name", toolName)
         put("found", found)
 
@@ -80,16 +87,24 @@ internal suspend fun executeTerminalCalculation(
     context: Context,
 ): JsonObject {
     val expression = CommandExecution.jsonStringArg(call, "expression")
-        ?: error("expression is required")
+        ?: return terminalError("'expression' must be a non-empty arithmetic expression using integers.")
 
-    val calculation = parseTerminalArithmetic(expression)
+    val calculation = try {
+        parseTerminalArithmetic(expression)
+    } catch (exception: IllegalArgumentException) {
+        return terminalError(exception.message ?: "The expression is not valid terminal arithmetic.")
+    }
 
-    val result = runTerminalScript(context) {
-        "printf '%s\\n' \"\\$(( ${calculation.shellExpression} ))\""
+    val result = try {
+        runTerminalScript(context) {
+            "printf '%s\\n' \"\\$(( ${calculation.shellExpression} ))\""
+        }
+    } catch (exception: TerminalScriptException) {
+        return terminalError(exception.message ?: "The terminal command failed.")
     }
 
     if (result.exitCode != 0) {
-        error("The Android shell could not evaluate the arithmetic expression.")
+        return terminalError("The Android shell could not evaluate the arithmetic expression.")
     }
 
     val actualValue = result.output
@@ -98,13 +113,14 @@ internal suspend fun executeTerminalCalculation(
         .map(String::trim)
         .lastOrNull { it.isNotEmpty() }
         ?.toLongOrNull()
-        ?: error("The Android shell returned an invalid calculation result.")
+        ?: return terminalError("The Android shell returned an invalid calculation result.")
 
-    check(actualValue == calculation.value) {
-        "The Android shell returned an inconsistent calculation result."
+    if (actualValue != calculation.value) {
+        return terminalError("The Android shell returned an inconsistent calculation result.")
     }
 
     return buildJsonObject {
+        put("success", true)
         put("expression", expression)
         put("result", actualValue)
     }
@@ -215,7 +231,7 @@ private suspend fun runTerminalScript(
     val markerIndex = output.lastIndexOf(EXIT_MARKER)
 
     if (markerIndex < 0) {
-        error("Terminal command did not return an exit status.")
+        throw TerminalScriptException("Terminal command did not return an exit status.")
     }
 
     val status = output
@@ -224,7 +240,7 @@ private suspend fun runTerminalScript(
         .firstOrNull()
         ?.trim()
         ?.toIntOrNull()
-        ?: error("Terminal command returned an invalid exit status.")
+        ?: throw TerminalScriptException("Terminal command returned an invalid exit status.")
 
     return TerminalResult(
         output = output,
@@ -240,3 +256,12 @@ private data class TerminalResult(
     val output: String,
     val exitCode: Int,
 )
+
+/** A controlled terminal run failed in a way the user should see verbatim. */
+private class TerminalScriptException(message: String) : Exception(message)
+
+/** Structured tool failure, matching the executor-wide result contract. */
+private fun terminalError(message: String): JsonObject = buildJsonObject {
+    put("success", false)
+    put("error", message)
+}

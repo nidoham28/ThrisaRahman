@@ -162,6 +162,15 @@ object TodoToolExecutor {
             null
         }
 
+        val hasChanges = title != null || notes != null || done != null ||
+            dueAtMs != null || priority != null || listName != null || tags != null
+        if (!hasChanges) {
+            return error(
+                "Provide at least one field to update: title, notes, done, " +
+                    "due_at_ms, priority, list_name, or tags."
+            )
+        }
+
         val updated = repo.update(
             id = id,
             title = title,
@@ -212,13 +221,19 @@ object TodoToolExecutor {
         call: FunctionCall,
         repo: TodoRepository,
     ): JsonObject {
+        // Accept both JSON booleans and the documented string values; models
+        // frequently send a bare boolean for a tri-state filter.
         val doneFilter = if (call.args.containsKey("done")) {
-            when (val value = jsonStringArg(call, "done")) {
+            val text = (call.args["done"] as? JsonPrimitive)
+                ?.takeIf { it.isString || it.booleanOrNull != null }
+                ?.content
+                ?.lowercase()
+            when (text) {
                 "true" -> true
                 "false" -> false
                 "all" -> null
                 else -> return error(
-                    "Invalid 'done' filter. Allowed values: true, false, all."
+                    "Invalid 'done' filter. Use true, false, or all (as a boolean or quoted string)."
                 )
             }
         } else {

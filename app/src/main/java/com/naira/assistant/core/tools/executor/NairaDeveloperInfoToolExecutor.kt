@@ -14,7 +14,10 @@ internal fun executeNairaDeveloperInfo(call: FunctionCall): JsonObject {
     val topic = CommandExecution.jsonStringArg(call, "topic")
         ?.trim()
         ?.lowercase()
-        ?: error("topic is required")
+        ?: return buildJsonObject {
+            put("success", false)
+            put("error", "'topic' must be a non-empty string from the declared list.")
+        }
 
     val info = when (topic) {
         "about_naira" -> """
@@ -86,12 +89,18 @@ internal fun executeNairaDeveloperInfo(call: FunctionCall): JsonObject {
             conversational, and intelligent personal assistant.
         """.trimIndent()
 
-        else -> error(
-            "Unsupported topic. Choose a topic from the declared list."
-        )
+        else -> return buildJsonObject {
+            put("success", false)
+            put(
+                "error",
+                "Unsupported topic '$topic'. Choose a topic from the declared list: " +
+                    "about_naira, developer, purpose, capabilities, identity.",
+            )
+        }
     }
 
     return buildJsonObject {
+        put("success", true)
         put("topic", topic)
         put("info", info)
     }

@@ -138,8 +138,8 @@ object CalendarToolExecutor {
             }
         } catch (_: SecurityException) {
             permissionError()
-        } catch (e: Exception) {
-            error("Failed to create calendar event: ${e.message ?: "Unknown error"}")
+        } catch (_: Exception) {
+            error("Failed to create the calendar event. Verify calendar access and the event details, then retry.")
         }
     }
 
@@ -200,13 +200,14 @@ object CalendarToolExecutor {
         if (!query.isNullOrBlank()) {
             selectionParts += """
                 (
-                    ${CalendarContract.Events.TITLE} LIKE ?
-                    OR ${CalendarContract.Events.DESCRIPTION} LIKE ?
-                    OR ${CalendarContract.Events.EVENT_LOCATION} LIKE ?
+                    ${CalendarContract.Events.TITLE} LIKE ? ESCAPE '\'
+                    OR ${CalendarContract.Events.DESCRIPTION} LIKE ? ESCAPE '\'
+                    OR ${CalendarContract.Events.EVENT_LOCATION} LIKE ? ESCAPE '\'
                 )
             """.trimIndent()
 
-            val searchPattern = "%$query%"
+            // Escape SQL LIKE wildcards so literal text matches literally.
+            val searchPattern = "%${escapeLikePattern(query)}%"
             repeat(3) {
                 selectionArgs += searchPattern
             }
@@ -237,8 +238,8 @@ object CalendarToolExecutor {
             }
         } catch (_: SecurityException) {
             permissionError()
-        } catch (e: Exception) {
-            error("Failed to read calendar events: ${e.message ?: "Unknown error"}")
+        } catch (_: Exception) {
+            error("Failed to read calendar events. Verify calendar access, then retry.")
         }
     }
 
@@ -284,8 +285,8 @@ object CalendarToolExecutor {
             }
         } catch (_: SecurityException) {
             permissionError()
-        } catch (e: Exception) {
-            error("Failed to get calendar event #$eventId: ${e.message ?: "Unknown error"}")
+        } catch (_: Exception) {
+            error("Failed to read calendar event #$eventId. Verify calendar access, then retry.")
         }
     }
 
@@ -457,8 +458,8 @@ object CalendarToolExecutor {
             }
         } catch (_: SecurityException) {
             permissionError()
-        } catch (e: Exception) {
-            error("Failed to update calendar event #$eventId: ${e.message ?: "Unknown error"}")
+        } catch (_: Exception) {
+            error("Failed to update calendar event #$eventId. Verify calendar access and the event details, then retry.")
         }
     }
 
@@ -498,8 +499,8 @@ object CalendarToolExecutor {
             }
         } catch (_: SecurityException) {
             permissionError()
-        } catch (e: Exception) {
-            error("Failed to delete calendar event #$eventId: ${e.message ?: "Unknown error"}")
+        } catch (_: Exception) {
+            error("Failed to delete calendar event #$eventId. Verify calendar access, then retry.")
         }
     }
 
@@ -663,6 +664,10 @@ object CalendarToolExecutor {
     // ------------------------------------------------------------------
     // DATE HELPERS
     // ------------------------------------------------------------------
+
+    /** Escapes SQL LIKE wildcards so a search query matches literally. */
+    private fun escapeLikePattern(value: String): String =
+        value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private fun startOfToday(): Long {
         return Calendar.getInstance().apply {

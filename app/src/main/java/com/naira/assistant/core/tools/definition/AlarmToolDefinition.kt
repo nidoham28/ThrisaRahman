@@ -39,8 +39,10 @@ fun createAlarmTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "Optional repeat schedule: everyday, weekdays, weekends, or comma-separated " +
-                        "day numbers (1=Sunday through 7=Saturday)."
+                    "Optional repeat schedule: \"everyday\" (or \"daily\"), \"weekdays\", " +
+                        "\"weekends\", or a comma-separated list of exact day names or " +
+                        "3-letter abbreviations (sun, mon, tue, wed, thu, fri, sat) or " +
+                        "day numbers (1=Sunday through 7=Saturday). Example: \"mon,wed,fri\"."
                 )
             }
             putJsonObject("vibrate") {
@@ -153,8 +155,10 @@ fun updateAlarmTool() = ToolDefinition(
                 put("type", "string")
                 put(
                     "description",
-                    "New schedule: everyday, weekdays, weekends, or comma-separated day numbers " +
-                        "(1=Sunday through 7=Saturday)."
+                    "New schedule: \"everyday\" (or \"daily\"), \"weekdays\", " +
+                        "\"weekends\", or a comma-separated list of exact day names or " +
+                        "3-letter abbreviations (sun, mon, tue, wed, thu, fri, sat) or " +
+                        "day numbers (1=Sunday through 7=Saturday). Example: \"sat,sun\"."
                 )
             }
             putJsonObject("enabled") {
@@ -210,9 +214,10 @@ fun setTimerTool() = ToolDefinition(
                 put("type", "integer")
                 put(
                     "description",
-                    "Required. Countdown duration in seconds. Must be greater than zero."
+                    "Required. Countdown duration in seconds, from 1 to 86400 (24 hours)."
                 )
                 put("minimum", 1)
+                put("maximum", 86400)
             }
             putJsonObject("label") {
                 put("type", "string")

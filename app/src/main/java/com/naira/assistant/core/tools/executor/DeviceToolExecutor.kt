@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.os.Build
 import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
@@ -28,7 +29,8 @@ object DeviceToolExecutor {
         call: FunctionCall,
         context: Context
     ): JsonObject {
-        val category = if (call.args.containsKey("category")) {
+        // An explicit JSON null means "use the schema default", not an error.
+        val category = if (call.args.containsKey("category") && call.args["category"] !is JsonNull) {
             jsonStringArg(call, "category")
                 ?.trim()
                 ?.lowercase(Locale.ROOT)

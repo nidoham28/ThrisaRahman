@@ -23,6 +23,8 @@ import java.util.Locale
 
 object AlarmToolExecutor {
 
+    private const val MAX_TIMER_SECONDS = 24 * 60 * 60
+
     // ------------------------------------------------------------
     // CREATE ALARM
     // ------------------------------------------------------------
@@ -54,8 +56,9 @@ object AlarmToolExecutor {
         val days = if (call.args.containsKey("days")) {
             parseDaysArg(call, "days")
                 ?: return error(
-                    "Invalid 'days'. Use everyday, weekdays, weekends, " +
-                            "day names, or day numbers from 1 to 7."
+                    "Invalid 'days'. Use everyday, daily, weekdays, weekends, " +
+                            "exact day names or 3-letter abbreviations (sun, mon, tue, wed, thu, fri, sat), " +
+                            "or day numbers from 1 (Sunday) to 7 (Saturday), comma-separated."
                 )
         } else emptyList()
 
@@ -84,8 +87,8 @@ object AlarmToolExecutor {
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to save alarm: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to save the alarm in local storage. Free up space or restart the app, then retry.")
         }
 
         // Request scheduling through Android Clock.
@@ -158,16 +161,16 @@ object AlarmToolExecutor {
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to retrieve alarms: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to retrieve alarms from local storage. Try again.")
         }
 
         val total = try {
             repo.count()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to count alarms: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to count alarms in local storage. Try again.")
         }
 
         return buildJsonObject {
@@ -201,8 +204,8 @@ object AlarmToolExecutor {
             repo.getById(id)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to retrieve the alarm from local storage. Try again.")
         } ?: return error("Alarm with ID #$id was not found.")
 
         return buildJsonObject {
@@ -252,7 +255,11 @@ object AlarmToolExecutor {
 
         val days = if (call.args.containsKey("days")) {
             parseDaysArg(call, "days")
-                ?: return error("Invalid repeat schedule in 'days'.")
+                ?: return error(
+                    "Invalid 'days'. Use everyday, daily, weekdays, weekends, " +
+                        "exact day names or 3-letter abbreviations (sun, mon, tue, wed, thu, fri, sat), " +
+                        "or day numbers from 1 (Sunday) to 7 (Saturday), comma-separated."
+                )
         } else null
 
         val enabled = if (call.args.containsKey("enabled")) {
@@ -282,8 +289,8 @@ object AlarmToolExecutor {
             repo.getById(id)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to retrieve alarm: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to retrieve the alarm from local storage. Try again.")
         } ?: return error("Alarm with ID #$id was not found.")
 
         val updated = try {
@@ -298,8 +305,8 @@ object AlarmToolExecutor {
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to update alarm: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to update the alarm in local storage. Try again.")
         } ?: return error("Alarm with ID #$id was not found.")
 
         // Android's standard ACTION_SET_ALARM creates alarms.
@@ -369,8 +376,8 @@ object AlarmToolExecutor {
             repo.delete(id)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            return error("Failed to delete alarm: ${e.message ?: "Database error."}")
+        } catch (_: Exception) {
+            return error("Failed to delete the alarm from local storage. Try again.")
         }
 
         if (!deleted) {
@@ -404,6 +411,12 @@ object AlarmToolExecutor {
 
         if (lengthSeconds <= 0) {
             return error("'length_seconds' must be greater than zero.")
+        }
+
+        // Clock timers are minute-granular; cap at 24 hours to catch
+        // unit mistakes (ms vs s) and runaway values.
+        if (lengthSeconds > MAX_TIMER_SECONDS) {
+            return error("'length_seconds' must be at most $MAX_TIMER_SECONDS (24 hours).")
         }
 
         val label = if (call.args.containsKey("label")) {
@@ -638,17 +651,16 @@ object AlarmToolExecutor {
                 val parsed = parts.map { part ->
                     val value = part.trim()
 
-                    when {
-                        value.toIntOrNull() in 1..7 ->
-                            value.toInt()
-
-                        value.startsWith("sun") -> Calendar.SUNDAY
-                        value.startsWith("mon") -> Calendar.MONDAY
-                        value.startsWith("tue") -> Calendar.TUESDAY
-                        value.startsWith("wed") -> Calendar.WEDNESDAY
-                        value.startsWith("thu") -> Calendar.THURSDAY
-                        value.startsWith("fri") -> Calendar.FRIDAY
-                        value.startsWith("sat") -> Calendar.SATURDAY
+                    // Accept exact day names and exact 3-letter abbreviations
+                    // only; loose prefix matching turned typos into wrong days.
+                    when (value) {
+                        "1", "sun", "sunday" -> Calendar.SUNDAY
+                        "2", "mon", "monday" -> Calendar.MONDAY
+                        "3", "tue", "tuesday" -> Calendar.TUESDAY
+                        "4", "wed", "wednesday" -> Calendar.WEDNESDAY
+                        "5", "thu", "thursday" -> Calendar.THURSDAY
+                        "6", "fri", "friday" -> Calendar.FRIDAY
+                        "7", "sat", "saturday" -> Calendar.SATURDAY
 
                         else -> return null
                     }
