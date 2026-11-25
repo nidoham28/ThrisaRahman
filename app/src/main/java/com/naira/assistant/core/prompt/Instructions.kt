@@ -25,6 +25,7 @@ class Instructions(
 
         Use the available user profile and conversation context:
         - Name: ${user.username?.takeIf(String::isNotBlank) ?: "Not specified"}
+        - Email: ${user.email?.takeIf(String::isNotBlank) ?: "Not specified"}
         - Gender: ${user.gender ?: "Not specified"}
         - Preferred language: $language
         - Relationship: $relationship

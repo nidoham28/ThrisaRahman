@@ -45,6 +45,7 @@ internal data class CloudSettings(
     val storedMemories: Boolean = true,
     val voiceOutputEnabled: Boolean = true,
     val username: String = "",
+    val email: String = "",
     val phone: String = "",
     val gender: Gender = Gender.UNSPECIFIED,
     val assistantName: String = "Assistant",
@@ -64,6 +65,7 @@ internal data class CloudSettingsPatch(
     val storedMemories: Boolean? = null,
     val voiceOutputEnabled: Boolean? = null,
     val username: String? = null,
+    val email: String? = null,
     val phone: String? = null,
     val gender: Gender? = null,
     val assistantName: String? = null,
@@ -77,7 +79,7 @@ internal data class CloudSettingsPatch(
         get() = speechEngine == null && theme == null && fontSize == null &&
                 storedHistory == null && storedMemories == null && voiceOutputEnabled == null &&
                 activeProvider == null &&
-                username == null && phone == null && gender == null &&
+                username == null && email == null && phone == null && gender == null &&
                 assistantName == null && assistantLanguage == null && relationship == null &&
                 assistantThinkingMode == null && openRouterModelId == null && asrProvider == null
 
@@ -90,6 +92,7 @@ internal data class CloudSettingsPatch(
         storedMemories = override.storedMemories ?: storedMemories,
         voiceOutputEnabled = override.voiceOutputEnabled ?: voiceOutputEnabled,
         username = override.username ?: username,
+        email = override.email ?: email,
         phone = override.phone ?: phone,
         gender = override.gender ?: gender,
         assistantName = override.assistantName ?: assistantName,
@@ -249,6 +252,7 @@ private fun CloudSettingsPatch.matchesLeniently(settings: CloudSettings): Boolea
             (storedMemories == null || storedMemories == settings.storedMemories) &&
             (voiceOutputEnabled == null || voiceOutputEnabled == settings.voiceOutputEnabled) &&
             (username == null || username.trim().equals(settings.username.trim(), ignoreCase = true)) &&
+            (email == null || email.trim().equals(settings.email.trim(), ignoreCase = true)) &&
             (phone == null || phone.trim().equals(settings.phone.trim(), ignoreCase = true)) &&
             (gender == null || gender == settings.gender) &&
             (assistantName == null || assistantName.trim().equals(settings.assistantName.trim(), ignoreCase = true)) &&
@@ -361,6 +365,7 @@ private object CloudPendingPatchStore {
                 userSettingsStorage.setVoiceOutputEnabled(settings.voiceOutputEnabled)
             }
             if (patch.username == null) accountStorage.setUserName(settings.username)
+            if (patch.email == null) accountStorage.setEmail(settings.email)
             if (patch.phone == null) accountStorage.setPhoneNumber(settings.phone)
             if (patch.gender == null) accountStorage.setGender(settings.gender)
             if (patch.assistantName == null) assistantStorage.setName(settings.assistantName)
@@ -395,6 +400,7 @@ private object CloudPendingPatchStore {
                 storedMemories = current.storedMemories.takeUnless { it == patch.storedMemories },
                 voiceOutputEnabled = current.voiceOutputEnabled.takeUnless { it == patch.voiceOutputEnabled },
                 username = current.username.takeUnless { it == patch.username },
+                email = current.email.takeUnless { it == patch.email },
                 phone = current.phone.takeUnless { it == patch.phone },
                 gender = current.gender.takeUnless { it == patch.gender },
                 assistantName = current.assistantName.takeUnless { it == patch.assistantName },
@@ -442,6 +448,7 @@ private data class PendingPatchDto(
     val storedMemories: Boolean? = null,
     val voiceOutputEnabled: Boolean? = null,
     val username: String? = null,
+    val email: String? = null,
     val phone: String? = null,
     val gender: String? = null,
     val assistantName: String? = null,
@@ -464,6 +471,7 @@ private fun PendingPatchDto.toPatch() = CloudSettingsPatch(
     storedMemories = storedMemories,
     voiceOutputEnabled = voiceOutputEnabled,
     username = username,
+    email = email,
     phone = phone,
     gender = gender.toEnumOrNull(),
     assistantName = assistantName,
@@ -485,6 +493,7 @@ private fun CloudSettingsPatch.toDto() = PendingPatchDto(
     storedMemories = storedMemories,
     voiceOutputEnabled = voiceOutputEnabled,
     username = username,
+    email = email,
     phone = phone,
     gender = gender?.name,
     assistantName = assistantName,
@@ -547,7 +556,7 @@ internal class FirebaseCloudSettingsRemoteStore(
         val accountValues = account.value as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val assistantValues = assistant.value as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val merged = legacy.toMutableMap()
-        merged.putAll(accountValues.filterKeys { it in setOf("username", "phone", "gender") })
+        merged.putAll(accountValues.filterKeys { it in setOf("username", "email", "phone", "gender") })
         merged["assistantName"] = assistantValues["name"] ?: merged["assistantName"]
         merged["assistantLanguage"] = assistantValues["language"] ?: merged["assistantLanguage"]
         merged["relationship"] = assistantValues["relationship"] ?: merged["relationship"]
@@ -561,6 +570,7 @@ internal class FirebaseCloudSettingsRemoteStore(
             migration["user_settings/$userId/$key"] = null
         }
         moveLegacy("username", "users/$userId/username", accountValues)
+        moveLegacy("email", "users/$userId/email", accountValues)
         moveLegacy("phone", "users/$userId/phone", accountValues)
         moveLegacy("gender", "users/$userId/gender", accountValues)
         moveLegacy("assistantName", "assistants/$userId/name", assistantValues, "name")
@@ -628,6 +638,7 @@ internal class FirebaseCloudSettingsRemoteStore(
             storedMemories = data["storedMemories"] as? Boolean ?: true,
             voiceOutputEnabled = data["voiceOutputEnabled"] as? Boolean ?: true,
             username = data["username"] as? String ?: "",
+            email = data["email"] as? String ?: "",
             phone = data["phone"] as? String ?: "",
             gender = Gender.fromId(data["gender"] as? String),
             assistantName = data["assistantName"] as? String ?: "Assistant",
@@ -683,6 +694,10 @@ internal class FirebaseCloudSettingsRemoteStore(
             patch.username?.let {
                 put("users/$userId/username", it)
                 put("user_settings/$userId/username", null)
+            }
+            patch.email?.let {
+                put("users/$userId/email", it)
+                put("user_settings/$userId/email", null)
             }
             patch.phone?.let {
                 put("users/$userId/phone", it.ifBlank { "" })

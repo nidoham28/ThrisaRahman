@@ -32,6 +32,7 @@ import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.domain.settings.EmailContact
+import com.naira.assistant.domain.settings.isValidEmail
 import com.naira.assistant.domain.settings.validateEmailContactInput
 import com.naira.assistant.presentation.settings.model.EditField
 
@@ -95,6 +96,9 @@ internal fun EditFieldDialog(
     onDismiss: () -> Unit
 ) {
     var value by remember(field) { mutableStateOf(initialValue) }
+    val validationError = if (field.isEmail && value.isNotBlank() && !isValidEmail(value)) {
+        "Enter a valid email address."
+    } else null
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = RowSurface,
@@ -109,16 +113,24 @@ internal fun EditFieldDialog(
                     singleLine = true,
                     placeholder = { Text(field.placeholder, color = TextSoft.copy(alpha = 0.5f)) },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (field.isPhoneNumber) KeyboardType.Phone else KeyboardType.Text
+                        keyboardType = when {
+                            field.isPhoneNumber -> KeyboardType.Phone
+                            field.isEmail -> KeyboardType.Email
+                            else -> KeyboardType.Text
+                        }
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+                validationError?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = Danger, fontSize = 12.sp)
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { onSave(value) },
-                enabled = !field.requiresNonBlank || value.isNotBlank(),
+                enabled = (!field.requiresNonBlank || value.isNotBlank()) && validationError == null,
             ) {
                 Text("Save", color = Aqua, fontWeight = FontWeight.SemiBold)
             }

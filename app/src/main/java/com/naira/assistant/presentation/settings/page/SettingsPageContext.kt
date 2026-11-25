@@ -14,7 +14,6 @@ import com.naira.assistant.presentation.settings.screen.SettingsState
 
 internal data class SettingsPageContext(
     val state: SettingsState,
-    val emailAddress: String,
     val permissionStatus: PermissionStatus,
     val permissionActions: PermissionActions,
     val onSaveActiveProvider: (AssistantProvider) -> Unit,

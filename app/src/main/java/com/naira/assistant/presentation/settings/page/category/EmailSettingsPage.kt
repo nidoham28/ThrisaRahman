@@ -15,14 +15,6 @@ internal object EmailSettingsPage : CategoryNameUi() {
             subtitle = "Manage named email contacts for the assistant.",
             icon = Icons.Outlined.Email,
             children = buildList {
-                add(
-                    SettingsNode.Item(
-                        id = "account-email",
-                        title = "Signed-in account",
-                        subtitle = emailAddress.ifBlank { "Not signed in" },
-                        icon = Icons.Outlined.Email,
-                    ),
-                )
                 state.emailContacts.forEach { contact ->
                     add(
                         SettingsNode.Item(

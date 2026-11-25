@@ -27,10 +27,9 @@ internal object ProfileSettingsPage : CategoryNameUi() {
                 ),
                 SettingsNode.Item(
                     id = "email", title = "Email",
-                    subtitle = state.emailContacts.firstOrNull()?.let { "${it.name} · ${it.email}" }
-                        ?: "Add your email",
+                    subtitle = state.email.ifBlank { "Add your email" },
                     icon = Icons.Outlined.Email,
-                    onClick = { onEditEmailContact(state.emailContacts.firstOrNull()) },
+                    onClick = { onEditField(EditField.EMAIL) },
                 ),
                 SettingsNode.Item(
                     id = "phone", title = "Phone number",

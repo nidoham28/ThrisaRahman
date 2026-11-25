@@ -78,6 +78,7 @@ internal class SettingsState(
     var assistantThinkingMode by mutableStateOf(assistantStorage.getThinkingMode())
     var sensitiveToolAccessEnabled by mutableStateOf(assistantStorage.getSensitiveToolAccessEnabled())
     var username by mutableStateOf(accountStorage.getUserName())
+    var email by mutableStateOf(accountStorage.getEmail())
     var phone by mutableStateOf(accountStorage.getPhoneNumber())
     var gender by mutableStateOf(accountStorage.getGender())
     var assistantName by mutableStateOf(assistantStorage.getName())
@@ -305,6 +306,7 @@ internal class SettingsState(
         val trimmed = value.trim()
         when (field) {
             EditField.USERNAME -> { username = trimmed; accountStorage.setUserName(trimmed) }
+            EditField.EMAIL -> { email = trimmed; accountStorage.setEmail(trimmed) }
             EditField.PHONE -> { phone = trimmed; accountStorage.setPhoneNumber(trimmed) }
             else -> Unit
         }
@@ -337,6 +339,7 @@ internal class SettingsState(
         speechEngine = runCatching { SpeechEngine.valueOf(speechStorage.getEngine()) }
             .getOrDefault(SpeechEngine.SYSTEM)
         username = accountStorage.getUserName()
+        email = accountStorage.getEmail()
         phone = accountStorage.getPhoneNumber()
         gender = accountStorage.getGender()
         assistantName = assistantStorage.getName()

@@ -57,7 +57,7 @@ fun findEmailContactTool() = ToolDefinition(
     description = universalToolDescription(
         purpose = "Searches saved email contacts by name/address and returns matching contact details.",
         trigger = "The user asks for a saved contact's email or wants an email drafted to someone identified by name.",
-        notFor = "Do not use for general phone contacts or SMS numbers; never guess an email address.",
+        notFor = "Do not use for the user's own email (it is in the user profile) or general phone contacts; never guess an email address.",
         prerequisite = "A `query` is required; ask the user to choose if multiple contacts match.",
     ),
     parameters = buildJsonObject {

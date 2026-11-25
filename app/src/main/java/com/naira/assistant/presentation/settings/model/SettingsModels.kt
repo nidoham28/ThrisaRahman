@@ -24,8 +24,10 @@ internal enum class EditField(
     val placeholder: String,
     val isPhoneNumber: Boolean = false,
     val requiresNonBlank: Boolean = false,
+    val isEmail: Boolean = false,
 ) {
     USERNAME("Username", "How the assistant should address you.", "e.g. Rahim"),
+    EMAIL("Email", "Your profile email address.", "e.g. you@example.com", isEmail = true),
     PHONE("Phone number", "Your profile phone number.", "+880 1XXXXXXXXX", isPhoneNumber = true),
     CUSTOM_USER_AGENT(
         "Custom user-agent",

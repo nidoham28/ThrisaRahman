@@ -288,6 +288,7 @@ class AssistantViewModel(
         val configuredRelationship = assistantSettingsStorage.getRelationship()
         val user = User(
             username = accountStorage.getUserName().takeIf(String::isNotBlank),
+            email = accountStorage.getEmail().takeIf(String::isNotBlank),
             gender = selectedGender.label.takeUnless { selectedGender == Gender.UNSPECIFIED },
         )
         return Instructions(

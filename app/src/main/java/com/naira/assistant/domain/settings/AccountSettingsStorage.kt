@@ -77,6 +77,9 @@ class AccountSettingsStorage(context: Context) {
     fun getPhoneNumber(): String = phoneNumber
     fun setPhoneNumber(value: String) { phoneNumber = value }
 
+    fun getEmail(): String = email
+    fun setEmail(value: String) { email = value }
+
     private companion object {
         @Volatile
         var username: String = ""
@@ -86,6 +89,9 @@ class AccountSettingsStorage(context: Context) {
 
         @Volatile
         var phoneNumber: String = ""
+
+        @Volatile
+        var email: String = ""
 
     }
 }

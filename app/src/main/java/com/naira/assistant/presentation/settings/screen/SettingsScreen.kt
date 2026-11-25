@@ -137,7 +137,6 @@ fun SettingsScreen(
     var enableWakeWordAfterPermission by remember { mutableStateOf(false) }
     val permissionStatus = remember(refreshPermissionsTrigger) { checkPermissions(context) }
     val userId = remember(refreshPermissionsTrigger) { authService.currentUser()?.uid }
-    val emailAddress = remember(refreshPermissionsTrigger) { authService.currentUser()?.email.orEmpty() }
 
     LaunchedEffect(userId) {
         state.refreshEmailContacts()
@@ -487,7 +486,6 @@ fun SettingsScreen(
 
     val pageContext = SettingsPageContext(
         state = state,
-        emailAddress = emailAddress,
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         onSaveActiveProvider = ::chooseActiveProvider,
@@ -652,6 +650,7 @@ fun SettingsScreen(
     editingField?.let { field ->
         val initialValue = when (field) {
             EditField.USERNAME -> state.username
+            EditField.EMAIL -> state.email
             EditField.PHONE -> state.phone
             EditField.CUSTOM_USER_AGENT -> state.customUserAgent
             EditField.GEMINI_MODEL -> state.geminiModelId
@@ -711,6 +710,7 @@ fun SettingsScreen(
                         state.saveProfileField(field, value)
                         val patch = when (field) {
                             EditField.USERNAME -> CloudSettingsPatch(username = state.username)
+                            EditField.EMAIL -> CloudSettingsPatch(email = state.email)
                             EditField.PHONE -> CloudSettingsPatch(phone = state.phone)
                             EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
                             EditField.GEMINI_MODEL -> CloudSettingsPatch()

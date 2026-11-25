@@ -123,6 +123,9 @@ private val EMAIL_CONTACT_REGEX = Regex(
 fun validateEmailContactInput(name: String, email: String): String? = when {
     name.isBlank() -> "Enter the contact name."
     email.isBlank() -> "Enter an email address."
-    !EMAIL_CONTACT_REGEX.matches(email.trim()) -> "Enter a valid email address."
+    !isValidEmail(email) -> "Enter a valid email address."
     else -> null
 }
+
+/** Checks the shape of an email address without requiring a contact name. */
+fun isValidEmail(email: String): Boolean = EMAIL_CONTACT_REGEX.matches(email.trim())
