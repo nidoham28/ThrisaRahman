@@ -491,6 +491,15 @@ fun SettingsScreen(
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         onSaveActiveProvider = ::chooseActiveProvider,
+        onSaveModelId = { provider, modelId ->
+            state.saveModelId(provider, modelId)
+            if (provider == AssistantProvider.OPENROUTER) {
+                cloudSettingsRepository.recordChange(
+                    CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
+                )
+                synchronizeCloudSettings()
+            }
+        },
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
         onEditWeatherApiKey = { editingWeatherApiKey = true },

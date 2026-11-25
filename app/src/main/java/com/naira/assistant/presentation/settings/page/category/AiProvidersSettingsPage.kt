@@ -10,10 +10,12 @@ import androidx.compose.material.icons.outlined.VpnKey
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
+import com.naira.assistant.presentation.settings.component.ModelNameDropdown
 import com.naira.assistant.presentation.settings.component.Success
 import com.naira.assistant.presentation.settings.component.TrailingBadge
 import com.naira.assistant.presentation.settings.component.TrailingSwitch
 import com.naira.assistant.presentation.settings.model.EditField
+import com.naira.assistant.presentation.settings.model.ModelPresets
 import com.naira.assistant.presentation.settings.model.SettingsNode
 import com.naira.assistant.presentation.settings.page.CategoryNameUi
 import com.naira.assistant.presentation.settings.page.SettingsPageContext
@@ -43,32 +45,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                             )
                         },
                         children = buildList {
-                            add(
-                                SettingsNode.Item(
-                                    id = "model-${provider.name.lowercase()}",
-                                    title = "Model Name",
-                                    subtitle = when {
-                                        !provider.info.supportsCustomModel -> provider.info.defaultModelId
-                                        else -> when (provider) {
-                                            AssistantProvider.GEMINI -> state.geminiModelId
-                                            AssistantProvider.OPENROUTER -> state.openRouterModelId
-                                            AssistantProvider.TOKENS_BD -> provider.info.defaultModelId
-                                            AssistantProvider.CUSTOM -> provider.info.defaultModelId
-                                        }
-                                    },
-                                    icon = Icons.Outlined.AutoAwesome,
-                                    onClick = if (provider.info.supportsCustomModel) {
-                                        when (provider) {
-                                            AssistantProvider.GEMINI -> ({ onEditField(EditField.GEMINI_MODEL) })
-                                            AssistantProvider.OPENROUTER -> ({ onEditField(EditField.OPENROUTER_MODEL) })
-                                            AssistantProvider.TOKENS_BD -> null
-                                            AssistantProvider.CUSTOM -> null
-                                        }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            )
+                            add(modelItem(provider, state.modelIdFor(provider)))
                             add(
                                 SettingsNode.Item(
                                     id = "reasoning-${provider.name.lowercase()}",
@@ -131,12 +108,9 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                     )
                 },
                 children = listOf(
-                    SettingsNode.Item(
-                        id = "custom-provider-model",
-                        title = "Model Name",
-                        subtitle = state.customProviderModelId.ifBlank { "Enter a model name." },
-                        icon = Icons.Outlined.AutoAwesome,
-                        onClick = { onEditField(EditField.CUSTOM_PROVIDER_MODEL) },
+                    modelItem(
+                        provider = AssistantProvider.CUSTOM,
+                        currentModelId = state.modelIdFor(AssistantProvider.CUSTOM),
                     ),
                     SettingsNode.Item(
                         id = "custom-provider-url",
@@ -179,7 +153,9 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                                 label = "Enable reasoning",
                                 checked = state.assistantThinkingMode != AssistantThinkingMode.OFF,
                                 onCheckedChange = { enabled ->
-                                    onSaveAssistantThinkingMode(if (enabled) AssistantThinkingMode.AUTO else AssistantThinkingMode.OFF)
+                                    onSaveAssistantThinkingMode(
+                                        if (enabled) AssistantThinkingMode.AUTO else AssistantThinkingMode.OFF,
+                                    )
                                 },
                             )
                         },
@@ -187,5 +163,44 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                 ),
             )
         )
+    }
+
+    /** Model row: read-only for fixed providers, dropdown of presets otherwise. */
+    private fun SettingsPageContext.modelItem(
+        provider: AssistantProvider,
+        currentModelId: String,
+    ): SettingsNode.Item {
+        val field = modelEditField(provider)
+        if (field == null) {
+            return SettingsNode.Item(
+                id = "model-${provider.name.lowercase()}",
+                title = "Model Name",
+                subtitle = currentModelId.ifBlank { "Select a model." },
+                icon = Icons.Outlined.AutoAwesome,
+            )
+        }
+        val presets = ModelPresets.forProvider(provider)
+        return SettingsNode.Item(
+            id = "model-${provider.name.lowercase()}",
+            title = "Model Name",
+            subtitle = "Choose a preset or enter a custom model ID.",
+            icon = Icons.Outlined.AutoAwesome,
+            onClick = { onEditField(field) },
+            trailing = {
+                ModelNameDropdown(
+                    selected = currentModelId,
+                    presets = presets,
+                    onSelect = { modelId -> onSaveModelId(provider, modelId) },
+                    onCustom = { onEditField(field) },
+                )
+            },
+        )
+    }
+
+    private fun modelEditField(provider: AssistantProvider): EditField? = when (provider) {
+        AssistantProvider.GEMINI -> EditField.GEMINI_MODEL
+        AssistantProvider.OPENROUTER -> EditField.OPENROUTER_MODEL
+        AssistantProvider.CUSTOM -> EditField.CUSTOM_PROVIDER_MODEL
+        AssistantProvider.TOKENS_BD -> null
     }
 }

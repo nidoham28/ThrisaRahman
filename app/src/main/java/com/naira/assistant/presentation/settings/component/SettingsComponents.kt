@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -389,6 +390,89 @@ internal fun TrailingBadge(text: String, accent: Color = Aqua) {
             .padding(horizontal = 7.dp, vertical = 2.dp)
     ) {
         Text(text, color = accent, fontSize = 9.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/**
+ * Model picker for a provider: a dropdown of pre-added model IDs plus an
+ * escape hatch that opens the free-form model ID dialog.
+ */
+@Composable
+internal fun ModelNameDropdown(
+    selected: String,
+    presets: List<String>,
+    onSelect: (String) -> Unit,
+    onCustom: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = selected.ifBlank { "Choose" },
+                color = Aqua,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 150.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Outlined.KeyboardArrowDown,
+                contentDescription = "Choose model",
+                tint = TextSoft,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(RowSurface)
+                .border(1.dp, CardStroke.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+        ) {
+            presets.forEach { modelId ->
+                val isSelected = modelId == selected
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                modelId,
+                                color = TextHigh,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    tint = Aqua,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(modelId)
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = {
+                    Text("Enter custom model ID…", color = Aqua, fontSize = 14.sp)
+                },
+                onClick = {
+                    expanded = false
+                    onCustom()
+                },
+            )
+        }
     }
 }
 

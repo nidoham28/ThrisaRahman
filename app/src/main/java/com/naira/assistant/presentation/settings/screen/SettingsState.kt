@@ -130,6 +130,30 @@ internal class SettingsState(
         AssistantProvider.CUSTOM -> customProviderKey
     }
 
+    /** Model ID currently in effect for [provider], falling back to its default. */
+    fun modelIdFor(provider: AssistantProvider): String = when (provider) {
+        AssistantProvider.GEMINI -> geminiModelId.trim()
+            .ifEmpty { provider.info.defaultModelId }
+
+        AssistantProvider.OPENROUTER -> openRouterModelId.trim()
+            .ifEmpty { provider.info.defaultModelId }
+
+        AssistantProvider.TOKENS_BD -> provider.info.defaultModelId
+        // The custom placeholder ("custom-model") is not a real model, so an
+        // unset custom provider must stay empty rather than look configured.
+        AssistantProvider.CUSTOM -> customProviderModelId.trim()
+    }
+
+    fun saveModelId(provider: AssistantProvider, value: String) {
+        if (value.isBlank()) return
+        when (provider) {
+            AssistantProvider.GEMINI -> saveGeminiModelId(value)
+            AssistantProvider.OPENROUTER -> saveOpenRouterModelId(value)
+            AssistantProvider.TOKENS_BD -> Unit
+            AssistantProvider.CUSTOM -> saveCustomProviderModelId(value)
+        }
+    }
+
     fun saveApiKey(provider: AssistantProvider, value: String) {
         val cleaned = value.trim()
         when (provider) {
