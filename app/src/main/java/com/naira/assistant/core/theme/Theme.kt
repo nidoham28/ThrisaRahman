@@ -11,86 +11,86 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
-    primary = ThrisaColors.Indigo,
+    primary = NairaColors.Indigo,
     onPrimary = Color.White,
-    primaryContainer = ThrisaColors.IndigoLight,
-    onPrimaryContainer = Color(0xFF17105D),
-    secondary = ThrisaColors.Aqua,
+    primaryContainer = NairaColors.IndigoLight,
+    onPrimaryContainer = Color(0xFF14105B),
+    secondary = NairaColors.Aqua,
     onSecondary = Color(0xFF003731),
-    secondaryContainer = ThrisaColors.AquaLight,
+    secondaryContainer = NairaColors.AquaLight,
     onSecondaryContainer = Color(0xFF00201C),
-    tertiary = Color(0xFF9A4678),
+    tertiary = Color(0xFF8E4A76),
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFFFD8EB),
     onTertiaryContainer = Color(0xFF3B092A),
-    error = ThrisaColors.Error,
+    error = NairaColors.Error,
     onError = Color.White,
-    errorContainer = ThrisaColors.ErrorContainer,
-    onErrorContainer = ThrisaColors.OnErrorContainer,
-    background = ThrisaColors.Canvas,
-    onBackground = ThrisaColors.Ink,
-    surface = ThrisaColors.Surface,
-    onSurface = ThrisaColors.Ink,
-    surfaceVariant = ThrisaColors.SurfaceRaised,
-    onSurfaceVariant = ThrisaColors.InkMuted,
-    outline = ThrisaColors.Outline,
-    outlineVariant = ThrisaColors.OutlineSoft,
+    errorContainer = NairaColors.ErrorContainer,
+    onErrorContainer = NairaColors.OnErrorContainer,
+    background = NairaColors.Canvas,
+    onBackground = NairaColors.Ink,
+    surface = NairaColors.Surface,
+    onSurface = NairaColors.Ink,
+    surfaceVariant = NairaColors.SurfaceRaised,
+    onSurfaceVariant = NairaColors.InkMuted,
+    outline = NairaColors.Outline,
+    outlineVariant = NairaColors.OutlineSoft,
     scrim = Color(0x990D0D18),
-    inverseSurface = ThrisaColors.Ink,
-    inverseOnSurface = ThrisaColors.Canvas,
-    inversePrimary = ThrisaColors.IndigoDark,
-    surfaceTint = ThrisaColors.Indigo
+    inverseSurface = NairaColors.Ink,
+    inverseOnSurface = NairaColors.Canvas,
+    inversePrimary = NairaColors.IndigoDark,
+    surfaceTint = NairaColors.Indigo
 )
 
 private val DarkColors = darkColorScheme(
-    primary = ThrisaColors.IndigoDark,
-    onPrimary = Color(0xFF211975),
-    primaryContainer = Color(0xFF3930B7),
-    onPrimaryContainer = Color(0xFFE5E1FF),
-    secondary = ThrisaColors.AquaDark,
-    onSecondary = Color(0xFF003731),
-    secondaryContainer = Color(0xFF005047),
-    onSecondaryContainer = Color(0xFFB9F2EB),
+    primary = NairaColors.AquaDark,
+    onPrimary = Color(0xFF003731),
+    primaryContainer = Color(0xFF0A5049),
+    onPrimaryContainer = NairaColors.AquaLight,
+    secondary = NairaColors.IndigoDark,
+    onSecondary = Color(0xFF241C70),
+    secondaryContainer = Color(0xFF3B31A8),
+    onSecondaryContainer = Color(0xFFE6E2FF),
     tertiary = Color(0xFFFFAFD8),
     onTertiary = Color(0xFF5D1945),
     tertiaryContainer = Color(0xFF7B305D),
     onTertiaryContainer = Color(0xFFFFD8EB),
-    error = ThrisaColors.DarkError,
+    error = NairaColors.DarkError,
     onError = Color(0xFF690005),
-    errorContainer = ThrisaColors.DarkErrorContainer,
-    onErrorContainer = ThrisaColors.DarkOnErrorContainer,
-    background = ThrisaColors.DarkCanvas,
-    onBackground = ThrisaColors.DarkInk,
-    surface = ThrisaColors.DarkSurface,
-    onSurface = ThrisaColors.DarkInk,
-    surfaceVariant = ThrisaColors.DarkSurfaceRaised,
-    onSurfaceVariant = ThrisaColors.DarkInkMuted,
-    outline = ThrisaColors.DarkOutline,
-    outlineVariant = ThrisaColors.DarkOutlineSoft,
+    errorContainer = NairaColors.DarkErrorContainer,
+    onErrorContainer = NairaColors.DarkOnErrorContainer,
+    background = NairaColors.DarkCanvas,
+    onBackground = NairaColors.DarkInk,
+    surface = NairaColors.DarkSurface,
+    onSurface = NairaColors.DarkInk,
+    surfaceVariant = NairaColors.DarkSurfaceRaised,
+    onSurfaceVariant = NairaColors.DarkInkMuted,
+    outline = NairaColors.DarkOutline,
+    outlineVariant = NairaColors.DarkOutlineSoft,
     scrim = Color(0x99000000),
-    inverseSurface = ThrisaColors.DarkInk,
-    inverseOnSurface = ThrisaColors.DarkCanvas,
-    inversePrimary = ThrisaColors.Indigo,
-    surfaceTint = ThrisaColors.IndigoDark
+    inverseSurface = NairaColors.DarkInk,
+    inverseOnSurface = NairaColors.DarkCanvas,
+    inversePrimary = NairaColors.Aqua,
+    surfaceTint = NairaColors.AquaDark
 )
 
-private val ThrisaShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
+private val NairaShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(26.dp),
     extraLarge = RoundedCornerShape(32.dp)
 )
 
 @Composable
-fun ThrisaTheme(
+fun NairaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = ThrisaTypography,
-        shapes = ThrisaShapes,
+        typography = NairaTypography,
+        shapes = NairaShapes,
         content = content
     )
 }

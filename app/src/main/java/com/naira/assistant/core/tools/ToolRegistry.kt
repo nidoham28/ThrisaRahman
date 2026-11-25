@@ -63,6 +63,9 @@ import com.naira.assistant.core.tools.definition.updateReminderTool
 import com.naira.assistant.core.tools.definition.updateTodoTool
 import com.naira.assistant.core.tools.definition.nairaDeveloperInfoTool
 import com.naira.assistant.core.tools.definition.getWeatherReportTool
+import com.naira.assistant.core.tools.definition.randomBooleanTool
+import com.naira.assistant.core.tools.definition.randomNumberTool
+import com.naira.assistant.core.tools.definition.randomPictureTool
 
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
@@ -156,6 +159,11 @@ object ToolRegistry {
          */
         "terminal_find_tool",
         "terminal_calculate",
+
+        /**
+         * Randomness declarations: picking a private photo exposes user media
+         */
+        "random_picture",
 
     )
 
@@ -279,6 +287,13 @@ object ToolRegistry {
          */
         nairaDeveloperInfoTool(),
         getWeatherReportTool(),
+
+        /**
+         * Randomness declarations
+         */
+        randomNumberTool(),
+        randomBooleanTool(),
+        randomPictureTool(),
 
     ).let { registered ->
         val duplicateNames = registered.groupingBy(ToolDefinition::name)

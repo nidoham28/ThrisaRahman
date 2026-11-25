@@ -52,9 +52,12 @@ import com.naira.assistant.core.sync.FirebaseReminderRepository
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.Lilac
+import com.naira.assistant.core.theme.Danger
 import com.naira.assistant.core.theme.Night
+import com.naira.assistant.core.theme.SuccessAccent
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
+import com.naira.assistant.core.theme.WarningAccent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -63,10 +66,9 @@ import java.util.Locale
 
 /* ────────────────────────── Theme tokens ─────────────────────────── */
 
-private val Surface = Color(0xFF0C1420)
-private val Danger  = Color(0xFFFF6B6B)
-private val Warning = Color(0xFFFFC857)
-private val Success = Color(0xFF4ADE80)
+private val Surface = Color(0xFF0D1622)
+private val Warning = WarningAccent
+private val Success = SuccessAccent
 
 private const val TriggerDateFormat = "EEE, MMM d · h:mm a"
 

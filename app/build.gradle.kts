@@ -41,8 +41,8 @@ android {
         applicationId = "com.naira.assistant"
         minSdk = 26
         targetSdk = 37
-        versionCode = 105
-        versionName = "0.0.6-tara"
+        versionCode = 107
+        versionName = "0.0.7-chand"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -131,6 +131,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

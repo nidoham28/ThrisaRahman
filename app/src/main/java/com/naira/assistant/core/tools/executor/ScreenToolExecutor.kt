@@ -7,7 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
-import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
+import com.naira.assistant.core.service.screen.NairaAccessibilityService
 import com.naira.assistant.core.tools.executor.AppToolExecutor.executeOpenApp
 import com.naira.assistant.core.tools.CommandExecution.jsonStringArg
 import com.naira.assistant.domain.FunctionCall
@@ -25,7 +25,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Executes AI screen-access tools using ThrisaAccessibilityService.
+ * Executes AI screen-access tools using NairaAccessibilityService.
  *
  * Supports:
  * - capture_screen
@@ -76,7 +76,7 @@ object ScreenToolExecutor {
         call: FunctionCall,
         context: Context,
     ): JsonObject {
-        val service = ThrisaAccessibilityService.instance
+        val service = NairaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
         delay(600)
@@ -178,7 +178,7 @@ object ScreenToolExecutor {
         call: FunctionCall,
         context: Context,
     ): JsonObject {
-        val service = ThrisaAccessibilityService.instance
+        val service = NairaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
         val text = try {
@@ -216,7 +216,7 @@ object ScreenToolExecutor {
         call: FunctionCall,
         context: Context,
     ): JsonObject {
-        val service = ThrisaAccessibilityService.instance
+        val service = NairaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
         val action = jsonStringArg(call, "action")
@@ -331,7 +331,7 @@ object ScreenToolExecutor {
         call: FunctionCall,
         context: Context,
     ): JsonObject {
-        val service = ThrisaAccessibilityService.instance
+        val service = NairaAccessibilityService.instance
             ?: return screenAccessDisabled()
 
         val actionName = call.name.trim().lowercase()
@@ -472,7 +472,7 @@ object ScreenToolExecutor {
     // ------------------------------------------------------------------
 
     private suspend fun executeTypeText(
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         call: FunctionCall,
     ): JsonObject {
         val text = jsonStringArg(call, "text")
@@ -517,7 +517,7 @@ object ScreenToolExecutor {
 
     private suspend fun executeComputerUseType(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): JsonObject {
         val text = jsonStringArg(call, "text")
             ?: return error("The Computer Use type action did not include text.")
@@ -580,7 +580,7 @@ object ScreenToolExecutor {
 
     private suspend fun executeComputerUseKeypress(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): JsonObject {
         val key = listOf("key", "key_name", "keycode")
             .firstNotNullOfOrNull { jsonStringArg(call, it) }
@@ -664,7 +664,7 @@ object ScreenToolExecutor {
 
     private suspend fun executeComputerUseScroll(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): JsonObject {
         val direction = jsonStringArg(call, "direction")
             ?.trim()
@@ -742,7 +742,7 @@ object ScreenToolExecutor {
 
     private suspend fun executeComputerUseSwipe(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): JsonObject {
         val x1 = extractNumberArg(call, "x")
             ?: extractNumberArg(call, "start_x")
@@ -795,7 +795,7 @@ object ScreenToolExecutor {
     // ------------------------------------------------------------------
 
     private suspend fun scrollElement(
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         call: FunctionCall,
     ): JsonObject {
         val direction = jsonStringArg(call, "direction")
@@ -854,7 +854,7 @@ object ScreenToolExecutor {
     // ------------------------------------------------------------------
 
     private suspend fun scroll(
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         action: String,
     ): JsonObject {
         val metrics = service.resources.displayMetrics
@@ -893,7 +893,7 @@ object ScreenToolExecutor {
 
     private suspend fun withPoint(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         block: suspend (x: Float, y: Float) -> JsonObject,
     ): JsonObject {
         val x = extractNumberArg(call, "x")?.toFloat()
@@ -915,7 +915,7 @@ object ScreenToolExecutor {
 
     private suspend fun withSwipe(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         block: suspend (
             x1: Float,
             y1: Float,
@@ -963,7 +963,7 @@ object ScreenToolExecutor {
 
     private suspend fun withNormalizedPoint(
         call: FunctionCall,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
         block: suspend (x: Float, y: Float) -> JsonObject,
     ): JsonObject {
         val x = extractNumberArg(call, "x")
@@ -983,7 +983,7 @@ object ScreenToolExecutor {
     private fun normalizedPoint(
         x: Double,
         y: Double,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): Pair<Float, Float>? {
         val metrics = service.resources.displayMetrics
 
@@ -999,7 +999,7 @@ object ScreenToolExecutor {
     private fun screenshotPointToScreen(
         x: Float,
         y: Float,
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): Pair<Float, Float>? {
         if (!x.isFinite() || !y.isFinite()) return null
 
@@ -1028,7 +1028,7 @@ object ScreenToolExecutor {
     }
 
     private fun screenBounds(
-        service: ThrisaAccessibilityService,
+        service: NairaAccessibilityService,
     ): Pair<Float, Float> {
         val metrics = service.resources.displayMetrics
 
@@ -1071,7 +1071,7 @@ object ScreenToolExecutor {
 
     private fun screenAccessDisabled(): JsonObject = error(
         "Screen access is disabled. Ask the user to enable " +
-                "'Thrisa AI Screen Access' for Thrisa in Android accessibility settings."
+                "'Naira AI Screen Access' for Naira in Android accessibility settings."
     )
 
     private fun Boolean.toResult(

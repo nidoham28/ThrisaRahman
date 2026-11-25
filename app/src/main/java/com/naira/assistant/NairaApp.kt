@@ -17,12 +17,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class ThrisaApp : Application(), ViewModelStoreOwner {
+class NairaApp : Application(), ViewModelStoreOwner {
 
     override val viewModelStore = ViewModelStore()
 
     private val assistantViewModelFactory = viewModelFactory {
-        initializer { AssistantViewModel(this@ThrisaApp) }
+        initializer { AssistantViewModel(this@NairaApp) }
     }
 
     fun assistantViewModel(): AssistantViewModel =
@@ -57,7 +57,7 @@ class ThrisaApp : Application(), ViewModelStoreOwner {
     private fun cleanUpLegacySettings() {
         appScope.launch {
             try {
-                LegacySettingsCleanup.clearUnsupportedSettings(this@ThrisaApp)
+                LegacySettingsCleanup.clearUnsupportedSettings(this@NairaApp)
                 if (BuildConfig.DEBUG) {
                     Log.d(TAG, "Legacy settings cleanup completed")
                 }
@@ -73,6 +73,6 @@ class ThrisaApp : Application(), ViewModelStoreOwner {
     }
 
     private companion object {
-        const val TAG = "ThrisaApp"
+        const val TAG = "NairaApp"
     }
 }

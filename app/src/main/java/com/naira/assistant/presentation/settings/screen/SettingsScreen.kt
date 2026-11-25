@@ -52,7 +52,7 @@ import com.naira.assistant.core.service.CloudSettingsSyncResult
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.service.FirebaseCloudSettingsRemoteStore
 import com.naira.assistant.core.service.SharedCloudSettingsLocalStore
-import com.naira.assistant.core.service.screen.ThrisaAccessibilityService
+import com.naira.assistant.core.service.screen.NairaAccessibilityService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
 import com.naira.assistant.core.sync.FirebasePaths
 import com.naira.assistant.core.theme.Night
@@ -157,12 +157,12 @@ fun SettingsScreen(
         if (!awaitingAccessibilityGrant) return@LaunchedEffect
         awaitingAccessibilityGrant = false
         when {
-            ThrisaAccessibilityService.isEnabledInSettings(context) ->
+            NairaAccessibilityService.isEnabledInSettings(context) ->
                 Toast.makeText(context, "Screen access enabled.", Toast.LENGTH_SHORT).show()
             Build.VERSION.SDK_INT >= 33 -> showAccessibilityHelp = true
             else -> Toast.makeText(
                 context,
-                "Screen access is still off. Enable \"Thrisa AI Screen Access\" in Settings → Accessibility.",
+                "Screen access is still off. Enable \"Naira AI Screen Access\" in Settings → Accessibility.",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -472,6 +472,15 @@ fun SettingsScreen(
                     Toast.makeText(context, "Modify-system-settings access is already granted.", Toast.LENGTH_SHORT).show()
                 } else openModifySystemSettings(context)
             },
+            onRequestActivityRecognition = {
+                when {
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ->
+                        Toast.makeText(context, "Activity recognition permission is not needed on this Android version.", Toast.LENGTH_SHORT).show()
+                    permissionStatus.hasActivityRecognition ->
+                        Toast.makeText(context, "Physical activity permission is already granted.", Toast.LENGTH_SHORT).show()
+                    else -> requestSingleLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                }
+            },
             onOpenAccessibility = {
                 if (permissionStatus.hasAccessibility) Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
                 else {
@@ -777,14 +786,14 @@ fun SettingsScreen(
             title = { Text("Screen access is still off") },
             text = {
                 Text(
-                    "If the \"Thrisa AI Screen Access\" toggle was greyed out with a " +
+                    "If the \"Naira AI Screen Access\" toggle was greyed out with a " +
                             "\"Restricted setting\" message, Android 13 and newer block sideloaded " +
                             "apps from enabling accessibility services. To unblock it:\n\n" +
-                            "1. Open Thrisa's App info page\n" +
+                            "1. Open Naira's App info page\n" +
                             "2. Tap the ⋮ menu in the top-right corner\n" +
                             "3. Tap \"Allow restricted settings\"\n" +
                             "4. Come back and grant Screen access again\n\n" +
-                            "Otherwise, enable \"Thrisa AI Screen Access\" directly in " +
+                            "Otherwise, enable \"Naira AI Screen Access\" directly in " +
                             "Settings → Accessibility."
                 )
             },

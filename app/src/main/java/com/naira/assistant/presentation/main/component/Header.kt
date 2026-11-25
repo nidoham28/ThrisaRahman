@@ -30,15 +30,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.Dim
+import com.naira.assistant.core.theme.Lilac
+import com.naira.assistant.core.theme.SuccessAccent
 
 // ───────────────────────── Header ─────────────────────────
 @Composable
@@ -86,13 +89,15 @@ fun Header(
             }
         }
 
-        // ── Center: wordmark (bold + tracking, recentred) ──
+        // ── Center: wordmark (gradient + tracking, recentred) ──
         Text(
             text = "NAIRA",
-            color = colors.onSurface,
-            fontSize = 20.sp,
-            letterSpacing = 4.sp,
-            fontWeight = FontWeight.Bold,
+            style = TextStyle(
+                brush = Brush.horizontalGradient(listOf(Aqua, Lilac)),
+                fontSize = 20.sp,
+                letterSpacing = 5.sp,
+                fontWeight = FontWeight.ExtraBold,
+            ),
             modifier = Modifier.offset(x = 2.dp),
         )
 
@@ -156,8 +161,8 @@ private fun AvatarButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val gradient = Brush.linearGradient(listOf(colors.primary, colors.tertiary))
-    val onlineGreen = Color(0xFF22C55E)
+    val gradient = Brush.linearGradient(listOf(Aqua, Lilac))
+    val onlineGreen = SuccessAccent
 
     Box(
         modifier = modifier

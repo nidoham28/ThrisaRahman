@@ -9,7 +9,10 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.naira.assistant.core.theme.Aqua
+import com.naira.assistant.core.theme.Danger as DangerToken
 import com.naira.assistant.core.theme.Lilac
+import com.naira.assistant.core.theme.SuccessAccent
+import com.naira.assistant.core.theme.WarningAccent
 import com.naira.assistant.domain.settings.RelationType
 
 
@@ -17,12 +20,12 @@ import com.naira.assistant.domain.settings.RelationType
 /*  Theme tokens                                                       */
 /* ------------------------------------------------------------------ */
 
-internal val RowSurface = Color(0xFF0C1420)
-internal val SheetSurface = Color(0xFF0A111B)
-internal val OptionSurface = Color(0xFF091018)
-internal val Danger     = Color(0xFFFF6B6B)
-internal val Premium    = Color(0xFFFFC857)
-internal val Success    = Color(0xFF4ADE80)
+internal val RowSurface = Color(0xFF0D1622)
+internal val SheetSurface = Color(0xFF0B1420)
+internal val OptionSurface = Color(0xFF0A111C)
+internal val Danger     = DangerToken
+internal val Premium    = WarningAccent
+internal val Success    = SuccessAccent
 
 /* ------------------------------------------------------------------ */
 /*  Relation helpers                                                   */

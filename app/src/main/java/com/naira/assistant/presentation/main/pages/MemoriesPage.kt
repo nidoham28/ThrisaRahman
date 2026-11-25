@@ -63,18 +63,20 @@ import com.naira.assistant.core.theme.AquaDeep
 import com.naira.assistant.core.theme.CardBrush
 import com.naira.assistant.core.theme.CardShape
 import com.naira.assistant.core.theme.CardStroke
+import com.naira.assistant.core.theme.Danger
+import com.naira.assistant.core.theme.ErrorSoft
 import com.naira.assistant.core.theme.Lilac
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private val DeleteRed = Color(0xFFE53935)
-private val DeleteErrorText = Color(0xFFFF9F9F)
-private val DialogSurface = Color(0xFF141D2A)
-private val FieldSurfaceFocused = Color(0xFF0F1824)
-private val FieldSurfaceUnfocused = Color(0xFF0B121C)
-private val TagSurface = Color(0xFF141F2D)
+private val DeleteRed = Danger
+private val DeleteErrorText = ErrorSoft
+private val DialogSurface = Color(0xFF121B2A)
+private val FieldSurfaceFocused = Color(0xFF0F1A28)
+private val FieldSurfaceUnfocused = Color(0xFF0C1420)
+private val TagSurface = Color(0xFF15202F)
 private val MinTouchTarget = 48.dp
 
 /**

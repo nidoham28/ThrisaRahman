@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.naira.assistant.core.theme.CardBrush
 import com.naira.assistant.core.theme.CardShape
-import com.naira.assistant.core.theme.CardStroke
+import com.naira.assistant.core.theme.CardStrokeBrush
 import com.naira.assistant.core.theme.Dim
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
@@ -61,7 +61,7 @@ fun GlassCard(
     val decorated = modifier
         .clip(CardShape)
         .background(CardBrush)
-        .border(width = 1.dp, color = CardStroke, shape = CardShape)
+        .border(width = 1.dp, brush = CardStrokeBrush, shape = CardShape)
 
     if (onClick != null) {
         Surface(

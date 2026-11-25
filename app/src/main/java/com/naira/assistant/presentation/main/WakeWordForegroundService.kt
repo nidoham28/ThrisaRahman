@@ -25,7 +25,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.naira.assistant.MainActivity
-import com.naira.assistant.ThrisaApp
+import com.naira.assistant.NairaApp
 import com.naira.assistant.core.sound.AssistantReply
 import com.naira.assistant.core.sound.VoiceChatController
 import com.naira.assistant.core.sound.VoiceConversation
@@ -377,7 +377,7 @@ class WakeWordForegroundService : Service() {
     private fun startMonitoring() {
         if (monitorJob?.isActive == true) return
 
-        val assistantViewModel = (application as ThrisaApp).assistantViewModel()
+        val assistantViewModel = (application as NairaApp).assistantViewModel()
         val voiceConversation = VoiceConversation(
             context = this,
             chat = assistantViewModel.asVoiceChatController(),

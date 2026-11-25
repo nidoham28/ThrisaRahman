@@ -37,7 +37,7 @@ import java.util.Locale
 data class GeneratedImage(val uri: String, val mimeType: String, val savedTo: String)
 
 /**
- * Generates (or edits) an image with Gemini and saves it to Pictures/Thrisa
+ * Generates (or edits) an image with Gemini and saves it to Pictures/Naira
  * when shared storage is available.
  *
  * When [generate] receives a [referenceImage], the request becomes
@@ -126,12 +126,12 @@ object GeminiImageGenerationService {
     private suspend fun saveImage(context: Context, bytes: ByteArray, mimeType: String): GeneratedImage =
         withContext(Dispatchers.IO) {
             val extension = mimeType.substringAfter('/').lowercase(Locale.ROOT).takeIf { it.matches(Regex("[a-z0-9]+")) } ?: "png"
-            val name = "thrisa_${System.currentTimeMillis()}.$extension"
+            val name = "naira_${System.currentTimeMillis()}.$extension"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, name)
                     put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Thrisa")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Naira")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val resolver = context.contentResolver
@@ -143,17 +143,17 @@ object GeminiImageGenerationService {
                     resolver.update(uri, ContentValues().apply {
                         put(MediaStore.Images.Media.IS_PENDING, 0)
                     }, null, null)
-                    GeneratedImage(uri.toString(), mimeType, "Pictures/Thrisa")
+                    GeneratedImage(uri.toString(), mimeType, "Pictures/Naira")
                 } catch (e: Exception) {
                     resolver.delete(uri, null, null)
                     throw e
                 }
             } else {
-                val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir, "Thrisa")
+                val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir, "Naira")
                 check(directory.exists() || directory.mkdirs()) { "Couldn't create the image folder." }
                 val file = File(directory, name)
                 file.writeBytes(bytes)
-                GeneratedImage(Uri.fromFile(file).toString(), mimeType, "Thrisa app storage")
+                GeneratedImage(Uri.fromFile(file).toString(), mimeType, "Naira app storage")
             }
         }
 

@@ -55,7 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.naira.assistant.R
 import com.naira.assistant.core.theme.Aqua
+import com.naira.assistant.core.theme.CardShape
 import com.naira.assistant.core.theme.CardStroke
+import com.naira.assistant.core.theme.Danger
+import com.naira.assistant.core.theme.DrawerSurface
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 
@@ -102,10 +105,8 @@ private val DrawerSections = listOf(
 
 /* -------------------------- Theme tokens ----------------------------- */
 
-private val DrawerBackground = Color(0xFF080E17)
-private val HeaderSurface = Color(0xFF0C1420)
-private val AvatarSurface = Color(0xFF12302F)
-private val Danger = Color(0xFFFF6B6B)
+private val HeaderSurface = Color(0xFF0E1726)
+private val AvatarSurface = Color(0xFF10332F)
 
 private val DrawerWidth = 304.dp
 private val RowShape = RoundedCornerShape(14.dp)
@@ -128,7 +129,7 @@ fun AppDrawer(
         modifier
             .fillMaxHeight()
             .width(DrawerWidth)
-            .background(DrawerBackground)
+            .background(DrawerSurface)
             // Respects status bar (notch) top + gesture/nav bar bottom.
             .windowInsetsPadding(
                 WindowInsets.safeDrawing.only(
@@ -176,8 +177,9 @@ private fun ProfileCard(name: String, hint: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(CardShape)
             .background(HeaderSurface)
+            .border(1.dp, CardStroke.copy(alpha = 0.6f), CardShape)
             .padding(horizontal = 16.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

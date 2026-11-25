@@ -4,7 +4,7 @@
 0.0.4-brishti   [x]      0.0.29-amaboshya     0.0.54-agrahayon     0.0.79-polash
 0.0.5-shonali   [x]      0.0.30-usha          0.0.55-poush         0.0.80-shimul
 0.0.6-tara      [x]    0.0.31-godhuli       0.0.56-magh          0.0.81-kashful
-0.0.7-chand         0.0.32-bhor          0.0.57-falgun        0.0.82-jhau
+0.0.7-chand     [x]    0.0.32-bhor          0.0.57-falgun        0.0.82-jhau
 0.0.8-surjo         0.0.33-shondha       0.0.58-choitro       0.0.83-tamal
 0.0.9-akash         0.0.34-ratri         0.0.59-boshonto      0.0.84-hijol
 0.0.10-nodi         0.0.35-dupur         0.0.60-grishmo       0.0.85-doyel

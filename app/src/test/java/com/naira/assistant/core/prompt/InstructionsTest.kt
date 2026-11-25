@@ -2,6 +2,9 @@ package com.naira.assistant.core.prompt
 
 import com.naira.assistant.core.prompt.character.util.Character
 import com.naira.assistant.core.prompt.user.User
+import com.naira.assistant.core.sensor.PhoneSensorReading
+import com.naira.assistant.core.sensor.PhoneSensorSnapshot
+import com.naira.assistant.core.sensor.classifyPhoneActivity
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,5 +69,79 @@ class InstructionsTest {
         assertTrue(prompt.contains("Ask only about a critical detail still missing"))
         assertTrue(prompt.contains("Ask to expand the character's"))
         assertTrue(prompt.contains("knowledge list only if the user requests it"))
+    }
+
+    @Test
+    fun `virtual body sensor model distinguishes conceptual mappings from actual device access`() {
+        val prompt = Instructions(
+            character = Character(),
+            user = User(),
+            language = "English",
+            relationship = "Friends",
+            moodLabels = listOf("Happy", "Neutral"),
+        ).build().replace(Regex("\\s+"), " ")
+
+        assertTrue(prompt.contains("VIRTUAL HUMAN BODY AND SENSOR MODEL"))
+        assertTrue(prompt.contains("virtual human, not a pet robot"))
+        assertTrue(prompt.contains("Accelerometer, gravity, and linear acceleration"))
+        assertTrue(prompt.contains("Gyroscope and rotation vector"))
+        assertTrue(prompt.contains("Magnetometer can help estimate heading"))
+        assertTrue(prompt.contains("Step counter reports steps since device boot"))
+        assertTrue(prompt.contains("Walking-like and running-like states are heuristics"))
+        assertTrue(prompt.contains("Ambient light, proximity, ambient temperature, pressure, and humidity"))
+        assertTrue(prompt.contains("ToF, camera, microphone, and edge/drop sensing are not read"))
+        assertTrue(prompt.contains("only when it is supplied by the conversation, included in the live phone sensor snapshot"))
+        assertTrue(prompt.contains("not sensations or movement from the virtual character itself"))
+        assertTrue(prompt.contains("step-counter sensors"))
+        assertTrue(prompt.contains("optional Android physical activity permission"))
+        assertTrue(prompt.contains("Camera, microphone, touchscreen, and ToF readings are not collected here"))
+    }
+
+    @Test
+    fun `live phone sensor readings are included in the generated system instructions`() {
+        val snapshot = PhoneSensorSnapshot(
+            readings = listOf(
+                PhoneSensorReading(
+                    name = "Accelerometer",
+                    values = listOf(0.12f, -0.5f, 9.81f),
+                    unit = "m/s^2",
+                ),
+                PhoneSensorReading(
+                    name = "Proximity",
+                    values = listOf(5f),
+                    unit = "cm",
+                    maximumRange = 5f,
+                ),
+            ),
+            unavailableSensors = listOf("Ambient temperature"),
+            permissionRequiredSensors = emptyList(),
+            uncapturedSensors = emptyList(),
+            activityEstimate = "WALKING-LIKE; 15 steps observed in the last 10 seconds; estimated cadence 90 steps/minute",
+        )
+
+        val prompt = Instructions(
+            character = Character(),
+            user = User(),
+            language = "English",
+            relationship = "Friends",
+            moodLabels = listOf("Happy", "Neutral"),
+            phoneSensorSnapshot = snapshot,
+        ).build().replace(Regex("\\s+"), " ")
+
+        assertTrue(prompt.contains("Accelerometer: 0.12, -0.50, 9.81 m/s^2"))
+        assertTrue(prompt.contains("Proximity: 5.00 cm (maximum range 5.00 cm)"))
+        assertTrue(prompt.contains("Not present on this phone: Ambient temperature"))
+        assertTrue(prompt.contains("Phone-carrier activity estimate: WALKING-LIKE"))
+    }
+
+    @Test
+    fun `phone step cadence yields cautious activity labels`() {
+        assertTrue(classifyPhoneActivity(15, hasFullObservationWindow = true).label == "WALKING-LIKE")
+        assertTrue(classifyPhoneActivity(30, hasFullObservationWindow = true).label == "RUNNING-LIKE")
+        assertTrue(
+            classifyPhoneActivity(0, hasFullObservationWindow = true)
+                .label == "STATIONARY-LIKE OR PHONE NOT CARRIED",
+        )
+        assertTrue(classifyPhoneActivity(4, hasFullObservationWindow = false).label == "INDETERMINATE")
     }
 }

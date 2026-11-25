@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import com.naira.assistant.core.database.LegacyDatabaseFiles
 
 class SqliteTodoDatabase private constructor(
     context: Context,
@@ -362,7 +363,8 @@ class SqliteTodoDatabase private constructor(
     )
 
     companion object {
-        const val DATABASE_NAME = "thrisa_todos.db"
+        const val DATABASE_NAME = "naira_todos.db"
+        const val LEGACY_DATABASE_NAME = "thrisa_todos.db"
         const val DATABASE_VERSION = 1
 
         const val TABLE_TODOS = "todos"
@@ -384,6 +386,7 @@ class SqliteTodoDatabase private constructor(
 
         fun getInstance(context: Context): SqliteTodoDatabase =
             instance ?: synchronized(this) {
+                LegacyDatabaseFiles.renameLegacyDatabase(context, LEGACY_DATABASE_NAME, DATABASE_NAME)
                 instance ?: SqliteTodoDatabase(context.applicationContext).also { instance = it }
             }
 

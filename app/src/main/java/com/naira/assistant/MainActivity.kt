@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import com.naira.assistant.core.navigation.ThrisaNavScaffold
-import com.naira.assistant.core.theme.ThrisaTheme
+import com.naira.assistant.core.navigation.NairaNavScaffold
+import com.naira.assistant.core.theme.NairaTheme
 import com.naira.assistant.domain.settings.UserSettingsStorage
 
 class MainActivity : ComponentActivity() {
@@ -40,13 +40,13 @@ class MainActivity : ComponentActivity() {
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
-            ThrisaTheme(darkTheme = darkTheme) {
+            NairaTheme(darkTheme = darkTheme) {
                 Box(
                     Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                 ) {
-                    ThrisaNavScaffold(
+                    NairaNavScaffold(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

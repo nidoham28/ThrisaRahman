@@ -8,6 +8,7 @@
 
     <!-- Voice & Speech -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -90,14 +91,14 @@
     </queries>
 
     <application
-        android:name=".ThrisaApp"
+        android:name=".NairaApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/app_icon"
         android:roundIcon="@drawable/app_icon"
         android:label="@string/app_name"
-        android:theme="@style/Theme.ThrisaRahman"
+        android:theme="@style/Theme.Naira"
         android:supportsRtl="true"
         android:resizeableActivity="true"
         android:enableOnBackInvokedCallback="true"
@@ -108,7 +109,7 @@
             android:exported="true"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.ThrisaRahman">
+            android:theme="@style/Theme.Naira">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -129,7 +130,7 @@
             android:stopWithTask="false" />
 
         <service
-            android:name=".core.service.screen.ThrisaAccessibilityService"
+            android:name=".core.service.screen.NairaAccessibilityService"
             android:label="@string/accessibility_service_label"
             android:description="@string/accessibility_service_description"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

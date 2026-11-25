@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import com.naira.assistant.core.database.LegacyDatabaseFiles
 
 class SqliteNoteDatabase private constructor(
     context: Context,
@@ -269,7 +270,8 @@ class SqliteNoteDatabase private constructor(
     )
 
     companion object {
-        const val DATABASE_NAME = "thrisa_notes.db"
+        const val DATABASE_NAME = "naira_notes.db"
+        const val LEGACY_DATABASE_NAME = "thrisa_notes.db"
         const val DATABASE_VERSION = 1
 
         const val TABLE_NOTES = "notes"
@@ -288,6 +290,7 @@ class SqliteNoteDatabase private constructor(
 
         fun getInstance(context: Context): SqliteNoteDatabase =
             instance ?: synchronized(this) {
+                LegacyDatabaseFiles.renameLegacyDatabase(context, LEGACY_DATABASE_NAME, DATABASE_NAME)
                 instance ?: SqliteNoteDatabase(context.applicationContext).also { instance = it }
             }
 

@@ -38,6 +38,8 @@ import com.naira.assistant.core.tools.executor.DeviceToolExecutor.executeGetDevi
 import com.naira.assistant.core.tools.executor.executeFindTerminalTool
 import com.naira.assistant.core.tools.executor.executeNairaDeveloperInfo
 import com.naira.assistant.core.tools.executor.executeTerminalCalculation
+import com.naira.assistant.core.tools.executor.RandomPictureResult
+import com.naira.assistant.core.tools.executor.RandomToolExecutor
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeGetMediaStatus
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaPlaybackControl
 import com.naira.assistant.core.tools.executor.MediaToolExecutor.executeMediaVolumeControl
@@ -113,6 +115,7 @@ class ToolCallDispatcher(
         return when (call.name) {
             "capture_screen" -> executeScreenTool(call) { ScreenToolExecutor.executeCaptureScreen(call, appContext) }
             "perform_screen_action" -> executeScreenTool(call) { ScreenToolExecutor.executePerformScreenAction(call, appContext) }
+            "random_picture" -> executeRandomPictureTool(call)
             else -> AssistantToolResult(
                 if (call.name in ioBoundToolNames) {
                     withContext(Dispatchers.IO) { executeRegisteredTool(call) }
@@ -142,6 +145,28 @@ class ToolCallDispatcher(
         return AssistantToolResult(
             response = response,
             image = ScreenToolExecutor.consumeLastCapture(),
+        )
+    }
+
+    /**
+     * Runs the random-picture tool with the same failure contract as screen
+     * tools: exceptions become structured error JSON, and the picked photo is
+     * attached to the result for display in the conversation.
+     */
+    private suspend fun executeRandomPictureTool(
+        call: FunctionCall,
+    ): AssistantToolResult {
+        val outcome = try {
+            withContext(Dispatchers.IO) { RandomToolExecutor.executeRandomPicture(call, appContext) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            RandomPictureResult(toolFailure(call.name, exception), null)
+        }
+        return AssistantToolResult(
+            response = outcome.response,
+            image = outcome.image,
+            imageMimeType = "image/jpeg",
         )
     }
 
@@ -237,6 +262,12 @@ object CommandExecution {
 
                     "get_device_info" ->
                         executeGetDeviceInfo(call, appContext)
+
+                    "random_number" ->
+                        RandomToolExecutor.executeRandomNumber(call)
+
+                    "random_boolean" ->
+                        RandomToolExecutor.executeRandomBoolean(call)
 
                     // ── Terminal ──────────────────────────────────
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,10 +35,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.naira.assistant.core.sound.VoiceState
 import com.naira.assistant.core.theme.Aqua
-import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.ErrorSoft
 import com.naira.assistant.core.theme.HeroBrush
 import com.naira.assistant.core.theme.HeroShape
+import com.naira.assistant.core.theme.HeroStroke
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.core.util.GreetingProvider
@@ -81,7 +82,7 @@ fun HeroCard(
             .fillMaxWidth()
             .clip(HeroShape)
             .background(HeroBrush)
-            .border(1.dp, CardStroke, HeroShape)
+            .border(1.dp, HeroStroke, HeroShape)
             .padding(horizontal = 20.dp, vertical = 20.dp),
     ) {
         // Header. No SpaceBetween + weight(1f) + Spacer dance — just a Column
@@ -180,15 +181,25 @@ private fun StatusLabel(voice: VoiceState) {
 
 @Composable
 private fun StatusChip(label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).background(Aqua, CircleShape))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(Aqua.copy(alpha = 0.10f))
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .background(Aqua, CircleShape)
+        )
         Spacer(Modifier.width(8.dp))
         Text(
             text = label,
             color = Aqua,
-            fontSize = 13.sp,
-            letterSpacing = 1.6.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            letterSpacing = 1.4.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }

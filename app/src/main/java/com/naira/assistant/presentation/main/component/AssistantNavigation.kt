@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
@@ -49,6 +50,8 @@ import com.naira.assistant.core.sound.isActive
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
 import com.naira.assistant.core.theme.Dim
+import com.naira.assistant.core.theme.MicRing
+import com.naira.assistant.core.theme.NavBarSurface
 import com.naira.assistant.core.theme.OnAqua
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.domain.MicIndex
@@ -66,14 +69,14 @@ fun AssistantNavigation(
     Column(
         modifier
             .fillMaxWidth()
-            .background(Color(0xFF070C14))
+            .background(NavBarSurface)
             .navigationBarsPadding()
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(CardStroke)
+                .background(CardStroke.copy(alpha = 0.7f))
         )
         Box(Modifier.fillMaxWidth()) {
             Row(
@@ -182,11 +185,11 @@ fun MicButton(
         Box(
             Modifier
                 .offset(y = lift) // raised above the bar
-                .shadow(18.dp, CircleShape, ambientColor = Aqua, spotColor = Aqua)
+                .shadow(20.dp, CircleShape, ambientColor = Aqua, spotColor = Aqua)
                 .size(Dim.Mic)
                 .clip(CircleShape)
-                .background(Aqua)
-                .border(4.dp, Color(0xFF0B2F2F), CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFF5CF0DD), Aqua)))
+                .border(4.dp, MicRing, CircleShape)
                 .clickable(
                     role = Role.Button,
                     onClick = onClick,

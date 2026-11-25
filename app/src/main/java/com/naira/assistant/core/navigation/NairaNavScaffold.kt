@@ -29,7 +29,7 @@ import kotlinx.coroutines.CancellationException
 private const val NOTICE_KEY = "notice"
 
 @Composable
-fun ThrisaNavScaffold(
+fun NairaNavScaffold(
     modifier: Modifier = Modifier
 ) {
     val navController = rememberNavController()

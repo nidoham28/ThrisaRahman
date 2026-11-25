@@ -1,9 +1,6 @@
 package com.naira.assistant.presentation.main
 
-import android.content.ActivityNotFoundException
 import android.content.Context
-import android.content.Intent
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -20,6 +17,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -31,11 +29,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.naira.assistant.ThrisaApp
+import com.naira.assistant.NairaApp
 import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.service.CloudSettingsRepository
 import com.naira.assistant.core.service.CloudSettingsSyncResult
@@ -54,6 +53,7 @@ import com.naira.assistant.presentation.main.component.AppDrawer
 import com.naira.assistant.presentation.main.component.AssistantNavigation
 import com.naira.assistant.presentation.main.component.DrawerAction
 import com.naira.assistant.presentation.main.component.Header
+import com.naira.assistant.presentation.main.component.ImageViewerDialog
 import com.naira.assistant.presentation.main.component.ReminderInboxDialog
 import com.naira.assistant.presentation.main.pages.ChatPage
 import com.naira.assistant.presentation.main.pages.HomePage
@@ -84,12 +84,32 @@ fun MainScreen(
     onDrawerAction: (DrawerAction) -> Unit = {},
 ) {
     val appContext = context.applicationContext
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+    DisposableEffect(lifecycle, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.startPhoneSensorTracking()
+                Lifecycle.Event.ON_PAUSE -> viewModel.stopPhoneSensorTracking()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            viewModel.startPhoneSensorTracking()
+        }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            viewModel.stopPhoneSensorTracking()
+        }
+    }
 
     // --- UI state -----------------------------------------------------------
     var selectedTab by rememberSaveable { mutableIntStateOf(Tab.HOME) }
     var showReminderInbox by rememberSaveable { mutableStateOf(false) }
+    var viewedImage by remember { mutableStateOf<String?>(null) }
 
     // --- Stable singletons --------------------------------------------------
     val accountStorage = remember(appContext) { AccountSettingsStorage(appContext) }
@@ -263,7 +283,7 @@ fun MainScreen(
                             messages = messages,
                             busyStatus = chatBusyStatus,
                             onSend = { text, imageUri -> viewModel.sendMessageStream(text, imageUri) },
-                            onOpenImage = { imageUri -> openImage(context, imageUri) },
+                            onOpenImage = { imageUri -> viewedImage = imageUri },
                             onClearChat = viewModel::newChat,
                             onStop = viewModel::cancelCurrent,
                         )
@@ -292,6 +312,13 @@ fun MainScreen(
                 },
             )
         }
+
+        viewedImage?.let { imageUri ->
+            ImageViewerDialog(
+                imageUrl = imageUri,
+                onDismiss = { viewedImage = null },
+            )
+        }
     }
 }
 
@@ -301,7 +328,7 @@ fun MainScreen(
 
 @Composable
 private fun defaultAssistantViewModel(context: Context): AssistantViewModel {
-    return (context.applicationContext as ThrisaApp).assistantViewModel()
+    return (context.applicationContext as NairaApp).assistantViewModel()
 }
 
 private fun loadDisplayName(storage: AccountSettingsStorage): String =
@@ -309,19 +336,3 @@ private fun loadDisplayName(storage: AccountSettingsStorage): String =
 
 private fun loadVoiceLanguage(storage: AssistantSettingsStorage): String =
     storage.getLanguage().sttLanguageTag()
-
-/** Opens an image in the user's viewer app, with feedback if none can handle it. */
-private fun openImage(context: Context, imageUri: String) {
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(imageUri.toUri(), "image/*")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        // Deliberately no FLAG_ACTIVITY_NEW_TASK: `context` is the Activity,
-        // and NEW_TASK on ACTION_VIEW opens the viewer in a separate task —
-        // confusing when Back lands on the launcher instead of the app.
-    }
-    try {
-        context.startActivity(intent)
-    } catch (_: ActivityNotFoundException) {
-        Toast.makeText(context, "Couldn't open this image.", Toast.LENGTH_SHORT).show()
-    }
-}

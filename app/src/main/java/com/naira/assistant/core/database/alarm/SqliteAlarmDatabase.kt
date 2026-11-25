@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import com.naira.assistant.core.database.LegacyDatabaseFiles
 
 class SqliteAlarmDatabase private constructor(
     context: Context,
@@ -241,7 +242,8 @@ class SqliteAlarmDatabase private constructor(
     )
 
     companion object {
-        const val DATABASE_NAME = "thrisa_alarms.db"
+        const val DATABASE_NAME = "naira_alarms.db"
+        const val LEGACY_DATABASE_NAME = "thrisa_alarms.db"
         const val DATABASE_VERSION = 1
 
         const val TABLE_ALARMS = "alarms"
@@ -261,6 +263,7 @@ class SqliteAlarmDatabase private constructor(
 
         fun getInstance(context: Context): SqliteAlarmDatabase =
             instance ?: synchronized(this) {
+                LegacyDatabaseFiles.renameLegacyDatabase(context, LEGACY_DATABASE_NAME, DATABASE_NAME)
                 instance ?: SqliteAlarmDatabase(context.applicationContext).also { instance = it }
             }
 

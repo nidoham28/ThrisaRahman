@@ -92,23 +92,25 @@ import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
+import com.naira.assistant.core.theme.ErrorSoft
+import com.naira.assistant.core.theme.FieldSurface
 import com.naira.assistant.core.theme.Night
 import com.naira.assistant.core.theme.OnAqua
+import com.naira.assistant.core.theme.SuccessAccent
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import com.naira.assistant.presentation.main.UiMessage
 import com.naira.assistant.presentation.main.UiToolCall
 import kotlinx.coroutines.launch
 
-// Local surface colors
-private val FieldSurface = Color(0xFF0D1520)
-private val UserBubble = Color(0xFF123C3B)
-private val AssistantBubble = Color(0xFF0E1621)
-private val ErrorBubble = Color(0xFF2A1518)
-private val ErrorStroke = Color(0xFF5A2A2E)
-private val ErrorText = Color(0xFFFF9F9F)
-private val ToolChipSurface = Color(0xFF0B1219)
-private val ToolSuccess = Color(0xFF4ADE80)
+// Chat-specific surfaces, tuned to the shared night palette.
+private val UserBubble = Color(0xFF0F3D3A)
+private val AssistantBubble = Color(0xFF101B2A)
+private val ErrorBubble = Color(0xFF2B161A)
+private val ErrorStroke = Color(0xFF5C2B30)
+private val ErrorText = ErrorSoft
+private val ToolChipSurface = Color(0xFF0C1523)
+private val ToolSuccess = SuccessAccent
 
 // Type scale
 private val TitleSize = 20.sp
@@ -126,16 +128,6 @@ private val Suggestions = listOf(
     "Help me plan a productive day",
     "Explain something complicated in simple words",
 )
-
-/**
- * True when [uri] can be handed to an external viewer app.
- *
- * Accepts `content://` (Photo Picker / SAF) and `file://` (saved images).
- * `http(s)://` is deliberately excluded — the receiving app would need a
- * network permission and the tap-to-open flow is meant for local attachments.
- */
-private fun isOpenableImageUri(uri: String): Boolean =
-    uri.startsWith("content://") || uri.startsWith("file://")
 
 @Composable
 fun ChatPage(
@@ -309,7 +301,7 @@ fun ChatPage(
                     ),
                     placeholder = {
                         Text(
-                            text = "Ask me anything?",
+                            text = "Message Naira…",
                             color = TextSoft,
                             fontSize = BodySize,
                             lineHeight = BodyLineHeight,
@@ -498,7 +490,7 @@ private fun AttachmentPreview(uri: String, onRemove: () -> Unit) {
                     Modifier
                         .size(24.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xCC0D1520)),
+                        .background(Color(0xCC0D1622)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -1061,10 +1053,11 @@ private fun MessageImage(
     hasText: Boolean,
     onOpenImage: (String) -> Unit,
 ) {
-    val canOpen = isOpenableImageUri(imageUri)
     if (hasText) Spacer(Modifier.height(10.dp))
 
     // minHeight keeps the bubble from collapsing to 0 while the image loads.
+    // Tapping always opens the in-app viewer: external viewer apps crash on
+    // `file://` cache URIs (FileUriExposedException) and cannot read them.
     AsyncImage(
         model = imageUri.toUri(),
         contentDescription = if (isUser) "Attached photo" else "Generated image",
@@ -1074,29 +1067,22 @@ private fun MessageImage(
             .heightIn(min = 60.dp, max = 380.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(FieldSurface)
-            .then(
-                if (canOpen) {
-                    Modifier.clickable(
-                        role = Role.Button,
-                        onClickLabel = "Open image",
-                        onClick = { onOpenImage(imageUri) },
-                    )
-                } else Modifier
-            )
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "Open image",
+                onClick = { onOpenImage(imageUri) },
+            ),
     )
 
     val caption = when {
-        savedTo != null -> "Saved to $savedTo" + if (canOpen) " · tap to open" else ""
-        canOpen -> "Tap to open"
-        else -> null
+        savedTo != null -> "Saved to $savedTo · tap to view"
+        else -> "Tap to view"
     }
-    caption?.let {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = it,
-            color = TextSoft,
-            fontSize = CaptionSize,
-            lineHeight = 16.sp
-        )
-    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = caption,
+        color = TextSoft,
+        fontSize = CaptionSize,
+        lineHeight = 16.sp
+    )
 }

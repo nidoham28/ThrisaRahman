@@ -40,10 +40,10 @@ import androidx.core.graphics.scale
  *  - [readScreenText] from the active window's content tree,
  *  - gestures and global actions ([tap], [swipe], [performGlobal], [typeText]).
  */
-class ThrisaAccessibilityService : AccessibilityService() {
+class NairaAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "ThrisaA11y"
+        private const val TAG = "NairaA11y"
 
         /** Duration of a single tap / long-press stroke, in milliseconds. */
         private const val TAP_DURATION_MS = 50L
@@ -59,7 +59,7 @@ class ThrisaAccessibilityService : AccessibilityService() {
          * calling `instance?.foo()`).
          */
         @Volatile
-        var instance: ThrisaAccessibilityService? = null
+        var instance: NairaAccessibilityService? = null
             private set
 
         /** True when the user has enabled the service and the system has bound it. */
@@ -73,7 +73,7 @@ class ThrisaAccessibilityService : AccessibilityService() {
         fun isEnabledInSettings(context: Context): Boolean {
             val manager = context.getSystemService(ACCESSIBILITY_SERVICE)
                     as? AccessibilityManager ?: return false
-            val expected = ComponentName(context, ThrisaAccessibilityService::class.java)
+            val expected = ComponentName(context, NairaAccessibilityService::class.java)
             return manager.getEnabledAccessibilityServiceList(
                 AccessibilityServiceInfo.FEEDBACK_ALL_MASK
             ).any { info ->

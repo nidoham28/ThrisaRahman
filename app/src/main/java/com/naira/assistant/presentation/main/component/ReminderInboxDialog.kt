@@ -34,6 +34,7 @@ import com.naira.assistant.core.database.reminder.ReminderItem
 import com.naira.assistant.core.database.reminder.ReminderStatus
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.core.theme.CardStroke
+import com.naira.assistant.core.theme.SheetSurface
 import com.naira.assistant.core.theme.TextHigh
 import com.naira.assistant.core.theme.TextSoft
 import java.text.SimpleDateFormat
@@ -61,7 +62,7 @@ fun ReminderInboxDialog(
     AlertDialog(
         modifier = modifier,
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF0B1420),
+        containerColor = SheetSurface,
         title = {
             Column {
                 Text(
@@ -159,7 +160,7 @@ private fun ReminderInboxRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF101D2A))
+            .background(Color(0xFF111E2C))
             .border(1.dp, CardStroke, RoundedCornerShape(14.dp))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
