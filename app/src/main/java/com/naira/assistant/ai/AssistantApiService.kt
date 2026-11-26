@@ -467,7 +467,7 @@ class AssistantApiService(context: Context) : AutoCloseable {
 
 private val memoryToolNames = setOf("search_memories", "list_memories", "insert_memory", "update_memory", "remove_memory")
 
-private fun coreToolDefinitions(): List<ToolDefinition> {
+internal fun coreToolDefinitions(): List<ToolDefinition> {
     val querySchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
@@ -479,8 +479,9 @@ private fun coreToolDefinitions(): List<ToolDefinition> {
     val batchSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
-            putJsonArray("calls") {
-                add(buildJsonObject {
+            putJsonObject("calls") {
+                put("type", "array")
+                putJsonObject("items") {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("tool_name") { put("type", "string") }
@@ -490,7 +491,7 @@ private fun coreToolDefinitions(): List<ToolDefinition> {
                         add(kotlinx.serialization.json.JsonPrimitive("tool_name"))
                         add(kotlinx.serialization.json.JsonPrimitive("arguments"))
                     }
-                })
+                }
             }
         }
         putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("calls")) }
@@ -565,7 +566,6 @@ internal fun createAssistantProviderSetting(
     return when (info.apiType) {
         AssistantProviderApiType.GEMINI -> ProviderSetting.Google(
             apiKey = apiKey.trim(),
-            useInteractionsApi = true,
         )
         AssistantProviderApiType.OPENAI_COMPATIBLE -> {
             val baseUrl = when (info.baseUrlPolicy) {

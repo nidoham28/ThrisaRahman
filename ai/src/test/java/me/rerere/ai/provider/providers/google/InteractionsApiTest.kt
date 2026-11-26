@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.google
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -12,6 +13,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -32,17 +34,53 @@ import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Clock
 
 class InteractionsApiTest {
     private val api = InteractionsAPI(OkHttpClient())
+
+    @Test
+    fun `JSON request content type cannot be overridden by custom headers`() {
+        val contentType = AtomicReference<String?>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                contentType.set(request.header("Content-Type"))
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("""{"steps":[]}""".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+
+        runBlocking {
+            InteractionsAPI(client).generateText(
+                providerSetting = ProviderSetting.Google(),
+                messages = listOf(UIMessage.user("hello")),
+                params = TextGenerationParams(
+                    model = Model(modelId = "gemini-3.8-flash"),
+                    customHeaders = listOf(CustomHeader("Content-Type", "text/plain")),
+                ),
+            )
+        }
+
+        assertEquals("application/json", contentType.get())
+    }
 
     @Test
     fun `interactions url follows gemini base url or vertex location`() {
@@ -433,6 +471,46 @@ class InteractionsApiTest {
 
         assertEquals("Deadline expired before operation could complete.", error.message)
         assertTrue(decoder.onClosed().isEmpty())
+    }
+
+    @Test
+    fun `stream failure preserves plain text HTTP errors instead of generic message`() {
+        val failure = interactionsStreamFailure(
+            cause = null,
+            responseCode = 502,
+            responseMessage = "Bad Gateway",
+            body = "upstream temporarily unavailable",
+        )
+
+        assertEquals(
+            "Stream failed (HTTP 502 Bad Gateway): upstream temporarily unavailable",
+            failure.message,
+        )
+    }
+
+    @Test
+    fun `stream failure extracts structured provider errors`() {
+        val failure = interactionsStreamFailure(
+            cause = null,
+            responseCode = 401,
+            responseMessage = "Unauthorized",
+            body = """{"error":{"message":"Invalid API key"}}""",
+        )
+
+        assertEquals("Invalid API key", failure.message)
+    }
+
+    @Test
+    fun `stream failure keeps network errors and reports HTTP status when body is empty`() {
+        val networkFailure = java.io.IOException("connection reset")
+        assertEquals(
+            networkFailure,
+            interactionsStreamFailure(networkFailure, null, null, null),
+        )
+        assertEquals(
+            "Stream failed (HTTP 503 Service Unavailable)",
+            interactionsStreamFailure(null, 503, "Service Unavailable", null).message,
+        )
     }
 
     @Test

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -83,6 +84,19 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "GoogleProvider"
+
+internal fun JsonElement.toGoogleFunctionSchema(): JsonElement = removeElements(
+    listOf(
+        "const",
+        "exclusiveMaximum",
+        "exclusiveMinimum",
+        "format",
+        "additionalProperties",
+        "propertyNames",
+        "enum",
+        "uniqueItems",
+    )
+)
 
 class GoogleProvider(private val client: OkHttpClient, context: Context? = null) : Provider<ProviderSetting.Google> {
     private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
@@ -204,6 +218,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             request = Request.Builder()
                 .url(url)
                 .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .header("Content-Type", "application/json")
                 .configureSessionHeaders(url.toString(), params.sessionId)
                 .post(
                     json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
@@ -262,6 +277,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             request = Request.Builder()
                 .url(url)
                 .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .header("Content-Type", "application/json")
                 .configureSessionHeaders(url.toString(), params.sessionId)
                 .post(
                     json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
@@ -307,33 +323,22 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 t: Throwable?,
                 response: Response?
             ) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.message}")
-
-                try {
-                    if (t == null && response != null) {
-                        val bodyStr = response.body.stringSafe()
-                        if (!bodyStr.isNullOrEmpty()) {
-                            val bodyElement = json.parseToJsonElement(bodyStr)
-                            println(bodyElement)
-                            if (bodyElement is JsonObject) {
-                                exception = Exception(
-                                    bodyElement["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
-                                        ?: "unknown"
-                                )
-                            }
-                        } else {
-                            exception = Exception("Unknown error: ${response.code}")
-                        }
-                    }
-                } catch (e: Throwable) {
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception ?: Exception("Stream failed"))
+                val exception = runCatching {
+                    interactionsStreamFailure(
+                        cause = t,
+                        responseCode = response?.code,
+                        responseMessage = response?.message,
+                        body = response?.body?.stringSafe(),
+                    )
+                }.getOrElse { error ->
+                    interactionsStreamFailure(
+                        cause = t ?: error,
+                        responseCode = response?.code,
+                        responseMessage = response?.message,
+                        body = null,
+                    )
                 }
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
@@ -444,17 +449,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                                     put(
                                         key = "parameters",
                                         element = json.encodeToJsonElement(tool.parameters())
-                                            .removeElements(
-                                                listOf(
-                                                    "const",
-                                                    "exclusiveMaximum",
-                                                    "exclusiveMinimum",
-                                                    "format",
-                                                    "additionalProperties",
-                                                    "propertyNames",
-                                                    "enum",
-                                                )
-                                            )
+                                            .toGoogleFunctionSchema()
                                     )
                                 })
                             }

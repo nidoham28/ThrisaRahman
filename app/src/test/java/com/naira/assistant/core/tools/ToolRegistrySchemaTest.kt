@@ -87,4 +87,15 @@ class ToolRegistrySchemaTest {
             it.jsonPrimitive.content == "query"
         })
     }
+
+    @Test
+    fun `terminal calculator accepts arbitrary variable names`() {
+        val tool = ToolRegistry.definitions.single { it.name == "terminal_calculate" }
+        val variables = tool.parameters.getValue("properties").jsonObject
+            .getValue("variables").jsonObject
+
+        assertTrue(variables.getValue("type").jsonPrimitive.content == "object")
+        assertTrue(variables.getValue("additionalProperties").jsonObject
+            .getValue("type").jsonPrimitive.content == "integer")
+    }
 }

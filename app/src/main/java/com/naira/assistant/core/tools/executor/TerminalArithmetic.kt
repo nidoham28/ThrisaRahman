@@ -8,13 +8,14 @@ internal data class TerminalArithmeticResult(
 
 internal fun parseTerminalArithmetic(
     expression: String,
+    variables: Map<String, Long> = emptyMap(),
 ): TerminalArithmeticResult {
     require(expression.length in 1..128) {
         "Expression must contain between 1 and 128 characters."
     }
 
     return try {
-        TerminalArithmeticParser(expression).parse()
+        TerminalArithmeticParser(expression, variables).parse()
     } catch (exception: ArithmeticException) {
         throw IllegalArgumentException(
             "Calculation exceeds the supported 64-bit integer range.",
@@ -25,6 +26,7 @@ internal fun parseTerminalArithmetic(
 
 private class TerminalArithmeticParser(
     private val source: String,
+    private val variables: Map<String, Long>,
 ) {
     private var position = 0
     private var depth = 0
@@ -148,27 +150,23 @@ private class TerminalArithmeticParser(
         }
 
         val start = position
+        if (position < source.length && source[position] in '0'..'9') {
+            while (position < source.length && source[position] in '0'..'9') position++
+            val value = source.substring(start, position).toLongOrNull()
+                ?: throw IllegalArgumentException("Integer is outside the supported 64-bit range.")
+            return ParsedValue(value = value, shellExpression = value.toString())
+        }
 
-        while (
-            position < source.length &&
-            source[position] in '0'..'9'
-        ) {
+        if (position < source.length && (source[position].isLetter() || source[position] == '_')) {
             position++
+            while (position < source.length && (source[position].isLetterOrDigit() || source[position] == '_')) position++
+            val name = source.substring(start, position)
+            val value = variables[name]
+                ?: throw IllegalArgumentException("Unknown variable '$name'. Provide it in the variables object.")
+            return ParsedValue(value = value, shellExpression = value.toString())
         }
 
-        require(position > start) {
-            "Expected an integer or parenthesized expression."
-        }
-
-        val value = source.substring(start, position).toLongOrNull()
-            ?: throw IllegalArgumentException(
-                "Integer is outside the supported 64-bit range."
-            )
-
-        return ParsedValue(
-            value = value,
-            shellExpression = value.toString(),
-        )
+        throw IllegalArgumentException("Expected an integer, variable, or parenthesized expression.")
     }
 
     private fun combine(

@@ -71,6 +71,34 @@ import kotlin.time.Clock
 
 private const val TAG = "InteractionsAPI"
 
+internal fun interactionsStreamFailure(
+    cause: Throwable?,
+    responseCode: Int?,
+    responseMessage: String?,
+    body: String?,
+): Throwable {
+    val status = responseCode?.let { code ->
+        "HTTP $code" + responseMessage?.takeIf(String::isNotBlank)?.let { " $it" }.orEmpty()
+    }
+
+    if (!body.isNullOrBlank()) {
+        val providerError = runCatching {
+            json.parseToJsonElement(body).parseErrorDetail()
+        }.getOrNull()
+        if (providerError != null) return providerError
+
+        val detail = body.trim().take(512)
+        return IllegalStateException(
+            "Stream failed${status?.let { " ($it)" }.orEmpty()}: $detail",
+            cause,
+        )
+    }
+
+    return cause ?: IllegalStateException(
+        status?.let { "Stream failed ($it)" } ?: "Stream failed",
+    )
+}
+
 // Vertex 上的 Interactions API 只开放 global 和 us/eu 多区域，不支持 us-central1 这类单区域
 internal val VERTEX_INTERACTIONS_LOCATIONS = setOf("global", "us", "eu")
 
@@ -153,20 +181,23 @@ internal class InteractionsAPI(
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        exception = json.parseToJsonElement(bodyRaw).parseErrorDetail()
-                    } else if (t == null && response != null) {
-                        exception = Exception("Unknown error: ${response.code}")
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                } finally {
-                    close(exception ?: Exception("Stream failed"))
+                val exception = try {
+                    interactionsStreamFailure(
+                        cause = t,
+                        responseCode = response?.code,
+                        responseMessage = response?.message,
+                        body = response?.body?.stringSafe(),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "onFailure: failed to read error response", e)
+                    interactionsStreamFailure(
+                        cause = t ?: e,
+                        responseCode = response?.code,
+                        responseMessage = response?.message,
+                        body = null,
+                    )
                 }
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
@@ -192,6 +223,7 @@ internal class InteractionsAPI(
         val request = Request.Builder()
             .url(url)
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .header("Content-Type", "application/json")
             .configureSessionHeaders(url, params.sessionId)
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .configureReferHeaders(providerSetting.baseUrl)
@@ -256,7 +288,10 @@ internal class InteractionsAPI(
                             put("type", "function")
                             put("name", tool.name)
                             put("description", tool.description)
-                            put("parameters", json.encodeToJsonElement(tool.parameters()))
+                            put(
+                                "parameters",
+                                json.encodeToJsonElement(tool.parameters()).toGoogleFunctionSchema(),
+                            )
                         })
                     }
                 }

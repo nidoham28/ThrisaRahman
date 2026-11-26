@@ -7,8 +7,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.json
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -40,6 +42,20 @@ class GoogleRequestMessageTest {
         )
         method.isAccessible = true
         return method.invoke(provider, messages) as JsonArray
+    }
+
+    @Test
+    fun `Google function schema removes unsupported uniqueItems recursively`() {
+        val schema = json.parseToJsonElement(
+            """{"type":"object","properties":{"tags":{"type":"array","uniqueItems":true,"items":{"type":"string","uniqueItems":true}}}}"""
+        ).toGoogleFunctionSchema().jsonObject
+        val tags = schema.getValue("properties").jsonObject.getValue("tags").jsonObject
+        val item = tags.getValue("items").jsonObject
+
+        assertEquals("array", tags.getValue("type").jsonPrimitive.content)
+        assertEquals("string", item.getValue("type").jsonPrimitive.content)
+        assertFalse(tags.containsKey("uniqueItems"))
+        assertFalse(item.containsKey("uniqueItems"))
     }
 
     @Test

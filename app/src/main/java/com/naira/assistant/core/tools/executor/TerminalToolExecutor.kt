@@ -12,6 +12,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.milliseconds
@@ -89,8 +90,21 @@ internal suspend fun executeTerminalCalculation(
     val expression = CommandExecution.jsonStringArg(call, "expression")
         ?: return terminalError("'expression' must be a non-empty arithmetic expression using integers.")
 
+    val variables = when (val element = call.args["variables"]) {
+        null -> emptyMap<String, Long>()
+        is JsonObject -> buildMap<String, Long> {
+            for ((name, value) in element) {
+                val primitive = value as? JsonPrimitive
+                val number = primitive?.takeUnless { it.isString }?.content?.toLongOrNull()
+                    ?: return terminalError("Variable '$name' must be a 64-bit integer.")
+                put(name, number)
+            }
+        }
+        else -> return terminalError("'variables' must be an object of integer values.")
+    }
+
     val calculation = try {
-        parseTerminalArithmetic(expression)
+        parseTerminalArithmetic(expression, variables)
     } catch (exception: IllegalArgumentException) {
         return terminalError(exception.message ?: "The expression is not valid terminal arithmetic.")
     }

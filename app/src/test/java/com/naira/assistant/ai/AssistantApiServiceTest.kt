@@ -55,6 +55,19 @@ class AssistantApiServiceTest {
     }
 
     @Test
+    fun `execute tool schema declares calls as an array of objects`() {
+        val tool = coreToolDefinitions().single { it.name == "execute_tool" }
+        val calls = tool.parameters.getValue("properties").jsonObject
+            .getValue("calls").jsonObject
+        val item = calls.getValue("items").jsonObject
+
+        assertEquals("array", calls.getValue("type").jsonPrimitive.content)
+        assertEquals("object", item.getValue("type").jsonPrimitive.content)
+        assertTrue(item.getValue("properties").jsonObject.containsKey("tool_name"))
+        assertTrue(item.getValue("properties").jsonObject.containsKey("arguments"))
+    }
+
+    @Test
     fun `does not advertise tool calling for a known model without tool support`() {
         val imageGenerationModel = createAssistantModel("gemini-2.5-flash-image")
 
@@ -166,14 +179,14 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `keeps Gemini interactions API settings`() {
+    fun `uses the supported Google GenerateContent API for Gemini assistant`() {
         val setting = createAssistantProviderSetting(
             provider = AssistantProvider.GEMINI,
             apiKey = " gemini-key ",
         ) as ProviderSetting.Google
 
         assertEquals("gemini-key", setting.apiKey)
-        assertEquals(true, setting.useInteractionsApi)
+        assertFalse(setting.useInteractionsApi)
     }
 
     @Test

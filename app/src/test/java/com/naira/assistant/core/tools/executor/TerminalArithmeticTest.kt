@@ -20,6 +20,28 @@ class TerminalArithmeticTest {
     }
 
     @Test
+    fun resolvesArbitraryNamedVariablesBeforeShellEvaluation() {
+        val result = parseTerminalArithmetic("(monthly_income - rent) / people", mapOf(
+            "monthly_income" to 5000L,
+            "rent" to 1000L,
+            "people" to 4L,
+        ))
+
+        assertEquals(1000L, result.value)
+        assertEquals("(((5000-1000))/4)", result.shellExpression)
+    }
+
+    @Test
+    fun rejectsUnknownVariablesAndInvalidIdentifierCharacters() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parseTerminalArithmetic("unknown + 1")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseTerminalArithmetic("x;id", mapOf("x" to 2L))
+        }
+    }
+
+    @Test
     fun rejectsCommandsAndUnsupportedSyntax() {
         assertThrows(IllegalArgumentException::class.java) {
             parseTerminalArithmetic("1 + 2; id")
