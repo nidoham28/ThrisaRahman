@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessagePart
@@ -68,10 +69,29 @@ class AssistantApiServiceTest {
     }
 
     @Test
+    fun `exposes Naira identity information directly without discovery`() {
+        val directTools = directAssistantToolDefinitions(ToolRegistry.definitions)
+
+        assertTrue(directTools.any { it.name == "get_naira_info" })
+        assertTrue(directTools.any { it.name == "search_memories" })
+    }
+
+    @Test
     fun `does not advertise tool calling for a known model without tool support`() {
         val imageGenerationModel = createAssistantModel("gemini-2.5-flash-image")
 
         assertFalse(ModelAbility.TOOL in imageGenerationModel.abilities)
+    }
+
+    @Test
+    fun `enables Google Search only for supported Gemini assistant models`() {
+        val gemini = createAssistantModel("gemini-3.8-flash", enableGoogleSearch = true)
+        val imageModel = createAssistantModel("gemini-2.5-flash-image", enableGoogleSearch = true)
+        val otherProvider = createAssistantModel("openrouter/auto")
+
+        assertTrue(BuiltInTools.Search in gemini.tools)
+        assertTrue(imageModel.tools.isEmpty())
+        assertTrue(otherProvider.tools.isEmpty())
     }
 
     @Test

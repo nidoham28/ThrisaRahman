@@ -29,6 +29,7 @@ import me.rerere.ai.agent.StepRequest
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.Tool as AiTool
 import me.rerere.ai.core.InputSchema
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
@@ -131,13 +132,14 @@ class AssistantApiService(context: Context) : AutoCloseable {
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
         val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
-        val model = createAssistantModel(modelId)
+        val model = createAssistantModel(
+            modelId = modelId,
+            enableGoogleSearch = setting is ProviderSetting.Google,
+        )
         val availableTools = filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled)
         val availableToolNames = availableTools.map(ToolDefinition::name).toSet()
         val discoverCalls = java.util.concurrent.atomic.AtomicInteger()
-        val coreTools = coreToolDefinitions() + toolDefinitions.filter {
-            it.name in memoryToolNames && (sensitiveActionsEnabled || it.name !in ToolRegistry.settingsPermissionRequiredNames)
-        }
+        val coreTools = coreToolDefinitions() + directAssistantToolDefinitions(availableTools)
         val tools = if (ModelAbility.TOOL in model.abilities) {
             (coreTools + AgentOrchestrator.toolDefinition())
                 .map { definition ->
@@ -466,13 +468,29 @@ class AssistantApiService(context: Context) : AutoCloseable {
 }
 
 private val memoryToolNames = setOf("search_memories", "list_memories", "insert_memory", "update_memory", "remove_memory")
+private const val NAIRA_INFO_TOOL_NAME = "get_naira_info"
+
+internal fun directAssistantToolDefinitions(
+    availableTools: List<ToolDefinition>,
+): List<ToolDefinition> = availableTools.filter {
+    it.name in memoryToolNames || it.name == NAIRA_INFO_TOOL_NAME
+}
 
 internal fun coreToolDefinitions(): List<ToolDefinition> {
     val querySchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
-            putJsonObject("query") { put("type", "string") }
-            putJsonObject("top_k") { put("type", "integer"); put("default", 5); put("minimum", 1); put("maximum", 8) }
+            putJsonObject("query") {
+                put("type", "string")
+                put("description", "Describe the user goal, needed data, or action to find a matching app tool.")
+            }
+            putJsonObject("top_k") {
+                put("type", "integer")
+                put("description", "Maximum matching tool schemas to return; use the smallest useful count.")
+                put("default", 5)
+                put("minimum", 1)
+                put("maximum", 8)
+            }
         }
         putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("query")) }
     }
@@ -497,8 +515,16 @@ internal fun coreToolDefinitions(): List<ToolDefinition> {
         putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("calls")) }
     }
     return listOf(
-        ToolDefinition("discover_tools", "Search for uncommon capabilities and return matching tool schemas. Use only when a user request requires a tool not already known in this turn.", querySchema),
-        ToolDefinition("execute_tool", "Execute one or more discovered tools using their exact names and JSON arguments.", batchSchema),
+        ToolDefinition(
+            name = "discover_tools",
+            description = "Find matching app, device, memory, or integration tools by user goal and return their exact schemas. Use before answering or asking the user whenever a required lookup or action may be available but its tool schema is not already present. Do not claim no tool exists until this search has been tried. Do not use for greetings or ordinary conversation.",
+            parameters = querySchema,
+        ),
+        ToolDefinition(
+            name = "execute_tool",
+            description = "Execute one or more calls to tools returned by discover_tools. Use their exact names and arguments, batch independent calls, and wait for results before answering or starting dependent actions.",
+            parameters = batchSchema,
+        ),
     )
 }
 
@@ -616,18 +642,27 @@ internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (th
     AssistantThinkingMode.OFF -> ReasoningLevel.OFF
 }
 
-internal fun createAssistantModel(modelId: String): Model {
+internal fun createAssistantModel(
+    modelId: String,
+    enableGoogleSearch: Boolean = false,
+): Model {
     val modelAbilities = ModelRegistry.getKnownAbilities(modelId)
+    val abilities = buildList {
+        if (modelAbilities == null || ModelAbility.TOOL in modelAbilities) {
+            add(ModelAbility.TOOL)
+        }
+        if (ModelAbility.REASONING in modelAbilities.orEmpty()) {
+            add(ModelAbility.REASONING)
+        }
+    }
     return Model(
         modelId = modelId,
         displayName = modelId,
-        abilities = buildList {
-            if (modelAbilities == null || ModelAbility.TOOL in modelAbilities) {
-                add(ModelAbility.TOOL)
-            }
-            if (ModelAbility.REASONING in modelAbilities.orEmpty()) {
-                add(ModelAbility.REASONING)
-            }
+        abilities = abilities,
+        tools = if (enableGoogleSearch && ModelAbility.TOOL in abilities) {
+            setOf(BuiltInTools.Search)
+        } else {
+            emptySet()
         },
     )
 }
