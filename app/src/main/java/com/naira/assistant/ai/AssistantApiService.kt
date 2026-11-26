@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -29,7 +30,6 @@ import me.rerere.ai.agent.StepRequest
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.Tool as AiTool
 import me.rerere.ai.core.InputSchema
-import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
@@ -62,6 +62,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
 import org.json.JSONObject
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -132,17 +133,15 @@ class AssistantApiService(context: Context) : AutoCloseable {
         require(modelId.isNotBlank()) { "Model id must not be blank" }
 
         val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
-        val model = createAssistantModel(
-            modelId = modelId,
-            enableGoogleSearch = setting is ProviderSetting.Google,
-        )
+        val model = createAssistantModel(modelId)
         val availableTools = filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled)
         val availableToolNames = availableTools.map(ToolDefinition::name).toSet()
+        val registeredToolNames = toolDefinitions.map(ToolDefinition::name).toSet()
         val discoverCalls = java.util.concurrent.atomic.AtomicInteger()
-        val coreTools = coreToolDefinitions() + directAssistantToolDefinitions(availableTools)
-        val tools = if (ModelAbility.TOOL in model.abilities) {
-            (coreTools + AgentOrchestrator.toolDefinition())
-                .map { definition ->
+        val coreTools = coreToolDefinitions()
+        val supportsTools = ModelAbility.TOOL in model.abilities
+        val tools = if (supportsTools) {
+            coreTools.map { definition ->
                     definition.toAgentTool { call ->
                         when (call.name) {
                             "discover_tools" -> withContext(Dispatchers.Default) {
@@ -154,13 +153,14 @@ class AssistantApiService(context: Context) : AutoCloseable {
                                 val query = call.args["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
                                 val topK = call.args["top_k"]?.jsonPrimitive?.intOrNull ?: 5
                                 val matches = ToolRegistry.search(query, topK.coerceIn(1, 8))
-                                    .filter { it.name in availableToolNames }
+                                    .filter { it.name in registeredToolNames }
                                 AssistantToolResult(buildJsonObject {
-                                    put("tools", JsonArray(matches.map { match -> buildJsonObject {
-                                        put("name", match.name)
-                                        put("description", match.description.take(240))
-                                        put("parameters", match.parameters)
-                                    } }))
+                                    put(
+                                        "tools",
+                                        JsonArray(matches.map { match ->
+                                            match.toDiscoveryEntry(match.name in availableToolNames)
+                                        }),
+                                    )
                                 })
                             }
                             "execute_tool" -> {
@@ -172,9 +172,15 @@ class AssistantApiService(context: Context) : AutoCloseable {
                                             val obj = item as? JsonObject
                                             val name = obj?.get("tool_name")?.jsonPrimitive?.contentOrNull
                                             val arguments = obj?.get("arguments") as? JsonObject
-                                            if (name == null || arguments == null || availableTools.none { it.name == name }) {
-                                                buildJsonObject { put("error", "Unknown tool or invalid call; rediscover the tool and check arguments.") }
-                                            } else executeTool(FunctionCall(name = name, args = arguments)).response
+                                            when {
+                                                name == null || arguments == null ->
+                                                    buildJsonObject { put("error", "Invalid tool call; provide a registered tool_name and object arguments.") }
+                                                name !in registeredToolNames ->
+                                                    buildJsonObject { put("error", "Unknown tool; discover a registered tool and use its exact name and schema.") }
+                                                !sensitiveActionsEnabled && name in ToolRegistry.settingsPermissionRequiredNames ->
+                                                    buildJsonObject { put("error", "This tool is permission-restricted. Enable Sensitive assistant actions in Settings > Permissions before using it. No action was performed.") }
+                                                else -> executeTool(FunctionCall(name = name, args = arguments)).response
+                                            }
                                         }
                                     }
                                     AssistantToolResult(buildJsonObject { put("results", JsonArray(results)) })
@@ -187,15 +193,20 @@ class AssistantApiService(context: Context) : AutoCloseable {
         } else {
             emptyList()
         }
+        val currentToolIds = if (supportsTools) {
+            (coreTools + toolDefinitions).map(ToolDefinition::name)
+        } else {
+            emptyList()
+        }
         val provider = providerManager.getProviderByType(setting)
         val request = AgentRequest(
             provider = provider,
             providerSetting = setting,
             messages = listOf(
                 UIMessage.system(
-                    systemPrompt.withToolCapabilityNotice(
-                        supportsTools = ModelAbility.TOOL in model.abilities,
-                    ),
+                    systemPrompt
+                        .withToolCapabilityNotice(supportsTools)
+                        .withAvailableToolCatalog(currentToolIds),
                 ),
             ) + messages,
             tools = tools,
@@ -467,13 +478,42 @@ class AssistantApiService(context: Context) : AutoCloseable {
     }
 }
 
-private val memoryToolNames = setOf("search_memories", "list_memories", "insert_memory", "update_memory", "remove_memory")
-private const val NAIRA_INFO_TOOL_NAME = "get_naira_info"
+internal fun String.withAvailableToolCatalog(toolIds: List<String>): String {
+    val sortedToolIds = toolIds.distinct()
+        .sortedWith(compareBy<String> { it.lowercase(Locale.ROOT) }.thenBy { it })
+    if (sortedToolIds.isEmpty()) return this
 
-internal fun directAssistantToolDefinitions(
-    availableTools: List<ToolDefinition>,
-): List<ToolDefinition> = availableTools.filter {
-    it.name in memoryToolNames || it.name == NAIRA_INFO_TOOL_NAME
+    return buildString {
+        append(this@withAvailableToolCatalog)
+        append(
+            "\n\n## Available tool IDs (A-Z)\n" +
+                "Each exact tool name below is its ID. This is the complete registered inventory, " +
+                "including permission-gated tools, and intentionally contains no descriptions or schemas. " +
+                "The only callable functions are " +
+                "discover_tools and execute_tool. For each new user request that needs a tool, " +
+                "call discover_tools with the request goal before the first tool call, even when a " +
+                "name appears here or was used in an earlier request. Select tools from its returned " +
+                "full descriptions and schemas, then invoke app tools only through execute_tool. " +
+                "Discovery marks gated tools as unavailable; never execute those unless the user " +
+                "enables the required setting. Reuse schemas for dependent steps and rediscover only " +
+                "when a different required tool is not covered.\n",
+        )
+        sortedToolIds.forEach { toolId ->
+            append("- ")
+            append(toolId)
+            append('\n')
+        }
+    }
+}
+
+internal fun ToolDefinition.toDiscoveryEntry(available: Boolean): JsonObject = buildJsonObject {
+    put("name", name)
+    put("description", description)
+    put("parameters", parameters)
+    put("example_intents", JsonArray(exampleIntents.map(::JsonPrimitive)))
+    put("parallelizable", parallelizable)
+    put("permission_required", name in ToolRegistry.settingsPermissionRequiredNames)
+    put("available", available)
 }
 
 internal fun coreToolDefinitions(): List<ToolDefinition> {
@@ -642,27 +682,18 @@ internal fun AssistantThinkingMode.toReasoningLevel(): ReasoningLevel = when (th
     AssistantThinkingMode.OFF -> ReasoningLevel.OFF
 }
 
-internal fun createAssistantModel(
-    modelId: String,
-    enableGoogleSearch: Boolean = false,
-): Model {
+internal fun createAssistantModel(modelId: String): Model {
     val modelAbilities = ModelRegistry.getKnownAbilities(modelId)
-    val abilities = buildList {
-        if (modelAbilities == null || ModelAbility.TOOL in modelAbilities) {
-            add(ModelAbility.TOOL)
-        }
-        if (ModelAbility.REASONING in modelAbilities.orEmpty()) {
-            add(ModelAbility.REASONING)
-        }
-    }
     return Model(
         modelId = modelId,
         displayName = modelId,
-        abilities = abilities,
-        tools = if (enableGoogleSearch && ModelAbility.TOOL in abilities) {
-            setOf(BuiltInTools.Search)
-        } else {
-            emptySet()
+        abilities = buildList {
+            if (modelAbilities == null || ModelAbility.TOOL in modelAbilities) {
+                add(ModelAbility.TOOL)
+            }
+            if (ModelAbility.REASONING in modelAbilities.orEmpty()) {
+                add(ModelAbility.REASONING)
+            }
         },
     )
 }

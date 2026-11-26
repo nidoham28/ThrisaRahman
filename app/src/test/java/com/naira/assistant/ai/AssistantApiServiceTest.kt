@@ -15,7 +15,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessagePart
@@ -69,11 +68,40 @@ class AssistantApiServiceTest {
     }
 
     @Test
-    fun `exposes Naira identity information directly without discovery`() {
-        val directTools = directAssistantToolDefinitions(ToolRegistry.definitions)
+    fun `exposes only discovery and execution functions to the model`() {
+        assertEquals(
+            setOf("discover_tools", "execute_tool"),
+            coreToolDefinitions().map(ToolDefinition::name).toSet(),
+        )
+    }
 
-        assertTrue(directTools.any { it.name == "get_naira_info" })
-        assertTrue(directTools.any { it.name == "search_memories" })
+    @Test
+    fun `adds current tool IDs to the system prompt in alphabetical order`() {
+        val prompt = "System instructions".withAvailableToolCatalog(
+            listOf("zeta_tool", "alpha_tool", "execute_tool", "discover_tools", "alpha_tool") +
+                ToolRegistry.definitions.map(ToolDefinition::name),
+        )
+
+        assertTrue(prompt.contains("Available tool IDs (A-Z)"))
+        assertTrue(prompt.contains("call discover_tools with the request goal"))
+        assertTrue(prompt.contains("- insert_memory"))
+        assertTrue(prompt.contains("- delete_note"))
+        assertTrue(prompt.indexOf("- alpha_tool") < prompt.indexOf("- discover_tools"))
+        assertTrue(prompt.indexOf("- discover_tools") < prompt.indexOf("- execute_tool"))
+        assertTrue(prompt.indexOf("- execute_tool") < prompt.indexOf("- zeta_tool"))
+        assertFalse(prompt.contains("tool_name"))
+        assertEquals(1, Regex("- alpha_tool").findAll(prompt).count())
+    }
+
+    @Test
+    fun `discovery includes complete guidance and reports permission availability`() {
+        val restrictedTool = ToolRegistry.definitions.single { it.name == "delete_note" }
+
+        val result = restrictedTool.toDiscoveryEntry(available = false)
+
+        assertEquals(restrictedTool.description, result.getValue("description").jsonPrimitive.content)
+        assertEquals("true", result.getValue("permission_required").jsonPrimitive.content)
+        assertEquals("false", result.getValue("available").jsonPrimitive.content)
     }
 
     @Test
@@ -81,17 +109,6 @@ class AssistantApiServiceTest {
         val imageGenerationModel = createAssistantModel("gemini-2.5-flash-image")
 
         assertFalse(ModelAbility.TOOL in imageGenerationModel.abilities)
-    }
-
-    @Test
-    fun `enables Google Search only for supported Gemini assistant models`() {
-        val gemini = createAssistantModel("gemini-3.8-flash", enableGoogleSearch = true)
-        val imageModel = createAssistantModel("gemini-2.5-flash-image", enableGoogleSearch = true)
-        val otherProvider = createAssistantModel("openrouter/auto")
-
-        assertTrue(BuiltInTools.Search in gemini.tools)
-        assertTrue(imageModel.tools.isEmpty())
-        assertTrue(otherProvider.tools.isEmpty())
     }
 
     @Test
