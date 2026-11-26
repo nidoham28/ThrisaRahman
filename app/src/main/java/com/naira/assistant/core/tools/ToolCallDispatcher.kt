@@ -106,6 +106,10 @@ class ToolCallDispatcher(
             return AssistantToolResult(error("Unknown tool '${call.name}'."))
         }
 
+        ToolExecutor.validate(checkNotNull(ToolRegistry.find(call.name)), call.args)?.let { validationError ->
+            return AssistantToolResult(error(validationError))
+        }
+
         if (!sensitiveActionsEnabled && call.name in ToolRegistry.settingsPermissionRequiredNames) {
             return AssistantToolResult(
                 error("This action is blocked. Enable Sensitive assistant actions in Settings → Permissions to allow it."),

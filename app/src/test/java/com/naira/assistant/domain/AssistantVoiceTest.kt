@@ -40,6 +40,13 @@ class AssistantVoiceTest {
     }
 
     @Test
+    fun `Gemini voice choices match assistant gender`() {
+        assertTrue(AssistantVoice.FEMALE.geminiVoiceNames.contains("Leda"))
+        assertTrue(AssistantVoice.FEMALE.geminiVoiceNames.none { it in AssistantVoice.MALE.geminiVoiceNames })
+        assertTrue(AssistantVoice.MALE.geminiVoiceNames.contains("Puck"))
+    }
+
+    @Test
     fun `defaults missing saved voice to female`() {
         assertEquals(AssistantVoice.FEMALE, AssistantVoice.fromStorageValue(null))
     }

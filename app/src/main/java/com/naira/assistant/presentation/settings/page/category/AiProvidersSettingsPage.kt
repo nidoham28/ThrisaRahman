@@ -10,12 +10,10 @@ import androidx.compose.material.icons.outlined.VpnKey
 import com.naira.assistant.core.theme.Aqua
 import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantThinkingMode
-import com.naira.assistant.presentation.settings.component.ModelNameDropdown
 import com.naira.assistant.presentation.settings.component.Success
 import com.naira.assistant.presentation.settings.component.TrailingBadge
 import com.naira.assistant.presentation.settings.component.TrailingSwitch
 import com.naira.assistant.presentation.settings.model.EditField
-import com.naira.assistant.presentation.settings.model.ModelPresets
 import com.naira.assistant.presentation.settings.model.SettingsNode
 import com.naira.assistant.presentation.settings.page.CategoryNameUi
 import com.naira.assistant.presentation.settings.page.SettingsPageContext
@@ -165,7 +163,7 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
         )
     }
 
-    /** Model row: read-only for fixed providers, dropdown of presets otherwise. */
+    /** Model row: read-only for fixed providers, manual entry otherwise. */
     private fun SettingsPageContext.modelItem(
         provider: AssistantProvider,
         currentModelId: String,
@@ -179,21 +177,12 @@ internal object AiProvidersSettingsPage : CategoryNameUi() {
                 icon = Icons.Outlined.AutoAwesome,
             )
         }
-        val presets = ModelPresets.forProvider(provider)
         return SettingsNode.Item(
             id = "model-${provider.name.lowercase()}",
             title = "Model Name",
-            subtitle = "Choose a preset or enter a custom model ID.",
+            subtitle = currentModelId.ifBlank { "Enter a model name." },
             icon = Icons.Outlined.AutoAwesome,
             onClick = { onEditField(field) },
-            trailing = {
-                ModelNameDropdown(
-                    selected = currentModelId,
-                    presets = presets,
-                    onSelect = { modelId -> onSaveModelId(provider, modelId) },
-                    onCustom = { onEditField(field) },
-                )
-            },
         )
     }
 

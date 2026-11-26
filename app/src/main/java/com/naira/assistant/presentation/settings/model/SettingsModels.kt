@@ -41,7 +41,6 @@ internal enum class EditField(
         requiresNonBlank = true,
     ),
     GEMINI_TTS_MODEL("Google TTS model", "Enter a Gemini TTS model ID.", "gemini-2.5-flash-preview-tts", requiresNonBlank = true),
-    GEMINI_TTS_VOICE("Google TTS voice", "Enter a Gemini prebuilt voice name.", "Leda", requiresNonBlank = true),
     OPENROUTER_MODEL(
         "OpenRouter model",
         "Enter an OpenRouter model ID. Use openrouter/auto for automatic routing.",

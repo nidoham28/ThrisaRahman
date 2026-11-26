@@ -11,12 +11,17 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.agent.AgentEvent
 import me.rerere.ai.agent.AgentHooks
 import me.rerere.ai.agent.RetryPolicy
@@ -127,10 +132,56 @@ class AssistantApiService(context: Context) : AutoCloseable {
 
         val setting = createAssistantProviderSetting(provider, apiKey, providerBaseUrl)
         val model = createAssistantModel(modelId)
+        val availableTools = filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled)
+        val availableToolNames = availableTools.map(ToolDefinition::name).toSet()
+        val discoverCalls = java.util.concurrent.atomic.AtomicInteger()
+        val coreTools = coreToolDefinitions() + toolDefinitions.filter {
+            it.name in memoryToolNames && (sensitiveActionsEnabled || it.name !in ToolRegistry.settingsPermissionRequiredNames)
+        }
         val tools = if (ModelAbility.TOOL in model.abilities) {
-            (filterToolDefinitionsForPermissions(toolDefinitions, sensitiveActionsEnabled) +
-                AgentOrchestrator.toolDefinition())
-                .map { it.toAgentTool(executeTool) }
+            (coreTools + AgentOrchestrator.toolDefinition())
+                .map { definition ->
+                    definition.toAgentTool { call ->
+                        when (call.name) {
+                            "discover_tools" -> withContext(Dispatchers.Default) {
+                                if (discoverCalls.incrementAndGet() > MAX_DISCOVERY_CALLS) {
+                                    return@withContext AssistantToolResult(buildJsonObject {
+                                        put("error", "Tool discovery limit reached for this turn. Use the tools already discovered or ask the user to narrow the request.")
+                                    })
+                                }
+                                val query = call.args["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                                val topK = call.args["top_k"]?.jsonPrimitive?.intOrNull ?: 5
+                                val matches = ToolRegistry.search(query, topK.coerceIn(1, 8))
+                                    .filter { it.name in availableToolNames }
+                                AssistantToolResult(buildJsonObject {
+                                    put("tools", JsonArray(matches.map { match -> buildJsonObject {
+                                        put("name", match.name)
+                                        put("description", match.description.take(240))
+                                        put("parameters", match.parameters)
+                                    } }))
+                                })
+                            }
+                            "execute_tool" -> {
+                                val calls = call.args["calls"] as? JsonArray
+                                if (calls == null) AssistantToolResult(buildJsonObject { put("error", "calls must be an array") })
+                                else {
+                                    val results = withContext(Dispatchers.IO) {
+                                        calls.map { item ->
+                                            val obj = item as? JsonObject
+                                            val name = obj?.get("tool_name")?.jsonPrimitive?.contentOrNull
+                                            val arguments = obj?.get("arguments") as? JsonObject
+                                            if (name == null || arguments == null || availableTools.none { it.name == name }) {
+                                                buildJsonObject { put("error", "Unknown tool or invalid call; rediscover the tool and check arguments.") }
+                                            } else executeTool(FunctionCall(name = name, args = arguments)).response
+                                        }
+                                    }
+                                    AssistantToolResult(buildJsonObject { put("results", JsonArray(results)) })
+                                }
+                            }
+                            else -> executeTool(call)
+                        }
+                    }
+                }
         } else {
             emptyList()
         }
@@ -410,7 +461,44 @@ class AssistantApiService(context: Context) : AutoCloseable {
         private const val MAX_AGENT_STEPS = 8
         private const val MAX_PARALLEL_TOOL_CALLS = 4
         private const val TOOL_TIMEOUT_MILLIS = 60_000L
+        private const val MAX_DISCOVERY_CALLS = 3
     }
+}
+
+private val memoryToolNames = setOf("search_memories", "list_memories", "insert_memory", "update_memory", "remove_memory")
+
+private fun coreToolDefinitions(): List<ToolDefinition> {
+    val querySchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("query") { put("type", "string") }
+            putJsonObject("top_k") { put("type", "integer"); put("default", 5); put("minimum", 1); put("maximum", 8) }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("query")) }
+    }
+    val batchSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonArray("calls") {
+                add(buildJsonObject {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("tool_name") { put("type", "string") }
+                        putJsonObject("arguments") { put("type", "object") }
+                    }
+                    putJsonArray("required") {
+                        add(kotlinx.serialization.json.JsonPrimitive("tool_name"))
+                        add(kotlinx.serialization.json.JsonPrimitive("arguments"))
+                    }
+                })
+            }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("calls")) }
+    }
+    return listOf(
+        ToolDefinition("discover_tools", "Search for uncommon capabilities and return matching tool schemas. Use only when a user request requires a tool not already known in this turn.", querySchema),
+        ToolDefinition("execute_tool", "Execute one or more discovered tools using their exact names and JSON arguments.", batchSchema),
+    )
 }
 
 internal fun filterToolDefinitionsForPermissions(

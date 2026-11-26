@@ -6,9 +6,17 @@ import android.content.Context
 enum class AssistantVoice(
     val label: String,
     val geminiVoiceName: String,
+    val geminiVoiceNames: List<String>,
 ) {
-    FEMALE("Female", "Leda"),
-    MALE("Male", "Puck");
+    FEMALE("Female", "Leda", listOf(
+        "Achernar", "Aoede", "Autonoe", "Callirrhoe", "Despina", "Erinome", "Gacrux",
+        "Kore", "Laomedeia", "Leda", "Pulcherrima", "Sulafat", "Vindemiatrix", "Zephyr",
+    )),
+    MALE("Male", "Puck", listOf(
+        "Achird", "Algenib", "Algieba", "Alnilam", "Charon", "Enceladus", "Fenrir",
+        "Iapetus", "Orus", "Puck", "Rasalgethi", "Sadachbia", "Sadaltager", "Schedar",
+        "Umbriel", "Zubenelgenubi",
+    ));
 
     companion object {
         /** Case-insensitive so cloud rows written in any casing resolve; unknown falls back to [FEMALE]. */
@@ -44,6 +52,11 @@ class SpeechSettingsStorage(context: Context) {
     fun setGeminiTtsVoice(value: String) {
         preferences.edit().putString(KEY_GEMINI_TTS_VOICE, value.trim()).apply()
     }
+
+    fun getGeminiTtsVoice(character: AssistantCharacter): String =
+        getGeminiTtsVoice().takeIf { saved ->
+            character.voice.localVoiceGender.geminiVoiceNames.any { it.equals(saved, ignoreCase = true) }
+        } ?: character.voice.geminiVoiceName
 
     fun getCustomTtsVoice(): String = preferences.getString(KEY_CUSTOM_TTS_VOICE, DEFAULT_CUSTOM_TTS_VOICE)
         ?: DEFAULT_CUSTOM_TTS_VOICE

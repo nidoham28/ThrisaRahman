@@ -498,15 +498,6 @@ fun SettingsScreen(
         permissionStatus = permissionStatus,
         permissionActions = permissionActions,
         onSaveActiveProvider = ::chooseActiveProvider,
-        onSaveModelId = { provider, modelId ->
-            state.saveModelId(provider, modelId)
-            if (provider == AssistantProvider.OPENROUTER) {
-                cloudSettingsRepository.recordChange(
-                    CloudSettingsPatch(openRouterModelId = state.openRouterModelId)
-                )
-                synchronizeCloudSettings()
-            }
-        },
         onEditKey = { editingProviderName = it.name },
         onEditCricketApiKey = { editingCricketApiKey = true },
         onEditWeatherApiKey = { editingWeatherApiKey = true },
@@ -664,7 +655,6 @@ fun SettingsScreen(
             EditField.CUSTOM_USER_AGENT -> state.customUserAgent
             EditField.GEMINI_MODEL -> state.geminiModelId
             EditField.GEMINI_TTS_MODEL -> state.geminiTtsModel
-            EditField.GEMINI_TTS_VOICE -> state.geminiTtsVoice
             EditField.CUSTOM_TTS_VOICE -> state.customTtsVoice
             EditField.CUSTOM_TTS_MODEL -> state.customTtsModel
             EditField.CUSTOM_TTS_BASE_URL -> state.customTtsBaseUrl
@@ -683,9 +673,6 @@ fun SettingsScreen(
                     }
                     EditField.GEMINI_TTS_MODEL -> {
                         state.saveGeminiTtsModel(value)
-                    }
-                    EditField.GEMINI_TTS_VOICE -> {
-                        state.saveGeminiTtsVoice(value)
                     }
                     EditField.CUSTOM_TTS_VOICE -> {
                         state.saveCustomTtsVoice(value)
@@ -724,7 +711,6 @@ fun SettingsScreen(
                             EditField.CUSTOM_USER_AGENT -> CloudSettingsPatch()
                             EditField.GEMINI_MODEL -> CloudSettingsPatch()
                             EditField.GEMINI_TTS_MODEL -> CloudSettingsPatch()
-                            EditField.GEMINI_TTS_VOICE -> CloudSettingsPatch()
                             EditField.CUSTOM_TTS_VOICE -> CloudSettingsPatch()
                             EditField.CUSTOM_TTS_MODEL -> CloudSettingsPatch()
                             EditField.CUSTOM_TTS_BASE_URL -> CloudSettingsPatch()

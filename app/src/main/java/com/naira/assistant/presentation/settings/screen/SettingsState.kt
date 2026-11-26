@@ -97,8 +97,12 @@ internal class SettingsState(
     )
     var wakeWordServiceEnabled by mutableStateOf(backgroundWakeWordSettingsStorage.isServiceEnabled())
     var geminiTtsModel by mutableStateOf(speechStorage.getGeminiTtsModel())
-    var geminiTtsVoice by mutableStateOf(speechStorage.getGeminiTtsVoice())
+    var geminiTtsVoice by mutableStateOf(speechStorage.getGeminiTtsVoice(assistantStorage.getCharacter()))
     var customTtsVoice by mutableStateOf(speechStorage.getCustomTtsVoice())
+
+    init {
+        refreshGeminiTtsVoice()
+    }
 
     fun saveGeminiTtsModel(value: String) {
         speechStorage.setGeminiTtsModel(value)
@@ -107,7 +111,14 @@ internal class SettingsState(
 
     fun saveGeminiTtsVoice(value: String) {
         speechStorage.setGeminiTtsVoice(value)
-        geminiTtsVoice = speechStorage.getGeminiTtsVoice()
+        geminiTtsVoice = speechStorage.getGeminiTtsVoice(assistantStorage.getCharacter())
+    }
+
+    fun refreshGeminiTtsVoice() {
+        geminiTtsVoice = speechStorage.getGeminiTtsVoice(assistantStorage.getCharacter())
+        if (speechStorage.getGeminiTtsVoice() != geminiTtsVoice) {
+            speechStorage.setGeminiTtsVoice(geminiTtsVoice)
+        }
     }
 
     fun saveCustomTtsVoice(value: String) {
@@ -316,6 +327,7 @@ internal class SettingsState(
         val trimmed = value.trim()
         assistantName = trimmed
         assistantStorage.setName(trimmed)
+        refreshGeminiTtsVoice()
     }
 
     fun saveGender(value: Gender) {
@@ -343,6 +355,7 @@ internal class SettingsState(
         phone = accountStorage.getPhoneNumber()
         gender = accountStorage.getGender()
         assistantName = assistantStorage.getName()
+        refreshGeminiTtsVoice()
         relationship = assistantStorage.getRelationship()
         theme = userSettingsStorage.getTheme()
         fontSize = userSettingsStorage.getFontSize()

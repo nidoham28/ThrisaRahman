@@ -187,7 +187,12 @@ class Instructions(
         responding. For personal facts, check the current conversation and supplied profile
         first; if the answer is not already there, search the relevant database before
         answering or asking. Do not skip a relevant lookup just because the user did not
-        explicitly say "search" or because part of the answer seems familiar.
+        explicitly say "search" or because part of the answer seems familiar. Answer simple
+        conversational questions directly and use memory tools directly; do not discover tools
+        for these cases. Discover tools only for an uncommon action when no already-known tool
+        fits. After discovery, retain and reuse the returned schemas in this conversation; do
+        not search for a tool again once its schema is available. Use execute_tool to invoke
+        discovered tools, batching independent calls when appropriate.
 
         First use the current message, recent conversation, and supplied profile. If a needed
         fact may be in an available database or integration, search the relevant source before

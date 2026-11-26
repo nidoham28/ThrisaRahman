@@ -10,6 +10,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsVoice
 import com.naira.assistant.core.sound.SpeechEngine
 import com.naira.assistant.domain.settings.AssistantProvider
+import com.naira.assistant.domain.settings.AssistantCharacter
+import com.naira.assistant.presentation.settings.component.SoundNameDropdown
 import com.naira.assistant.presentation.settings.component.TrailingSwitch
 import com.naira.assistant.presentation.settings.model.EditField
 import com.naira.assistant.presentation.settings.model.SettingsNode
@@ -76,10 +78,17 @@ internal object SpeechVoiceSettingsPage : CategoryNameUi() {
                             onClick = { onEditField(EditField.GEMINI_TTS_MODEL) },
                         ),
                         SettingsNode.Item(
-                            id = "gemini-tts-voice", title = "Voice",
-                            subtitle = state.geminiTtsVoice,
+                            id = "gemini-tts-voice", title = "Sound name",
+                            subtitle = "Choose a ${AssistantCharacter.fromName(state.assistantName).gender} voice.",
                             icon = Icons.Outlined.GraphicEq,
-                            onClick = { onEditField(EditField.GEMINI_TTS_VOICE) },
+                            trailing = {
+                                SoundNameDropdown(
+                                    selected = state.geminiTtsVoice,
+                                    assistantVoice = AssistantCharacter.fromName(state.assistantName)
+                                        .voice.localVoiceGender,
+                                    onSelect = state::saveGeminiTtsVoice,
+                                )
+                            },
                         ),
                     ),
                 ),

@@ -17,7 +17,6 @@ internal data class SettingsPageContext(
     val permissionStatus: PermissionStatus,
     val permissionActions: PermissionActions,
     val onSaveActiveProvider: (AssistantProvider) -> Unit,
-    val onSaveModelId: (AssistantProvider, String) -> Unit,
     val onEditKey: (AssistantProvider) -> Unit,
     val onEditCricketApiKey: () -> Unit,
     val onEditWeatherApiKey: () -> Unit,

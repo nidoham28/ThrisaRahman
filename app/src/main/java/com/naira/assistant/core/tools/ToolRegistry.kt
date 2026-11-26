@@ -69,6 +69,8 @@ import com.naira.assistant.core.tools.definition.randomPictureTool
 
 /** Central registry of every tool (function declaration) exposed to the model. */
 object ToolRegistry {
+    @Volatile
+    private var activeSearchEngine: ToolSearchEngine? = null
     val settingsPermissionRequiredNames = setOf(
         /**
          * Memories declarations
@@ -319,4 +321,9 @@ object ToolRegistry {
     }
 
     fun find(name: String): ToolDefinition? = definitionsByName[name]
+
+    fun search(query: String, topK: Int = 5, queryEmbedding: List<Float>? = null): List<ToolDefinition> =
+        (activeSearchEngine ?: synchronized(this) {
+            activeSearchEngine ?: ToolSearchEngine(definitions).also { activeSearchEngine = it }
+        }).search(query, topK, queryEmbedding)
 }

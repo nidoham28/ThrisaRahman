@@ -1,0 +1,40 @@
+kotlin version: 2.4.21
+error message: Incremental compilation failed: java.lang.NegativeArraySizeException: -771702272
+java.io.IOException: java.lang.NegativeArraySizeException: -771702272
+	at org.jetbrains.kotlin.com.intellij.util.io.IOUtil.readString(IOUtil.java:86)
+	at org.jetbrains.kotlin.incremental.storage.StringExternalizer.read(externalizers.kt:226)
+	at org.jetbrains.kotlin.incremental.storage.FileDescriptor.read(FileToPathConverter.kt:37)
+	at org.jetbrains.kotlin.incremental.storage.FileDescriptor.read(FileToPathConverter.kt:30)
+	at org.jetbrains.kotlin.com.intellij.util.io.PersistentMapImpl.doGet(PersistentMapImpl.java:682)
+	at org.jetbrains.kotlin.com.intellij.util.io.PersistentMapImpl.get(PersistentMapImpl.java:615)
+	at org.jetbrains.kotlin.com.intellij.util.io.PersistentHashMap.get(PersistentHashMap.java:196)
+	at org.jetbrains.kotlin.incremental.storage.LazyStorage.get(LazyStorage.kt:76)
+	at org.jetbrains.kotlin.incremental.storage.InMemoryStorage.get(InMemoryStorage.kt:68)
+	at org.jetbrains.kotlin.incremental.storage.PersistentStorageWrapper.get(PersistentStorage.kt:105)
+	at org.jetbrains.kotlin.incremental.AbstractIncrementalCache.getSourceFileIfClass(AbstractIncrementalCache.kt:131)
+	at org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunnerBase.additionalDirtyFiles$addSourceFilesWhenClassLikeDeclarationNameClash(IncrementalJvmCompilerRunnerBase.kt:129)
+	at org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunnerBase.additionalDirtyFiles(IncrementalJvmCompilerRunnerBase.kt:135)
+	at org.jetbrains.kotlin.incremental.IncrementalJvmCompilerRunnerBase.additionalDirtyFiles(IncrementalJvmCompilerRunnerBase.kt:53)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.doCompile(IncrementalCompilerRunner.kt:639)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compileImpl(IncrementalCompilerRunner.kt:521)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.tryCompileIncrementally$lambda$0$compile(IncrementalCompilerRunner.kt:301)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.tryCompileIncrementally(IncrementalCompilerRunner.kt:319)
+	at org.jetbrains.kotlin.incremental.IncrementalCompilerRunner.compile(IncrementalCompilerRunner.kt:160)
+	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.execIncrementalCompiler(CompileServiceImpl.kt:792)
+	at org.jetbrains.kotlin.daemon.CompileServiceImplBase.access$execIncrementalCompiler(CompileServiceImpl.kt:101)
+	at org.jetbrains.kotlin.daemon.CompileServiceImpl.compile(CompileServiceImpl.kt:2077)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(Unknown Source)
+	at java.base/java.lang.reflect.Method.invoke(Unknown Source)
+	at java.rmi/sun.rmi.server.UnicastServerRef.dispatch(Unknown Source)
+	at java.rmi/sun.rmi.transport.Transport.serviceCall(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(Unknown Source)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: java.lang.NegativeArraySizeException: -771702272
+	at org.jetbrains.kotlin.com.intellij.util.io.IOUtil.readString(IOUtil.java:78)
+	... 31 more
+
+

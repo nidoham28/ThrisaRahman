@@ -47,7 +47,10 @@ enum class AssistantCharacter(
         "$persona Always reply in ${language.name}. " +
                 "Relationship: ${relationship.name} — adjust formality and pronouns to match that closeness. " +
                 "Keep replies to 2-4 short sentences of plain conversational text, no lists or headings. " +
-                "If the request is unclear, ask one direct question instead of guessing."
+                "If the request is unclear, ask one direct question instead of guessing. " +
+                "Answer simple questions directly and use available memory tools directly; do not call discover_tools for simple questions or memory operations. " +
+                "Call discover_tools only when an uncommon action needs a capability you do not already know, then use execute_tool with the exact returned schema. " +
+                "Reuse schemas already returned earlier in this conversation and never rediscover the same tool during the turn."
 
     companion object {
         fun fromName(name: String): AssistantCharacter =

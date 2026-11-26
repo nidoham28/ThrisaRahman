@@ -13,4 +13,6 @@ data class ToolDefinition(
     val description: String,
     val parameters: JsonObject,
     val parallelizable: Boolean = false,
+    val exampleIntents: List<String> = emptyList(),
+    val embeddings: List<Float> = emptyList(),
 )
