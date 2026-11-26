@@ -1,0 +1,59 @@
+
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Naira: Build + Install",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "installDebug",
+        "--no-configuration-cache"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Naira: Launch",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "shell",
+        "monkey",
+        "-p",
+        "com.naira.assistant",
+        "-c",
+        "android.intent.category.LAUNCHER",
+        "1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Naira: Build + Install + Launch",
+      "dependsOn": [
+        "Naira: Build + Install",
+        "Naira: Launch"
+      ],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Naira: View Crash Logs",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "logcat",
+        "-v",
+        "time",
+        "AndroidRuntime:E",
+        "*:S"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
