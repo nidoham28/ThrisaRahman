@@ -4,7 +4,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
-import org.junit.AssertTrue
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ToolSearchEngineTest {

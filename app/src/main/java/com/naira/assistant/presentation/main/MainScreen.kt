@@ -17,7 +17,6 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -30,8 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.naira.assistant.NairaApp
@@ -84,27 +81,8 @@ fun MainScreen(
     onDrawerAction: (DrawerAction) -> Unit = {},
 ) {
     val appContext = context.applicationContext
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-
-    DisposableEffect(lifecycle, viewModel) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> viewModel.startPhoneSensorTracking()
-                Lifecycle.Event.ON_PAUSE -> viewModel.stopPhoneSensorTracking()
-                else -> Unit
-            }
-        }
-        lifecycle.addObserver(observer)
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            viewModel.startPhoneSensorTracking()
-        }
-        onDispose {
-            lifecycle.removeObserver(observer)
-            viewModel.stopPhoneSensorTracking()
-        }
-    }
 
     // --- UI state -----------------------------------------------------------
     var selectedTab by rememberSaveable { mutableIntStateOf(Tab.HOME) }

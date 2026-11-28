@@ -12,7 +12,6 @@ import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.character.util.Character
 import com.naira.assistant.core.prompt.character.util.CharacterGender
 import com.naira.assistant.core.prompt.user.User
-import com.naira.assistant.core.sensor.PhoneSensorSnapshotReader
 import com.naira.assistant.core.service.image.InlineImage
 import com.naira.assistant.core.service.FirebaseAuthService
 import com.naira.assistant.core.sync.FirebaseApiKeyStore
@@ -231,7 +230,6 @@ class AssistantViewModel(
 
     private val appContext = context.applicationContext
     private val assistantApi = AssistantApiService(appContext)
-    private val phoneSensorSnapshotReader = PhoneSensorSnapshotReader(appContext)
     private val apiKeyStorage = ApiKeyStorage(appContext)
     private val sensitiveContentSettingsStorage = SensitiveContentSettingsStorage(appContext)
     private val authService = FirebaseAuthService()
@@ -292,7 +290,6 @@ class AssistantViewModel(
             language = activeLanguage.label,
             relationship = "${configuredRelationship.title}: ${configuredRelationship.description}",
             moodLabels = assistantMoods,
-            phoneSensorSnapshot = phoneSensorSnapshotReader.capture(),
         ).build()
     }
 
@@ -309,10 +306,6 @@ class AssistantViewModel(
         refreshAssistantIdentity()
         refreshApiKey()
     }
-
-    fun startPhoneSensorTracking() = phoneSensorSnapshotReader.startTracking()
-
-    fun stopPhoneSensorTracking() = phoneSensorSnapshotReader.stopTracking()
 
     /** Reload the saved key after returning from provider settings. */
     fun refreshApiKey() {
@@ -438,7 +431,6 @@ class AssistantViewModel(
     }
 
     override fun onCleared() {
-        phoneSensorSnapshotReader.stopTracking()
         assistantApi.close()
     }
 

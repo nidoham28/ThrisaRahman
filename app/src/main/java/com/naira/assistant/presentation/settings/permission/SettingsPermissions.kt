@@ -34,7 +34,6 @@ internal data class PermissionStatus(
     val hasAllFiles: Boolean,
     val hasModifySystemSettings: Boolean,
     val hasAccessibility: Boolean,
-    val hasActivityRecognition: Boolean,
 ) {
     val totalCount: Int = 9
     val grantedCount: Int
@@ -56,7 +55,6 @@ internal class PermissionActions(
     val onRequestMedia: () -> Unit,
     val onRequestAllFiles: () -> Unit,
     val onRequestModifySystemSettings: () -> Unit,
-    val onRequestActivityRecognition: () -> Unit,
     val onOpenAccessibility: () -> Unit,
     val onOpenAppSettings: () -> Unit,
     val onOpenPermissions: () -> Unit
@@ -109,11 +107,6 @@ internal fun checkPermissions(context: Context): PermissionStatus {
     val hasAllFiles = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
     val hasModifySystemSettings = AndroidSettings.System.canWrite(context)
     val hasAccessibility = NairaAccessibilityService.isEnabledInSettings(context)
-    val hasActivityRecognition = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACTIVITY_RECOGNITION,
-        ) == PackageManager.PERMISSION_GRANTED
 
     return PermissionStatus(
         hasMic = hasMic,
@@ -126,7 +119,6 @@ internal fun checkPermissions(context: Context): PermissionStatus {
         hasAllFiles = hasAllFiles,
         hasModifySystemSettings = hasModifySystemSettings,
         hasAccessibility = hasAccessibility,
-        hasActivityRecognition = hasActivityRecognition,
     )
 }
 

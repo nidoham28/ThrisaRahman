@@ -1,8 +1,9 @@
-package com.naira.assistant.core.tools
+﻿package com.naira.assistant.core.tools
 
 import com.naira.assistant.core.tools.executor.RandomToolExecutor
 import com.naira.assistant.domain.FunctionCall
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -31,8 +32,8 @@ class RandomToolExecutorTest {
     @Test
     fun `random number respects inclusive custom bounds`() {
         val args = buildJsonObject {
-            put("min", 5)
-            put("max", 5)
+            put("min", JsonPrimitive(5))
+            put("max", JsonPrimitive(5))
         }
         repeat(20) {
             val result = RandomToolExecutor.executeRandomNumber(call(args))
@@ -40,8 +41,8 @@ class RandomToolExecutorTest {
         }
 
         val wide = buildJsonObject {
-            put("min", -10)
-            put("max", 10)
+            put("min", JsonPrimitive(-10))
+            put("max", JsonPrimitive(10))
         }
         repeat(100) {
             val result = RandomToolExecutor.executeRandomNumber(call(wide))
@@ -66,8 +67,8 @@ class RandomToolExecutorTest {
     @Test
     fun `random number rejects inverted range`() {
         val args = buildJsonObject {
-            put("min", 10)
-            put("max", 1)
+            put("min", JsonPrimitive(10))
+            put("max", JsonPrimitive(1))
         }
         val result = RandomToolExecutor.executeRandomNumber(call(args))
         assertFalse(result["success"]!!.jsonPrimitive.boolean)
@@ -77,8 +78,8 @@ class RandomToolExecutorTest {
     @Test
     fun `random number rejects oversized range`() {
         val args = buildJsonObject {
-            put("min", 0)
-            put("max", 2_000_000_000L)
+            put("min", JsonPrimitive(0))
+            put("max", JsonPrimitive(2_000_000_000L))
         }
         val result = RandomToolExecutor.executeRandomNumber(call(args))
         assertFalse(result["success"]!!.jsonPrimitive.boolean)
@@ -100,7 +101,7 @@ class RandomToolExecutorTest {
 
     @Test
     fun `random boolean checks guess correctness`() {
-        val guessingTrue = buildJsonObject { put("guess", true) }
+        val guessingTrue = buildJsonObject { put("guess", JsonPrimitive(true)) }
         repeat(20) {
             val result = RandomToolExecutor.executeRandomBoolean(call(guessingTrue))
             val flipped = result["result"]!!.jsonPrimitive.boolean
@@ -118,7 +119,7 @@ class RandomToolExecutorTest {
 
     @Test
     fun `random boolean rejects unparseable guess`() {
-        val args = buildJsonObject { put("guess", "maybe") }
+        val args = buildJsonObject { put("guess", JsonPrimitive("maybe")) }
         val result = RandomToolExecutor.executeRandomBoolean(call(args))
         assertFalse(result["success"]!!.jsonPrimitive.boolean)
         assertTrue(result["error"]!!.jsonPrimitive.content.contains("guess"))

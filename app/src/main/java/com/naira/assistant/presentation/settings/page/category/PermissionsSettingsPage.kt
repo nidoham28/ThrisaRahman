@@ -78,26 +78,6 @@ internal object PermissionsSettingsPage : CategoryNameUi() {
                             }
                         ),
                         SettingsNode.Item(
-                            id = "permission-physical-activity",
-                            title = "Physical activity",
-                            subtitle = "Optional step count and walking/running cues for virtual body motion; readings are sent with assistant requests",
-                            icon = Icons.Outlined.Security,
-                            onClick = permissionActions.onRequestActivityRecognition,
-                            trailing = {
-                                TrailingBadge(
-                                    when {
-                                        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> "NOT NEEDED"
-                                        permissionStatus.hasActivityRecognition -> "ALLOWED"
-                                        else -> "OPTIONAL"
-                                    },
-                                    if (
-                                        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-                                        permissionStatus.hasActivityRecognition
-                                    ) Success else Aqua,
-                                )
-                            },
-                        ),
-                        SettingsNode.Item(
                             id = "permission-calendar", title = "Calendar",
                             subtitle = "Read & create calendar events",
                             icon = Icons.Outlined.CalendarMonth,

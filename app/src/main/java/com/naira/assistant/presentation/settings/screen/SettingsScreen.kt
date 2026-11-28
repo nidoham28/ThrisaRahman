@@ -472,15 +472,6 @@ fun SettingsScreen(
                     Toast.makeText(context, "Modify-system-settings access is already granted.", Toast.LENGTH_SHORT).show()
                 } else openModifySystemSettings(context)
             },
-            onRequestActivityRecognition = {
-                when {
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ->
-                        Toast.makeText(context, "Activity recognition permission is not needed on this Android version.", Toast.LENGTH_SHORT).show()
-                    permissionStatus.hasActivityRecognition ->
-                        Toast.makeText(context, "Physical activity permission is already granted.", Toast.LENGTH_SHORT).show()
-                    else -> requestSingleLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                }
-            },
             onOpenAccessibility = {
                 if (permissionStatus.hasAccessibility) Toast.makeText(context, "Screen access is already granted.", Toast.LENGTH_SHORT).show()
                 else {
