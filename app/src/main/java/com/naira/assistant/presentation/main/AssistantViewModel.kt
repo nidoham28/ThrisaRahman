@@ -11,7 +11,6 @@ import com.naira.assistant.ai.toReasoningLevel
 import com.naira.assistant.core.prompt.Instructions
 import com.naira.assistant.core.prompt.character.util.Character
 import com.naira.assistant.core.prompt.character.util.CharacterGender
-import com.naira.assistant.core.prompt.character.util.CharacterType
 import com.naira.assistant.core.prompt.user.User
 import com.naira.assistant.core.sensor.PhoneSensorSnapshotReader
 import com.naira.assistant.core.service.image.InlineImage
@@ -24,7 +23,6 @@ import com.naira.assistant.domain.settings.AssistantProvider
 import com.naira.assistant.domain.settings.AssistantProviderBaseUrlPolicy
 import com.naira.assistant.domain.settings.SensitiveContentSettingsStorage
 import com.naira.assistant.domain.settings.AccountSettingsStorage
-import com.naira.assistant.domain.settings.AssistantCharacter
 import com.naira.assistant.domain.settings.AssistantLanguage
 import com.naira.assistant.domain.settings.AssistantSettingsStorage
 import com.naira.assistant.domain.settings.Gender
@@ -274,10 +272,6 @@ class AssistantViewModel(
         val configuredCharacter = assistantSettingsStorage.getCharacter()
         val character = Character(
             name = assistantSettingsStorage.getName(),
-            type = when (configuredCharacter) {
-                AssistantCharacter.VENOM -> CharacterType.MONSTER
-                AssistantCharacter.NAIRA, AssistantCharacter.JERVIS -> CharacterType.REALISTIC
-            },
             gender = when (configuredCharacter.gender.lowercase()) {
                 "female" -> CharacterGender.FEMALE
                 "male" -> CharacterGender.MALE

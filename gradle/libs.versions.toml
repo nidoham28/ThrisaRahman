@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.2"
+agp = "9.5.3"
 annotation = "1.11.0"
 coreKtx = "1.19.1"
 exifinterface = "1.4.1"
